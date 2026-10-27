@@ -90,7 +90,9 @@ struct Image {
             nt->FileHeader.SizeOfOptionalHeader < sizeof(IMAGE_OPTIONAL_HEADER32) ||
             nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
             nt->OptionalHeader.SizeOfImage != imageSize ||
-            nt->OptionalHeader.ImageBase != 0x10000000u ||
+            // The loader rewrites ImageBase to the actual base when ASLR relocates the DLL;
+            // every Portal 2 DLL prefers 0x10000000, so server/client are always relocated.
+            (nt->OptionalHeader.ImageBase != 0x10000000u && nt->OptionalHeader.ImageBase != base) ||
             !nt->FileHeader.NumberOfSections || nt->OptionalHeader.SizeOfHeaders > imageSize)
             return false;
         const std::uint64_t tableOffset = static_cast<std::uint64_t>(dos->e_lfanew) +

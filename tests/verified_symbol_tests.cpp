@@ -159,6 +159,14 @@ int main()
     const auto fov = ResolveImage(client.bytes, client.size, kClientHash, Symbol::ViewModelFov);
     Expect(fov.address == client.At(0x28AD20) && !fov.shootCaller,
         "Portal ClientMode FOV resolves through both vtables and cvar reference");
+    auto *serverNt = reinterpret_cast<IMAGE_NT_HEADERS32 *>(server.bytes + 0x80);
+    serverNt->OptionalHeader.ImageBase = static_cast<DWORD>(server.At(0));
+    Expect(ResolveImage(server.bytes, server.size, kServerHash, Symbol::EyePosition).address ==
+        server.At(0x369A70), "ASLR-relocated header ImageBase resolves");
+    serverNt->OptionalHeader.ImageBase = 0x20000000;
+    Expect(!ResolveImage(server.bytes, server.size, kServerHash, Symbol::EyePosition).address,
+        "unrelated header ImageBase rejects fallback");
+    serverNt->OptionalHeader.ImageBase = 0x10000000;
     Expect(!ResolveImage(server.bytes, server.size, kClientHash, Symbol::EyePosition).address,
         "wrong DLL hash rejects fallback");
     Expect(!ResolveImage(client.bytes, client.size, kServerHash, Symbol::ViewModelFov).address,

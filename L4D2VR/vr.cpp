@@ -18,9 +18,18 @@
 #include <algorithm>
 #include <d3d9_vr.h>
 
-// Original Portal2VR viewmodel calibration, retained for compatibility.
-// The experimental launcher profile cancels it without changing shot origin.
+// Original Portal2VR viewmodel calibration, retained for the legacy viewmodel.
 static const Vector kLegacyViewmodelPositionOffset{4.5f, -1.0f, 1.5f};
+// v_portalgun.mdl's origin is the flat-screen camera eye; the gun hull spans
+// x -0.7..37.3, y -12.8..3.5, z -16.4..5.2. Pivoting the controller-locked model
+// there puts the gun on a 40-85 cm lever arm that amplifies wrist tremor. This
+// moves the white body onto the controller (headset-calibrated).
+static const Vector kAlignedViewmodelGripOffset{15.0f, 6.0f, -8.0f};
+
+static const Vector &ViewmodelBasePositionOffset(bool aligned)
+{
+    return aligned ? kAlignedViewmodelGripOffset : kLegacyViewmodelPositionOffset;
+}
 
 namespace {
 class VRSubmissionScope
@@ -1799,7 +1808,8 @@ void VR::UpdateTracking()
     m_RightControllerAngAbs.Normalize();
 
     // Apply both hardcoded and custom (from config) viewmodel offsets here:
-    m_ViewmodelPosOffset = kLegacyViewmodelPositionOffset + m_ViewmodelPosCustomOffset;
+    m_ViewmodelPosOffset = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment) +
+        m_ViewmodelPosCustomOffset;
     m_ViewmodelAngOffset = m_ViewmodelAngCustomOffset;
 
     m_ViewmodelForward = m_RightControllerForward;
@@ -2449,6 +2459,7 @@ void VR::ParseConfigFile()
     m_RenderWindow = m_Config.renderWindow;
     m_ViewmodelPosCustomOffset = {m_Config.viewmodelPosOffset[0], m_Config.viewmodelPosOffset[1], m_Config.viewmodelPosOffset[2]};
     m_ViewmodelAngCustomOffset = {m_Config.viewmodelAngOffset[0], m_Config.viewmodelAngOffset[1], m_Config.viewmodelAngOffset[2]};
+    const Vector &viewmodelBase = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment);
     Logger::Write("Config applied: VerboseDiagnostics=" + std::to_string(m_Config.verboseDiagnostics) +
         " TurnSpeed=" + std::to_string(m_TurnSpeed) +
         " SnapTurnAngle=" + std::to_string(m_SnapTurnAngle) +
@@ -2470,7 +2481,8 @@ void VR::ParseConfigFile()
         std::to_string(m_ViewmodelPosCustomOffset.y) + "," +
         std::to_string(m_ViewmodelPosCustomOffset.z) +
         " EffectiveViewmodelPosOffset=" +
-        std::to_string(kLegacyViewmodelPositionOffset.x + m_ViewmodelPosCustomOffset.x) + "," +
-        std::to_string(kLegacyViewmodelPositionOffset.y + m_ViewmodelPosCustomOffset.y) + "," +
-        std::to_string(kLegacyViewmodelPositionOffset.z + m_ViewmodelPosCustomOffset.z));
+        std::to_string(viewmodelBase.x + m_ViewmodelPosCustomOffset.x) + "," +
+        std::to_string(viewmodelBase.y + m_ViewmodelPosCustomOffset.y) + "," +
+        std::to_string(viewmodelBase.z + m_ViewmodelPosCustomOffset.z) +
+        (m_Config.experimentalViewmodelAlignment ? " (aligned grip base)" : " (legacy base)"));
 }

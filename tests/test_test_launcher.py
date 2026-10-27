@@ -151,16 +151,16 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("ExperimentalHUDOverlay=false\n", aimed)
         self.assertIn("ExperimentalPortalShotHaptics=false\n", aimed)
 
-    def test_model_alignment_profile_cancels_legacy_offset_without_changing_baseline(self):
+    def test_model_alignment_profile_uses_built_in_grip_offset_without_changing_baseline(self):
         changed = TEMPLATE.replace("ViewmodelPosCustomOffsetX=0.0", "ViewmodelPosCustomOffsetX=-2.0")
         baseline = core.render_config(changed, "baseline")
         aligned = core.render_config(TEMPLATE, "aim_model_alignment")
         self.assertIn("ViewmodelPosCustomOffsetX=0.0\n", baseline)
         self.assertIn("ViewmodelPosCustomOffsetY=0.0\n", baseline)
         self.assertIn("ViewmodelPosCustomOffsetZ=0.0\n", baseline)
-        self.assertIn("ViewmodelPosCustomOffsetX=-4.5\n", aligned)
-        self.assertIn("ViewmodelPosCustomOffsetY=1.0\n", aligned)
-        self.assertIn("ViewmodelPosCustomOffsetZ=-1.5\n", aligned)
+        self.assertIn("ViewmodelPosCustomOffsetX=0.0\n", aligned)
+        self.assertIn("ViewmodelPosCustomOffsetY=0.0\n", aligned)
+        self.assertIn("ViewmodelPosCustomOffsetZ=0.0\n", aligned)
         self.assertIn("ExperimentalWorldAimMarker=true\n", aligned)
         self.assertIn("ExperimentalHUDOverlay=true\n", aligned)
         self.assertIn("ExperimentalPortalShotHaptics=true\n", aligned)
@@ -195,9 +195,9 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("ExperimentalHUDOverlay=true\n", active)
         self.assertIn("ExperimentalWorldAimMarker=true\n", active)
         self.assertIn("ExperimentalPortalShotHaptics=true\n", active)
-        self.assertIn("ViewmodelPosCustomOffsetX=-4.5\n", active)
-        self.assertIn("ViewmodelPosCustomOffsetY=1.0\n", active)
-        self.assertIn("ViewmodelPosCustomOffsetZ=-1.5\n", active)
+        self.assertIn("ViewmodelPosCustomOffsetX=0.0\n", active)
+        self.assertIn("ViewmodelPosCustomOffsetY=0.0\n", active)
+        self.assertIn("ViewmodelPosCustomOffsetZ=0.0\n", active)
         self.assertIn("RoomscaleMode=Off\n", core.render_config(TEMPLATE, "baseline"))
         self.assertIn("RoomscaleMode=Observe\n",
                       core.render_config(TEMPLATE, "roomscale_observe_combined"))

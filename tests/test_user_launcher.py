@@ -49,8 +49,8 @@ class SettingsTests(unittest.TestCase):
             }.items():
                 self.assertEqual(result[key], want, key)
             for key, want in {"HUDDistanceMeters": 1.25, "HUDWidthMeters": 1.65,
-                              "HUDVerticalOffsetMeters": .1, "ViewmodelPosCustomOffsetX": -4.5,
-                              "ViewmodelPosCustomOffsetY": 1, "ViewmodelPosCustomOffsetZ": -1.5}.items():
+                              "HUDVerticalOffsetMeters": .1, "ViewmodelPosCustomOffsetX": 0,
+                              "ViewmodelPosCustomOffsetY": 0, "ViewmodelPosCustomOffsetZ": 0}.items():
                 self.assertEqual(float(result[key]), want, key)
 
     def test_invalid_values_are_rejected_instead_of_emitted_to_game(self):

@@ -173,6 +173,18 @@ public:
     Offset GetDefaultFOV = { "client.dll", 0x279020, "A1 ? ? ? ? F3 0F 2C 40 ? C3" };
     Offset GetViewModelFOV{VerifiedPortalSymbols::Symbol::ViewModelFov};
 
+    // Optional haptics group, identified offline in the verified client/server builds.
+    // cdecl RumbleEffect(int splitSlot, int index, int data, int flags): target of the
+    // Rumble user message, ahead of the joy_vibration/gamepad gate in CRumbleEffects.
+    Offset RumbleEffect = { "client.dll", 0xBEF30, "55 8B EC 8B 45 14 8B 4D 10 8B 55 0C 50 8B 45 08 51 52 50 B9 ? ? ? ? E8 ? ? ? ? 5D C3 CC 55 8B EC 56 8B 75 08 56 E8" };
+    // thiscall CPropButton::Press(CBaseEntity *activator). The signature pins the fields the
+    // detour reads: locked flag +0x514 and the idle-sequence compare +0x3BC == +0x530.
+    Offset PropButtonPress = { "server.dll", 0x3DBB50, "55 8B EC 56 8B F1 80 BE 14 05 00 00 00 74 1A 0F 57 C0 6A 00 51 F3 0F 11 04 24 68 ? ? ? ? E8 ? ? ? ? 5E 5D C2 04 00 8B 86 BC 03 00 00 3B 86 30 05 00 00 75" };
+    // thiscall CPropFloorButton::Press/UnPress(CBaseEntity *activator), also reached from the
+    // cube, ball and under-floor variants. The signatures pin the pressed flag at +0x6E0.
+    Offset FloorButtonPress = { "server.dll", 0x3DEE80, "55 8B EC 56 57 8B F9 8B 87 E8 06 00 00 50 E8 ? ? ? ? 80 BF E0 06 00 00 01 74 2A" };
+    Offset FloorButtonUnpress = { "server.dll", 0x3DEF10, "55 8B EC 56 57 8B F9 8B 87 E4 06 00 00 50 E8 ? ? ? ? 80 BF E0 06 00 00 00 74 2A" };
+
     // Multiplayer
     Offset GetOwner = { "server.dll", 0xD7550, "8B 81 ? ? ? ? 83 F8 FF 74 23 8B 15 ? ? ? ?" };
     //Offset GetActiveWeapon = { "server.dll", 0xD3FD0, "8B 89 ? ? ? ? 83 F9 FF 74 1F 8B 15 ? ? ? ?" };

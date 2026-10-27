@@ -1546,6 +1546,89 @@ int main()
     expect(Haptics::IsLocalShot(1, -1), false,
            "weapon without a resolved owner cannot qualify as shot source");
 
+    expect(m2Defaults.haptics && m2Defaults.hapticsNativeRumble &&
+           m2Defaults.hapticsHeldObject && m2Defaults.hapticsButtons, true,
+           "game haptics default on");
+    expectNear(m2Defaults.hapticsIntensity, 1.0f, "game haptics default full intensity");
+    std::istringstream gameHapticOptions("Haptics=false\nHapticsIntensity=0.5\n"
+                                         "HapticsNativeRumble=false\nHapticsHeldObject=false\n"
+                                         "HapticsButtons=false\n");
+    const auto gameHaptics = ParseConfig(gameHapticOptions, m2Defaults);
+    expect(gameHaptics.errors.empty(), true, "game haptic settings parse");
+    expect(gameHaptics.value.haptics || gameHaptics.value.hapticsNativeRumble ||
+           gameHaptics.value.hapticsHeldObject || gameHaptics.value.hapticsButtons, false,
+           "game haptic toggles parse");
+    expectNear(gameHaptics.value.hapticsIntensity, 0.5f, "game haptic intensity parsed");
+    std::istringstream gameHapticBad("Haptics=on\nHapticsIntensity=1.5\n");
+    const auto gameHapticFallback = ParseConfig(gameHapticBad, gameHaptics.value);
+    expect(gameHapticFallback.errors.size() == 2, true, "invalid game haptic fields diagnosed");
+    expectNear(gameHapticFallback.value.hapticsIntensity, 0.5f,
+               "out-of-range intensity retains prior value");
+
+    const auto shot = Haptics::NativeRumblePattern(Haptics::kRumblePortalgunLeft, 0, 0);
+    expect(shot.count == 1 && shot.mapped && shot.pulses[0].target == Haptics::Target::GunHand, true,
+           "native portal-gun rumble pulses the gun hand once");
+    const auto failure = Haptics::NativeRumblePattern(Haptics::kRumblePlacementFailure, 0, 0);
+    expect(failure.count == 2 && failure.pulses[1].delaySeconds > 0.0f, true,
+           "failed placement is a delayed double pulse");
+    expect(Haptics::NativeRumblePattern(Haptics::kRumbleFallLong, 0, 0).pulses[0].target ==
+           Haptics::Target::BothHands, true, "landing vibrates both hands");
+    expectInt(Haptics::NativeRumblePattern(Haptics::kRumbleStopAll, 0, 0).count, 0,
+              "stop-all emits no pulse");
+    expectInt(Haptics::NativeRumblePattern(Haptics::kRumbleFallShort, 0, Haptics::kRumbleStop).count, 0,
+              "stop flag emits no pulse");
+    expectInt(Haptics::NativeRumblePattern(Haptics::kRumbleFallShort, 50, Haptics::kRumbleUpdateScale).count, 0,
+              "scale update of a running effect emits no pulse");
+    const auto unknown = Haptics::NativeRumblePattern(14, 0, 0);
+    expect(unknown.count == 1 && !unknown.mapped, true, "unknown effect gets a generic pulse");
+    const auto scaledFall = Haptics::NativeRumblePattern(Haptics::kRumbleFallLong, 50,
+                                                     Haptics::kRumbleInitialScale);
+    expectNear(scaledFall.pulses[0].amplitude,
+               Haptics::NativeRumblePattern(Haptics::kRumbleFallLong, 0, 0).pulses[0].amplitude * 0.5f,
+               "initial-scale data scales amplitude");
+    const auto bounded = Haptics::ScaledPulse({Haptics::Target::GunHand, 9.0f, 9.0f, 9999.0f, 0.8f}, 2.0f);
+    expectNear(bounded.amplitude, 0.8f, "intensity above one is clamped");
+    expect(bounded.durationSeconds <= 0.25f && bounded.delaySeconds <= 0.25f &&
+           bounded.frequency <= 320.0f, true, "pulse timing is bounded");
+    expectNear(Haptics::ScaledPulse({Haptics::Target::GunHand, 0, 0.05f, 100, 0.8f},
+               std::numeric_limits<float>::quiet_NaN()).amplitude, 0.0f,
+               "nonfinite intensity silences the pulse");
+
+    Haptics::EventQueue gameQueue;
+    std::array<Haptics::Pattern, Haptics::EventQueue::kCapacity> drained;
+    const auto pickup = Haptics::EventPattern(Haptics::Event::Pickup);
+    expect(gameQueue.Push(1, pickup, shotStart), true, "first game event queues");
+    expect(gameQueue.Push(1, pickup, shotStart + std::chrono::milliseconds(30)), false,
+           "duplicate game event inside 60 ms is dropped");
+    expect(gameQueue.Push(2, pickup, shotStart + std::chrono::milliseconds(30)), true,
+           "different game event is not suppressed");
+    expect(gameQueue.Push(1, pickup, shotStart + std::chrono::milliseconds(60)), true,
+           "repeat game event after the window queues");
+    expect(gameQueue.Push(3, {}, shotStart), false, "empty pattern never queues");
+    expectInt(static_cast<int>(gameQueue.Drain(drained)), 3, "queued game events drain once");
+    expectInt(static_cast<int>(gameQueue.Drain(drained)), 0, "drained queue is empty");
+    for (int i = 0; i < 20; ++i)
+        gameQueue.Push(100 + i, pickup, shotStart + std::chrono::seconds(2));
+    expectInt(static_cast<int>(gameQueue.Drain(drained)), static_cast<int>(Haptics::EventQueue::kCapacity),
+              "queue overflow is bounded");
+
+    Haptics::HoldTracker hold;
+    expect(hold.Poll(shotStart) == Haptics::HoldTracker::Change::None, true,
+           "no held object before any grab update");
+    hold.Update(shotStart);
+    expect(hold.Poll(shotStart + std::chrono::milliseconds(10)) == Haptics::HoldTracker::Change::Pickup, true,
+           "first grab update reports pickup");
+    hold.Update(shotStart + std::chrono::milliseconds(100));
+    expect(hold.Poll(shotStart + std::chrono::milliseconds(200)) == Haptics::HoldTracker::Change::None, true,
+           "continuous grab updates keep holding");
+    hold.Suspend(shotStart + std::chrono::seconds(5));
+    expect(hold.Poll(shotStart + std::chrono::milliseconds(5100)) == Haptics::HoldTracker::Change::None, true,
+           "paused game ticks do not report a drop");
+    expect(hold.Poll(shotStart + std::chrono::seconds(6)) == Haptics::HoldTracker::Change::Drop, true,
+           "missing grab updates report one drop");
+    expect(hold.Poll(shotStart + std::chrono::seconds(7)) == Haptics::HoldTracker::Change::None, true,
+           "drop is reported once");
+
     float poseMatrix[3][4] = {{1,0,0,0}, {0,1,0,0}, {0,0,1,0}};
     float poseVelocity[3] = {0,0,0};
     float poseAngularVelocity[3] = {0,0,0};

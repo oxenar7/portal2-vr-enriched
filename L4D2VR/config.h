@@ -33,6 +33,11 @@ struct ConfigSnapshot {
     bool experimentalPortalShotHaptics = false;
     float portalShotHapticAmplitude = 0.35f;
     float portalShotHapticDurationSeconds = 0.05f;
+    bool haptics = true;
+    float hapticsIntensity = 1.0f;
+    bool hapticsNativeRumble = true;
+    bool hapticsHeldObject = true;
+    bool hapticsButtons = true;
     float hudDistanceMeters = 1.3f;
     float hudWidthMeters = 1.4f;
     float hudVerticalOffsetMeters = -0.15f;
@@ -234,6 +239,11 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
     readFloat("PortalShotHapticAmplitude", result.value.portalShotHapticAmplitude, 0.0f, 1.0f);
     readFloat("PortalShotHapticDurationSeconds", result.value.portalShotHapticDurationSeconds,
               0.01f, 0.15f);
+    readBool("Haptics", result.value.haptics);
+    readFloat("HapticsIntensity", result.value.hapticsIntensity, 0.0f, 1.0f);
+    readBool("HapticsNativeRumble", result.value.hapticsNativeRumble);
+    readBool("HapticsHeldObject", result.value.hapticsHeldObject);
+    readBool("HapticsButtons", result.value.hapticsButtons);
     readFloat("HUDDistanceMeters", result.value.hudDistanceMeters, 0.6f, 3.0f);
     readFloat("HUDWidthMeters", result.value.hudWidthMeters, 0.5f, 2.5f);
     readFloat("HUDVerticalOffsetMeters", result.value.hudVerticalOffsetMeters, -0.6f, 0.6f);

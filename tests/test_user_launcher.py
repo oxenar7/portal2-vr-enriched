@@ -46,6 +46,8 @@ class SettingsTests(unittest.TestCase):
                 "ExperimentalViewmodelAlignment": "true", "AimFromViewmodelMuzzle": "true",
                 "ExperimentalHUDOverlay": "true", "ExperimentalPortalShotHaptics": "true",
                 "VerboseDiagnostics": "false", "RenderWindow": "0",
+                "Haptics": "true", "HapticsNativeRumble": "true",
+                "HapticsHeldObject": "true", "HapticsButtons": "true",
             }.items():
                 self.assertEqual(result[key], want, key)
             for key, want in {"HUDDistanceMeters": 1.25, "HUDWidthMeters": 1.65,
@@ -60,7 +62,8 @@ class SettingsTests(unittest.TestCase):
                    "AimMode": ["3", "-1"], "TrackingMode": ["Flying"],
                    "SnapTurning": ["yes", "1"], "HUDWidthMeters": ["0", "2.6"],
                    "ControllerPitchDegrees": ["61"], "PortalShotHapticDurationSeconds": ["0.16"],
-                   "ViewmodelAngCustomOffsetZ": ["181"]}
+                   "ViewmodelAngCustomOffsetZ": ["181"], "Haptics": ["on"],
+                   "HapticsIntensity": ["1.1", "-0.1"]}
         for key, bad_values in invalid.items():
             for value in bad_values:
                 with self.subTest(key=key, value=value):

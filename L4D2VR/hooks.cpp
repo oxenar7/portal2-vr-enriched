@@ -36,6 +36,14 @@ static bool ValidPlayerSlot(const Game *game, int index)
     return game && index > 0 && static_cast<size_t>(index) < game->m_PlayersVRInfo.size();
 }
 
+// Server entity belongs to the local VR player (listen server / single player).
+static bool IsLocalPlayerEntity(void *entity)
+{
+    if (!entity || !Hooks::EntityIndex || !Hooks::m_Game->m_EngineClient) return false;
+    const int localIndex = Hooks::m_Game->m_EngineClient->GetLocalPlayer();
+    return localIndex > 0 && Hooks::EntityIndex(entity) == localIndex;
+}
+
 static std::optional<PortalOrientation::Rotation> ReadPortalRotation(const void* portal)
 {
     if (!portal)
@@ -411,6 +419,11 @@ void Hooks::Initialize()
 		return;
 	}
 	m_CompatibilityHooks.Install([](const std::string &warning) { Logger::Write(warning); });
+	m_VR->m_NativeRumbleHookActive = hkRumbleEffect.isEnabled;
+	Logger::Write(std::string("Haptic hooks: RumbleEffect=") + (hkRumbleEffect.isEnabled ? "OK" : "MISSING") +
+		" PropButtonPress=" + (hkPropButtonPress.isEnabled ? "OK" : "MISSING") +
+		" FloorButtonPress=" + (hkFloorButtonPress.isEnabled ? "OK" : "MISSING") +
+		" FloorButtonUnpress=" + (hkFloorButtonUnpress.isEnabled ? "OK" : "MISSING"));
 	// The optional particle path remains independently disabled on failure.
 	if (m_Game->m_Offsets->m_LaserAvailable && hkPrecache.enableHook()) {
 		m_Game->m_Offsets->m_LaserAvailable = false;
@@ -868,6 +881,12 @@ int Hooks::initSourceHooks()
 	REQUIRE_HOOK(hkUpdateObject, m_Game->m_Offsets->UpdateObject.address, dUpdateObject);
 	REQUIRE_HOOK(hkUpdateObjectVM, m_Game->m_Offsets->UpdateObjectVM.address, dUpdateObjectVM);
 	REQUIRE_HOOK(hkEyeAngles, m_Game->m_Offsets->EyeAngles.address, dEyeAngles);
+
+	// Haptics: optional, each one only disables its own vibration source.
+	REGISTER_IF_RESOLVED(hkRumbleEffect, m_Game->m_Offsets->RumbleEffect.address, dRumbleEffect);
+	REGISTER_IF_RESOLVED(hkPropButtonPress, m_Game->m_Offsets->PropButtonPress.address, dPropButtonPress);
+	REGISTER_IF_RESOLVED(hkFloorButtonPress, m_Game->m_Offsets->FloorButtonPress.address, dFloorButtonPress);
+	REGISTER_IF_RESOLVED(hkFloorButtonUnpress, m_Game->m_Offsets->FloorButtonUnpress.address, dFloorButtonUnpress);
 
 	// Portal Gun VFX
 	REQUIRE_HOOK(hkGetDefaultFOV, m_Game->m_Offsets->GetDefaultFOV.address, dGetDefaultFOV);
@@ -1983,6 +2002,9 @@ bool __fastcall Hooks::dUpdateObject(void* ecx, void* edx, void* pPlayer, float 
 	if (!wasTrue)
 		m_VR->m_OverrideEyeAngles = false;
 
+	if (value && IsLocalPlayerEntity(pPlayer))
+		m_VR->NoteHeldObjectUpdate();
+
 	return value;
 }
 
@@ -1997,7 +2019,48 @@ bool __fastcall Hooks::dUpdateObjectVM(void* ecx, void* edx, void* pPlayer, floa
 	if (!wasTrue)
 		m_VR->m_OverrideEyeAngles = false;
 
+	if (value && IsLocalPlayerEntity(pPlayer))
+		m_VR->NoteHeldObjectUpdate();
+
 	return value;
+}
+
+void __cdecl Hooks::dRumbleEffect(int splitSlot, int index, int data, int flags) {
+	hkRumbleEffect.fOriginal(splitSlot, index, data, flags);
+	if (!RuntimePublished()) return;
+	m_VR->QueueNativeRumble(splitSlot, index & 0xff, data & 0xff, flags & 0xff);
+}
+
+void __fastcall Hooks::dPropButtonPress(void* ecx, void* edx, void* pActivator) {
+	if (!RuntimePublished()) return hkPropButtonPress.fOriginal(ecx, pActivator);
+	// Offsets are pinned by the PropButtonPress signature.
+	const auto *button = static_cast<const unsigned char *>(ecx);
+	const bool locked = button[0x514] != 0;
+	const bool idle = *reinterpret_cast<const int *>(button + 0x3BC) ==
+		*reinterpret_cast<const int *>(button + 0x530);
+	hkPropButtonPress.fOriginal(ecx, pActivator);
+	if (!IsLocalPlayerEntity(pActivator)) return;
+	if (locked)
+		m_VR->QueueHapticEvent(Haptics::Event::ButtonLocked);
+	else if (idle)
+		m_VR->QueueHapticEvent(Haptics::Event::Button);
+}
+
+void __fastcall Hooks::dFloorButtonPress(void* ecx, void* edx, void* pActivator) {
+	if (!RuntimePublished()) return hkFloorButtonPress.fOriginal(ecx, pActivator);
+	// The pressed flag offset is pinned by the FloorButtonPress signature.
+	const bool wasPressed = static_cast<const unsigned char *>(ecx)[0x6E0] != 0;
+	hkFloorButtonPress.fOriginal(ecx, pActivator);
+	if (!wasPressed)
+		m_VR->QueueHapticEvent(Haptics::Event::FloorPress);
+}
+
+void __fastcall Hooks::dFloorButtonUnpress(void* ecx, void* edx, void* pActivator) {
+	if (!RuntimePublished()) return hkFloorButtonUnpress.fOriginal(ecx, pActivator);
+	const bool wasPressed = static_cast<const unsigned char *>(ecx)[0x6E0] != 0;
+	hkFloorButtonUnpress.fOriginal(ecx, pActivator);
+	if (wasPressed)
+		m_VR->QueueHapticEvent(Haptics::Event::FloorRelease);
 }
 
 // This function is apparently not used by Portal 2, remove?

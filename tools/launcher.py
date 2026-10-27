@@ -226,7 +226,9 @@ class Launcher:
                 features.append("aligned portal gun / glow")
             if values["ExperimentalHUDOverlay"] == "true":
                 features.append("caption overlay")
-            if values["ExperimentalPortalShotHaptics"] == "true":
+            if values["Haptics"] == "true" and values["HapticsIntensity"] != "0":
+                features.append("controller haptics")
+            elif values["ExperimentalPortalShotHaptics"] == "true":
                 features.append("portal shot haptics")
             self.summary_var.set(" • ".join(features))
         except ValueError as error:

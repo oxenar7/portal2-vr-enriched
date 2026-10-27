@@ -164,6 +164,8 @@ typedef void(__cdecl* tUTIL_Portal_AngleTransform)(const VMatrix& matThisToLinke
 typedef int(__thiscall* tEntindex)(void* thisptr);
 typedef void*(__thiscall* tGetOwner)(void* thisptr);
 typedef void* (__thiscall* tCWeaponPortalgun_FirePortal)(void* thisptr, bool bPortal2, Vector* pVector);
+typedef void(__cdecl* tRumbleEffect)(int splitSlot, int index, int data, int flags);
+typedef void(__thiscall* tButtonPress)(void* thisptr, void* pActivator);
 
 class Hooks
 {
@@ -270,6 +272,10 @@ public:
 	static inline Hook<tPrecache> hkPrecache;
 	static inline Hook<tCHudCrosshair_ShouldDraw> hkCHudCrosshair_ShouldDraw;
 	static inline Hook<tCWeaponPortalgun_FirePortal> hkCWeaponPortalgun_FirePortal;
+	static inline Hook<tRumbleEffect> hkRumbleEffect;
+	static inline Hook<tButtonPress> hkPropButtonPress;
+	static inline Hook<tButtonPress> hkFloorButtonPress;
+	static inline Hook<tButtonPress> hkFloorButtonUnpress;
 
 	//Precache
 
@@ -351,6 +357,12 @@ public:
 	static bool __fastcall dUpdateObjectVM(void* ecx, void* edx, void* pPlayer, float flError);
 	static void __fastcall dRotateObject(void* ecx, void* edx, void* pPlayer, float fRotAboutUp, float fRotAboutRight, bool bUseWorldUpInsteadOfPlayerUp);
 	static QAngle& __fastcall dEyeAngles(void* ecx, void* edx);
+
+	// Haptics
+	static void __cdecl dRumbleEffect(int splitSlot, int index, int data, int flags);
+	static void __fastcall dPropButtonPress(void* ecx, void* edx, void* pActivator);
+	static void __fastcall dFloorButtonPress(void* ecx, void* edx, void* pActivator);
+	static void __fastcall dFloorButtonUnpress(void* ecx, void* edx, void* pActivator);
 
 	static int __fastcall dGetDefaultFOV(void* ecx, void* edx);
 	static double __fastcall dGetFOV(void* ecx, void* edx);

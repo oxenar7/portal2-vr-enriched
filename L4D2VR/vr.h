@@ -77,7 +77,14 @@ public:
 	std::chrono::steady_clock::time_point m_NextMenuPlacementLog{};
 	std::chrono::steady_clock::time_point m_NextHapticErrorLog{};
 	Haptics::ShotGate m_PortalShotHapticGate;
+	Haptics::EventQueue m_GameHapticQueue;
+	Haptics::HoldTracker m_HoldTracker;
+	std::chrono::steady_clock::time_point m_NextHoldPulse{};
+	std::chrono::steady_clock::time_point m_RumbleLogWindow{};
+	int m_RumbleLogLines = 0;
+	bool m_PortalShotSupersededLogged = false;
 	bool m_HapticOutputsAvailable = false;
+	bool m_NativeRumbleHookActive = false;
 	bool m_OpenVRStarted = false;
     Portal2VROpenVR::SessionLease m_OpenVRSession;
 	int m_LastPoseError = 0;
@@ -308,6 +315,12 @@ public:
 	void ProcessInput();
 	void QueuePortalShotHaptic();
 	void DispatchPortalShotHaptic(bool actionsReady);
+	bool GameHapticsEnabled() const;
+	void QueueNativeRumble(int slot, int index, int data, int flags);
+	void QueueHapticEvent(Haptics::Event event);
+	void NoteHeldObjectUpdate();
+	void DispatchGameHaptics(bool actionsReady);
+	void TriggerHapticPulse(const Haptics::Pulse &pulse);
 	void ProcessViewActions();
 	Vector GetMovementForward();
 	void ProcessHeldAction(vr::VRActionHandle_t actionHandle, DigitalButtonState &state,

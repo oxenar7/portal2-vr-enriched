@@ -464,12 +464,15 @@ void VR::Update()
         ReleaseHeldActions();
         ReleaseMenuMouse();
         m_PortalShotHapticGate.Clear();
+        m_GameHapticQueue.Clear();
+        m_HoldTracker.Suspend(std::chrono::steady_clock::now());
         return;
     }
     if (!m_Game->m_VguiSurface->IsCursorVisible())
         ProcessViewActions();
     UpdateTracking();
     DispatchPortalShotHaptic(actionsReady);
+    DispatchGameHaptics(actionsReady);
 
     if (m_Game->m_VguiSurface->IsCursorVisible()) {
         m_PrevFrameTime = std::chrono::steady_clock::now();
@@ -1023,7 +1026,8 @@ bool VR::UpdatePosesAndActions()
         m_LastPoseError = 0;
         ++m_PoseFetchSequence;
     }
-    const bool useHaptics = m_Config.experimentalPortalShotHaptics && m_HapticOutputsAvailable;
+    const bool useHaptics = (m_Config.experimentalPortalShotHaptics || GameHapticsEnabled()) &&
+        m_HapticOutputsAvailable;
     vr::VRActiveActionSet_t activeSets[] = { m_ActiveActionSet, m_ActiveHapticActionSet };
     auto inputError = m_Input->UpdateActionState(activeSets,
         sizeof(vr::VRActiveActionSet_t), useHaptics ? 2 : 1);
@@ -1059,6 +1063,14 @@ void VR::DispatchPortalShotHaptic(bool actionsReady)
         m_PortalShotHapticGate.Clear();
         return;
     }
+    // The forwarded native PORTALGUN rumble already covers this shot.
+    if (GameHapticsEnabled() && m_Config.hapticsNativeRumble && m_NativeRumbleHookActive) {
+        if (!m_PortalShotSupersededLogged)
+            Logger::Write("ExperimentalPortalShotHaptics superseded by HapticsNativeRumble");
+        m_PortalShotSupersededLogged = true;
+        m_PortalShotHapticGate.Clear();
+        return;
+    }
     // Only an eligible attempt starts the pulse-spacing window.
     if (!m_PortalShotHapticGate.Consume())
         return;
@@ -1074,6 +1086,107 @@ void VR::DispatchPortalShotHaptic(bool actionsReady)
             m_NextHapticErrorLog = now + std::chrono::seconds(5);
         }
     }
+}
+
+bool VR::GameHapticsEnabled() const
+{
+    return m_Config.haptics && m_Config.hapticsIntensity > 0.0f;
+}
+
+// Called from the client Rumble user-message path; logs every effect so the
+// events Portal 2 emits can be read back from portal2vr.log.
+void VR::QueueNativeRumble(int slot, int index, int data, int flags)
+{
+    const auto now = std::chrono::steady_clock::now();
+    const auto pattern = Haptics::NativeRumblePattern(index, data, flags);
+    const bool forward = slot == 0 && GameHapticsEnabled() && m_Config.hapticsNativeRumble;
+    if (now - m_RumbleLogWindow >= std::chrono::seconds(1)) {
+        m_RumbleLogWindow = now;
+        m_RumbleLogLines = 0;
+    }
+    if (m_RumbleLogLines < 20) {
+        ++m_RumbleLogLines;
+        Logger::Write("Native rumble: slot=" + std::to_string(slot) +
+            " effect=" + std::to_string(index) + " data=" + std::to_string(data) +
+            " flags=" + std::to_string(flags) +
+            (!pattern.count ? " (stop/update, no pulse)" : !pattern.mapped ? " (unmapped, generic pulse)" : "") +
+            (forward ? "" : " (not forwarded)"));
+    }
+    if (forward)
+        m_GameHapticQueue.Push(index, pattern, now);
+}
+
+void VR::QueueHapticEvent(Haptics::Event event)
+{
+    if (!GameHapticsEnabled()) return;
+    const bool held = event == Haptics::Event::Pickup || event == Haptics::Event::Drop;
+    if (held ? !m_Config.hapticsHeldObject : !m_Config.hapticsButtons) return;
+    m_GameHapticQueue.Push(1000 + static_cast<int>(event), Haptics::EventPattern(event),
+        std::chrono::steady_clock::now());
+}
+
+void VR::NoteHeldObjectUpdate()
+{
+    m_HoldTracker.Update(std::chrono::steady_clock::now());
+}
+
+void VR::DispatchGameHaptics(bool actionsReady)
+{
+    const auto now = std::chrono::steady_clock::now();
+    const bool gameplay = m_IsVREnabled && m_Game->m_EngineClient->IsInGame() &&
+        !m_Game->m_VguiSurface->IsCursorVisible();
+    if (!GameHapticsEnabled() || !actionsReady || !gameplay || !m_TrackingOutputValid ||
+        !m_HapticOutputsAvailable) {
+        m_GameHapticQueue.Clear();
+        m_HoldTracker.Suspend(now);
+        return;
+    }
+    switch (m_HoldTracker.Poll(now)) {
+    case Haptics::HoldTracker::Change::Pickup:
+        QueueHapticEvent(Haptics::Event::Pickup);
+        m_NextHoldPulse = now + std::chrono::milliseconds(80);
+        break;
+    case Haptics::HoldTracker::Change::Drop:
+        QueueHapticEvent(Haptics::Event::Drop);
+        break;
+    default:
+        break;
+    }
+    std::array<Haptics::Pattern, Haptics::EventQueue::kCapacity> patterns;
+    const auto count = m_GameHapticQueue.Drain(patterns);
+    for (std::size_t i = 0; i < count; ++i) {
+        for (int p = 0; p < patterns[i].count; ++p)
+            TriggerHapticPulse(patterns[i].pulses[p]);
+    }
+    if (m_Config.hapticsHeldObject && m_HoldTracker.Holding() && now >= m_NextHoldPulse) {
+        m_NextHoldPulse = now + Haptics::kHoldPulseInterval;
+        TriggerHapticPulse({Haptics::Target::GunHand, 0.0f, Haptics::kHoldPulseSeconds,
+            90.0f, Haptics::kHoldAmplitude});
+    }
+}
+
+void VR::TriggerHapticPulse(const Haptics::Pulse &requested)
+{
+    const auto pulse = Haptics::ScaledPulse(requested, m_Config.hapticsIntensity);
+    if (pulse.amplitude <= 0.0f) return;
+    const auto gun = Haptics::OutputHand(m_LeftHanded);
+    const auto off = gun == Haptics::Hand::Left ? Haptics::Hand::Right : Haptics::Hand::Left;
+    const auto fire = [&](Haptics::Hand hand) {
+        const bool valid = hand == Haptics::Hand::Left ? m_LeftControllerPose.valid : m_RightControllerPose.valid;
+        if (!valid) return;
+        const auto action = hand == Haptics::Hand::Left ? m_HapticLeft : m_HapticRight;
+        const auto result = m_Input->TriggerHapticVibrationAction(action, pulse.delaySeconds,
+            pulse.durationSeconds, pulse.frequency, pulse.amplitude, vr::k_ulInvalidInputValueHandle);
+        if (result != vr::VRInputError_None) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= m_NextHapticErrorLog) {
+                Logger::Write("OpenVR game haptic failed (error " + std::to_string(result) + ")");
+                m_NextHapticErrorLog = now + std::chrono::seconds(5);
+            }
+        }
+    };
+    if (pulse.target != Haptics::Target::OffHand) fire(gun);
+    if (pulse.target != Haptics::Target::GunHand) fire(off);
 }
 
 void VR::GetViewParameters() 
@@ -1130,6 +1243,7 @@ void VR::InvalidateTrackingOutput()
     m_PortalCoordinator.CancelPending();
     m_RoomscaleObserver.OnPose(false, {}, m_PoseFetchSequence, 0.0f, 1.0f, true);
     m_PortalShotHapticGate.Clear();
+    m_GameHapticQueue.Clear();
     ResetMuzzleSample();
 }
 
@@ -2476,6 +2590,11 @@ void VR::ParseConfigFile()
         " AimFromViewmodelMuzzle=" + std::to_string(m_Config.aimFromViewmodelMuzzle) +
         " ExperimentalPortalShotHaptics=" +
         std::to_string(m_Config.experimentalPortalShotHaptics) +
+        " Haptics=" + std::to_string(m_Config.haptics) +
+        " HapticsIntensity=" + std::to_string(m_Config.hapticsIntensity) +
+        " HapticsNativeRumble=" + std::to_string(m_Config.hapticsNativeRumble) +
+        " HapticsHeldObject=" + std::to_string(m_Config.hapticsHeldObject) +
+        " HapticsButtons=" + std::to_string(m_Config.hapticsButtons) +
         " ViewmodelPosCustomOffset=" +
         std::to_string(m_ViewmodelPosCustomOffset.x) + "," +
         std::to_string(m_ViewmodelPosCustomOffset.y) + "," +

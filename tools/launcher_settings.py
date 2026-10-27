@@ -95,6 +95,9 @@ SETTINGS = (
 BASIC_KEYS = frozenset(("TrackingMode", "MovementDirection", "RoomscaleMode", "SnapTurning",
                         "SnapTurnAngle", "TurnSpeed", "RenderWindow"))
 _EYE_HUD_KEYS = frozenset(("HUDInEyeCentered", "HUDInEyeScale", "HUDInEyeVerticalOffset", "ShowSourceCrosshair"))
+_HAPTICS_KEYS = frozenset(("Haptics", "HapticsIntensity", "HapticsNativeRumble", "HapticsHeldObject", "HapticsButtons"))
+# Key groups added after the first complete schema. A saved schema missing whole groups gains their defaults.
+_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS)
 
 
 def recommended_settings() -> dict[str, str]:
@@ -157,13 +160,15 @@ def load_preferences(path: Path, legacy: dict) -> dict:
                                        "steam_exe": legacy["steam_exe"], "values": recommended_settings()})
     try:
         prefs = json.loads(path.read_text(encoding="utf-8"))
-        # Upgrade only the previous complete schema, without writing on load.
+        # Upgrade only previous complete schemas, without writing on load.
         # Unknown, missing and partially upgraded schemas still fail validation.
         if isinstance(prefs, dict) and isinstance(prefs.get("values"), dict):
-            previous_keys = {item.key for item in SETTINGS} - _EYE_HUD_KEYS
-            if prefs["values"].keys() == previous_keys:
+            all_keys = {item.key for item in SETTINGS}
+            missing = all_keys - prefs["values"].keys()
+            groups = [group for group in _ADDED_KEY_GROUPS if group & missing]
+            if prefs["values"].keys() <= all_keys and missing and                     all(group <= missing for group in groups) and missing == frozenset().union(*groups):
                 prefs = {**prefs, "values": {**prefs["values"],
-                         **{item.key: item.default for item in SETTINGS if item.key in _EYE_HUD_KEYS}}}
+                         **{item.key: item.default for item in SETTINGS if item.key in missing}}}
         return _validated_preferences(prefs)
     except (OSError, UnicodeError, ValueError) as error:
         raise ValueError(f"Cannot read launcher preferences {path}: {error}. The file was not changed.") from error

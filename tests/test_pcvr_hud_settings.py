@@ -9,6 +9,8 @@ from tools import test_launcher_core as core
 
 NEW_DEFAULTS = {"HUDInEyeCentered": "false", "HUDInEyeScale": "0.45",
                 "HUDInEyeVerticalOffset": "0.05", "ShowSourceCrosshair": "true"}
+HAPTICS_DEFAULTS = {"Haptics": "true", "HapticsIntensity": "1", "HapticsNativeRumble": "true",
+                    "HapticsHeldObject": "true", "HapticsButtons": "true"}
 
 
 class EyeHudSettingsTests(unittest.TestCase):
@@ -91,6 +93,26 @@ class EyeHudSettingsTests(unittest.TestCase):
             self.assertEqual(rendered, migrated["values"])
             self.assertEqual(json.loads(path.read_text())["game_dir"], old["game_dir"])
             self.assertEqual(json.loads(path.read_text())["steam_exe"], old["steam_exe"])
+
+    def test_pre_haptics_preferences_gain_haptic_defaults(self):
+        current = settings.recommended_settings()
+        pre_haptics = {k: v for k, v in current.items() if k not in HAPTICS_DEFAULTS}
+        pre_eye_hud = {k: v for k, v in pre_haptics.items() if k not in NEW_DEFAULTS}
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            for old_values, added in ((pre_haptics, HAPTICS_DEFAULTS),
+                                      (pre_eye_hud, {**NEW_DEFAULTS, **HAPTICS_DEFAULTS})):
+                original = json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                       "values": dict(old_values, TurnSpeed="0.27")}).encode()
+                path.write_bytes(original)
+                migrated = settings.load_preferences(path, {})
+                self.assertEqual(migrated["values"], {**old_values, "TurnSpeed": "0.27", **added})
+                self.assertEqual(path.read_bytes(), original)
+            partial = dict(pre_haptics, Haptics="false")
+            path.write_text(json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                        "values": partial}), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                settings.load_preferences(path, {})
 
     def test_old_complete_schema_still_rejects_invalid_old_value(self):
         old_values = {k: v for k, v in settings.recommended_settings().items() if k not in NEW_DEFAULTS}

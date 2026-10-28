@@ -1,3 +1,4 @@
+# In game, Options > VR saves changes to VR/ingame_settings.txt, which overrides matching keys below.
 TurnSpeed=0.15
 VerboseDiagnostics=false # Opt in to repeated allocation/MSAA details and reticle/roomscale summaries; startup, changed geometry and failures always logged
 TrackingMode=Seated # Standing uses SteamVR floor height; changing this requires a restart

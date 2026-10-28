@@ -100,6 +100,55 @@ _HAPTICS_KEYS = frozenset(("Haptics", "HapticsIntensity", "HapticsNativeRumble",
 _ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS)
 
 
+# Options > VR in the game writes these keys to VR/ingame_settings.txt, which the mod
+# layers over config.txt. Match VrSettings::Pages() in L4D2VR/vr_settings.h.
+INGAME_SETTINGS = "VR/ingame_settings.txt"
+INGAME_KEYS = frozenset((
+    "SnapTurning", "SnapTurnAngle", "TurnSpeed", "MovementDirection", "LeftHanded", "Haptics",
+    "HapticsIntensity", "ExperimentalWorldAimMarker", "6DOF", "ControllerPitchDegrees",
+    "HeightOffsetMeters", "VRScale", "IPDScale", "HapticsNativeRumble", "HapticsHeldObject",
+    "HapticsButtons", "ReticleDistanceScaling", "RenderWindow"))
+
+
+def read_ingame_settings(game: Path) -> dict[str, str]:
+    """Raw in-game overrides for menu keys; empty when the game has none. Never writes."""
+    try:
+        text = (game / INGAME_SETTINGS).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return {}
+    found = {}
+    for line in text.splitlines():
+        body = line.split("#", 1)[0]
+        if "=" not in body:
+            continue
+        key, value = (part.strip() for part in body.split("=", 1))
+        if key in INGAME_KEYS and value:
+            found[key] = value
+    return found
+
+
+def merge_ingame_settings(values: dict[str, str], ingame: dict[str, str]) -> dict[str, str]:
+    """Launcher values with each valid in-game override applied; invalid ones are skipped."""
+    merged = dict(values)
+    for key, value in ingame.items():
+        try:
+            merged = validate_settings({**merged, key: value})
+        except ValueError:
+            continue
+    return merged
+
+
+def retire_ingame_settings(game: Path, imported: dict[str, str]) -> bool:
+    """After config.txt carries the imported values, drop the in-game file if it is unchanged."""
+    if not imported or read_ingame_settings(game) != imported:
+        return False
+    try:
+        (game / INGAME_SETTINGS).unlink()
+    except OSError:
+        return False
+    return True
+
+
 def recommended_settings() -> dict[str, str]:
     # Reuse the tested profile's calibration rather than creating a second copy.
     from .test_launcher_core import BASE_VALUES, PROFILES

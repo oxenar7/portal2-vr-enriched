@@ -99,6 +99,9 @@ bool Game::Initialize()
     m_VR = new VR(this);
     if (!m_VR->m_IsInitialized)
         return false;
+    // Optional: Options > VR is drawn only with a verified VGUI ABI.
+    m_VR->m_OptionsMenu.Initialize(m_VR, m_VguiSurface,
+        GetInterface("vgui2.dll", "VGUI_Panel009"), GetInterface("vgui2.dll", "VGUI_Scheme010"));
     m_Hooks = new Hooks(this);
     m_Hooks->Initialize();
     if (!m_Hooks->m_Ready) {

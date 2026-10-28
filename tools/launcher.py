@@ -35,9 +35,16 @@ class Launcher:
         self.saved = prefs
         self.game_var = tk.StringVar(root, prefs["game_dir"])
         self.steam_var = tk.StringVar(root, prefs["steam_exe"])
-        self.vars = {key: tk.StringVar(root, value) for key, value in prefs["values"].items()}
+        # Options > VR changes made in the game show up here as unsaved edits.
+        self.ingame = settings.read_ingame_settings(Path(prefs["game_dir"]))
+        values = settings.merge_ingame_settings(prefs["values"], self.ingame)
+        self.vars = {key: tk.StringVar(root, value) for key, value in values.items()}
         self.profile_var, self.summary_var = tk.StringVar(root), tk.StringVar(root)
-        self.status_var = tk.StringVar(root, "Ready. Save is local; Apply and Launch update the game with backups.")
+        changed = sum(values[key] != prefs["values"][key] for key in values)
+        self.status_var = tk.StringVar(root, (
+            f"Loaded {changed} setting(s) changed in game under Options > VR. "
+            "Save, Apply or Launch to keep them here.") if changed else
+            "Ready. Save is local; Apply and Launch update the game with backups.")
         self.root.title("Portal2VR Launcher")
         width = max(860, min(1040, root.winfo_screenwidth() - 80))
         height = max(620, min(820, root.winfo_screenheight() - 120))
@@ -298,6 +305,10 @@ class Launcher:
         self.saved = prefs
         core.stage_install(self.repo, Path(prefs["game_dir"]), self.install_state_path,
                            "baseline", config_values=prefs["values"])
+        # config.txt now carries the imported in-game values; an unretired file would
+        # override later launcher edits.
+        settings.retire_ingame_settings(Path(prefs["game_dir"]), self.ingame)
+        self.ingame = {}
         self._changed()
 
     def apply(self):

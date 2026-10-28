@@ -528,6 +528,7 @@
     <ClCompile Include="sdk\checksum_crc.cpp" />
     <ClCompile Include="sdk\newbitbuf.cpp" />
     <ClCompile Include="vr.cpp" />
+    <ClCompile Include="vr_options_menu.cpp" />
     <ClCompile Include="..\thirdparty\minhook\src\buffer.c" />
     <ClCompile Include="..\thirdparty\minhook\src\hook.c" />
     <ClCompile Include="..\thirdparty\minhook\src\trampoline.c" />

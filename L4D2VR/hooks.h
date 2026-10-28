@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <iostream>
 #include "MinHook.h"
 #include "bitbuf.h"
@@ -108,6 +109,7 @@ typedef void(__thiscall *tDrawModelExecute)(void *thisptr, void *state, const Mo
 typedef void(__thiscall *tPushRenderTargetAndViewport)(void *thisptr, ITexture *pTexture, ITexture *pDepthTexture, int nViewX, int nViewY, int nViewW, int nViewH);
 typedef void(__thiscall *tPopRenderTargetAndViewport)(void *thisptr);
 typedef void(__thiscall *tVgui_Paint)(void *thisptr, int mode);
+typedef void(__thiscall *tPaintTraverseEx)(void *thisptr, std::uintptr_t panel, bool paintPopups);
 typedef int(__cdecl *tIsSplitScreen)();
 typedef DWORD *(__thiscall *tPrePushRenderTarget)(void *thisptr, int a2);
 typedef ITexture* (__thiscall* tGetFullScreenTexture)();
@@ -220,6 +222,7 @@ public:
 	static inline Hook<tPushRenderTargetAndViewport> hkPushRenderTargetAndViewport;
 	static inline Hook<tPopRenderTargetAndViewport> hkPopRenderTargetAndViewport;
 	static inline Hook<tVgui_Paint> hkVgui_Paint;
+	static inline Hook<tPaintTraverseEx> hkPaintTraverseEx;
 	static inline bool m_VguiPaintActive = false;
 	static inline bool m_HudTargetActive = false;
 	static inline bool m_HudPushSeenDuringPaint = false;
@@ -322,6 +325,7 @@ public:
 	static void __fastcall dPushRenderTargetAndViewport(void *ecx, void *edx, ITexture *pTexture, ITexture *pDepthTexture, int nViewX, int nViewY, int nViewW, int nViewH);
 	static void __fastcall dPopRenderTargetAndViewport(void *ecx, void *edx);
 	static void __fastcall dVGui_Paint(void *ecx, void *edx, int mode);
+	static void __fastcall dPaintTraverseEx(void *ecx, void *edx, std::uintptr_t panel, bool paintPopups);
 	static int __fastcall dIsSplitScreen();
 	static DWORD *__fastcall dPrePushRenderTarget(void *ecx, void *edx, int a2);
 	static ITexture *__fastcall dGetFullScreenTexture();

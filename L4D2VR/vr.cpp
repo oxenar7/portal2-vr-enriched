@@ -148,6 +148,8 @@ VR::VR(Game *game)
                   (trackingOrigin == vr::TrackingUniverseStanding ? "Standing" : "Seated"));
     std::error_code configTimeError;
     m_ConfigLastModified = std::filesystem::last_write_time("VR\\config.txt", configTimeError);
+    m_SettingsLastModified = std::filesystem::last_write_time(VrSettings::kOverridesPath, configTimeError);
+    if (configTimeError) m_SettingsLastModified = {};
 
     const auto d3dStart = GetTickCount64();
     while (FAILED(AcquireSoleVRBridge(&m_D3DDevice, &m_D3DVR))) {
@@ -408,8 +410,12 @@ void VR::Update()
         m_NextConfigCheck = now + std::chrono::seconds(1);
         std::error_code error;
         const auto modified = std::filesystem::last_write_time("VR\\config.txt", error);
-        if (!error && modified != m_ConfigLastModified) {
-            m_ConfigLastModified = modified;
+        std::error_code settingsError;
+        auto settingsModified = std::filesystem::last_write_time(VrSettings::kOverridesPath, settingsError);
+        if (settingsError) settingsModified = {}; // a deleted overrides file is a change too
+        if ((!error && modified != m_ConfigLastModified) || settingsModified != m_SettingsLastModified) {
+            if (!error) m_ConfigLastModified = modified;
+            m_SettingsLastModified = settingsModified;
             ParseConfigFile();
         }
     }
@@ -1322,8 +1328,10 @@ void VR::ProcessMenuInput()
     hovering = hovering && windowWidth > 0 && windowHeight > 0 &&
         m_VKBackBuffer.m_VRTexture.handle;
     m_Overlay->SetOverlayFlag(overlay, vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible, hovering);
-    if (!hovering)
+    if (!hovering) {
         ReleaseMenuMouse();
+        m_OptionsMenu.PointerLeave();
+    }
     const bool inGame = m_Game->m_EngineClient->IsInGame();
     vr::VREvent_t event{};
     // Drain releases even when a controller leaves the overlay after a press.
@@ -1334,22 +1342,39 @@ void VR::ProcessMenuInput()
                 const auto point = UiInput::MapMenuPointer(event.data.mouse.x, event.data.mouse.y,
                     m_VKBackBuffer.m_VulkanData.m_nWidth, m_VKBackBuffer.m_VulkanData.m_nHeight,
                     windowWidth, windowHeight, inGame);
-                if (point)
+                // While the VR page is open the native cursor stays parked on the
+                // empty row under it, so Options buttons below never roll over.
+                if (point && (!m_OptionsMenu.PointerMove(point->x, point->y) || !m_OptionsMenu.PageOpen()))
                     m_Game->m_VguiInput->SetCursorPos(point->x, point->y);
             }
             break;
         case vr::VREvent_MouseButtonDown:
-            if (hovering)
+            if (hovering && !m_OptionsMenu.PointerPress())
                 SendMenuMouse(m_MenuPointerState.Press());
             break;
         case vr::VREvent_MouseButtonUp:
             SendMenuMouse(m_MenuPointerState.Release());
             break;
         case vr::VREvent_ScrollDiscrete:
-            if (hovering)
+            if (hovering && !m_OptionsMenu.Scroll(static_cast<int>(event.data.scroll.ydelta)))
                 m_Game->m_VguiInput->InternalMouseWheeled((int)event.data.scroll.ydelta);
             break;
         }
+    }
+    if (m_OptionsMenu.PageOpen()) {
+        // The VR page is modal: controller navigation never reaches the native menu.
+        using Nav = VrOptionsMenu::Nav;
+        const bool back = PressedDigitalAction(m_MenuBack, true);
+        const bool pause = PressedDigitalAction(m_Pause, true);
+        if (back || pause) m_OptionsMenu.Navigate(Nav::Back);
+        if (hovering)
+            return;
+        if (PressedDigitalAction(m_MenuSelect, true)) m_OptionsMenu.Navigate(Nav::Select);
+        if (PressedDigitalAction(m_MenuUp, true)) m_OptionsMenu.Navigate(Nav::Up);
+        if (PressedDigitalAction(m_MenuDown, true)) m_OptionsMenu.Navigate(Nav::Down);
+        if (PressedDigitalAction(m_MenuLeft, true)) m_OptionsMenu.Navigate(Nav::Left);
+        if (PressedDigitalAction(m_MenuRight, true)) m_OptionsMenu.Navigate(Nav::Right);
+        return;
     }
     if (hovering)
         return;
@@ -2517,7 +2542,16 @@ void VR::ParseConfigFile()
         Logger::Write("VR/config.txt unavailable; keeping previous/default configuration");
         return;
     }
-    auto parsed = ApplyRuntimeConfig(m_Config, ParseConfig(configStream, m_Config), m_IsInitialized);
+    std::ostringstream baseConfig;
+    baseConfig << configStream.rdbuf();
+    m_SettingsOverrides.clear();
+    if (std::ifstream overridesStream{VrSettings::kOverridesPath})
+        m_SettingsOverrides = VrSettings::ParseOverrides(overridesStream);
+    if (!m_SettingsOverrides.empty())
+        Logger::Write("Config: " + std::to_string(m_SettingsOverrides.size()) +
+            " in-game VR option(s) from VR/ingame_settings.txt override config.txt");
+    std::istringstream composed(VrSettings::ComposeConfigText(baseConfig.str(), m_SettingsOverrides));
+    auto parsed = ApplyRuntimeConfig(m_Config, ParseConfig(composed, m_Config), m_IsInitialized);
     for (const auto &error : parsed.errors) Logger::Write("Config: " + error);
     for (const auto &note : parsed.notes) Logger::Write("Config: " + note);
     if (m_IsInitialized && m_VRScale != parsed.value.vrScale)
@@ -2604,4 +2638,61 @@ void VR::ParseConfigFile()
         std::to_string(viewmodelBase.y + m_ViewmodelPosCustomOffset.y) + "," +
         std::to_string(viewmodelBase.z + m_ViewmodelPosCustomOffset.z) +
         (m_Config.experimentalViewmodelAlignment ? " (aligned grip base)" : " (legacy base)"));
+}
+
+bool VR::WriteMenuSettings(const VrSettings::Overrides &overrides)
+{
+    const char *path = VrSettings::kOverridesPath;
+    bool written = false;
+    if (overrides.empty()) {
+        written = DeleteFileA(path) || GetLastError() == ERROR_FILE_NOT_FOUND;
+    } else {
+        // Replace atomically so a crash never leaves a truncated overrides file.
+        const std::string temporary = std::string(path) + ".tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            stream << VrSettings::SerializeOverrides(overrides);
+            written = static_cast<bool>(stream.flush());
+        }
+        written = written && MoveFileExA(temporary.c_str(), path,
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+        if (!written) DeleteFileA(temporary.c_str());
+    }
+    if (!written) {
+        Logger::Write("In-game VR options: writing VR/ingame_settings.txt failed (" +
+            std::to_string(GetLastError()) + "); setting not applied");
+        return false;
+    }
+    std::error_code error;
+    m_SettingsLastModified = std::filesystem::last_write_time(path, error);
+    if (error) m_SettingsLastModified = {};
+    return true;
+}
+
+bool VR::ApplyMenuSetting(const std::string &key, const std::string &value)
+{
+    if (!VrSettings::IsMenuKey(key)) return false;
+    const auto previous = m_SettingsOverrides;
+    auto next = previous;
+    next[key] = value;
+    if (!WriteMenuSettings(next)) return false;
+    ParseConfigFile();
+    // ApplyRuntimeConfig keeps the previous value when a dependent setting is rejected.
+    for (const auto &page : VrSettings::Pages())
+        for (const auto &item : page.items)
+            if (item.key && key == item.key && item.read && item.read(m_Config) != value) {
+                Logger::Write("In-game VR options: " + key + "=" + value + " rejected; previous value kept");
+                if (WriteMenuSettings(previous)) ParseConfigFile();
+                return false;
+            }
+    Logger::Write("In-game VR options: " + key + "=" + value + " applied");
+    return true;
+}
+
+void VR::ResetMenuSettings()
+{
+    if (WriteMenuSettings({})) {
+        ParseConfigFile();
+        Logger::Write("In-game VR options: Use Defaults removed VR/ingame_settings.txt; config.txt values active");
+    }
 }

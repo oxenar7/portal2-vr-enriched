@@ -33,6 +33,12 @@ These observations concern the tested installation, not every headset, game buil
 
 Settings provides tracking, movement, roomscale, turning and desktop-render options. Advanced exposes all current mod parameters with descriptions/bounds: caption placement, gun calibration, IPD/world scale, controller pitch, haptics, portal orientation, anti-aliasing, aiming and diagnostics. Invalid numbers and incompatible roomscale/muzzle settings are rejected before deployment. Preview config shows what will be written.
 
+### In-game VR options
+
+Portal 2's own **Options** screen gains a **VR** entry under Controller. It opens a **VR** dialog styled like Video, drawn with the game's tiles, fonts and menu sounds: snap/smooth turning, movement direction, left-handed mode, vibration and the aim line, plus an **Advanced VR** page (positional tracking, controller pitch, standing height, world and IPD scale, individual vibration sources, reticle scaling, desktop mirror). Point and click with the laser, or use the stick: up/down to select, left/right to change, Back to leave. Changes apply immediately; world scale and standing height apply on **Recenter**. Settings that need a restart stay in the launcher.
+
+Changes are saved to `VR/ingame_settings.txt`, which overrides matching keys of `VR/config.txt`; **Use Defaults** deletes it. The launcher shows those values as unsaved edits on its next start and folds them into `config.txt` on Apply/Launch, then removes the file. The page draws only after every VGUI vtable slot it uses matches a prologue verified on the installed `vguimatsurface.dll`/`vgui2.dll`; otherwise it is skipped with a `bin/portal2vr.log` warning and `config.txt` keeps working.
+
 `Restore recommended` resets the form without changing installation paths or silently applying anything. Turning off **World aim line** selects the native particle beam for diagnosis; it is **not confirmed visible** and is not recommended.
 
 Before first installation the shared installer takes a hash-verified snapshot of any existing files it will replace. Later updates retain that first snapshot. **Restore original game files** restores pre-existing files and removes only files created by the launcher; backups remain available. Externally edited managed files, corrupted backups and concurrent installer operations are refused rather than overwritten.

@@ -22,7 +22,11 @@
 #include "../L4D2VR/native_reticle.h"
 #include "../L4D2VR/native_beam.h"
 #include "../L4D2VR/shared_runtime_session.h"
+#include "../L4D2VR/vr_settings.h"
+#include "../L4D2VR/portal2_vgui.h"
+#include "../L4D2VR/portal2_transition.h"
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -99,8 +103,175 @@ static void expectVectorNear(const Vector &actual, const Vector &expected, const
     expectNear(actual.z, expected.z, caseName);
 }
 
+static void expectText(const std::string &actual, const std::string &expected, const char* caseName)
+{
+    if (actual != expected) {
+        std::cerr << caseName << " failed: \"" << actual << "\" != \"" << expected << "\"\n";
+        ++failures;
+    }
+}
+
+static const VrSettings::Item &MenuItem(const char *key)
+{
+    for (const auto &page : VrSettings::Pages())
+        for (const auto &item : page.items)
+            if (item.key && std::strcmp(item.key, key) == 0) return item;
+    std::cerr << "menu item " << key << " missing\n";
+    std::abort();
+}
+
+static void TestVrOptions()
+{
+    using namespace VrSettings;
+    const std::uint8_t code[] = {0x55, 0x8B, 0xEC, 0x8B, 0x0D, 0x78, 0x74, 0x15, 0x10};
+    expect(Portal2Vgui::MatchesSignature(code, "55 8B EC 8B 0D ? ? ? 10"), true,
+           "VGUI signature wildcards skip relocated absolute addresses");
+    expect(Portal2Vgui::MatchesSignature(code, "55 8B EC 8B 0D ?? ?? ?? 11"), false,
+           "VGUI signature rejects a different fixed byte");
+    expect(Portal2Vgui::MatchesSignature(code, ""), false, "empty VGUI signature never matches");
+    expectInt(static_cast<int>(Portal2Vgui::SignatureLength("55 ? ?? 8B")), 4,
+              "VGUI signature length counts wildcard bytes");
+
+    // client.dll 0x102F82F0, CBaseModFrame::DrawDialogBackground marking a tile.
+    const std::uint8_t site[] = {0x6A, 0x00, 0x51, 0x8B, 0x4D, 0xEC, 0x50, 0x8D, 0x14, 0x0B, 0x52,
+        0xE8, 0xF0, 0x0E, 0x00, 0x00, 0x8B, 0xC8, 0xE8, 0x19, 0x2B, 0x00, 0x00, 0x8B, 0xC8,
+        0xE8, 0xE2, 0xFC, 0x00, 0x00, 0x80, 0xBE, 0x00, 0x07, 0x00, 0x00, 0x00};
+    expect(Portal2Vgui::MatchesSignature(site, Portal2Transition::kCallSiteSignature), true,
+           "transition call-site signature matches the observed DrawDialogBackground bytes");
+    expectInt(static_cast<int>(Portal2Vgui::SignatureLength(Portal2Transition::kCallSiteSignature)),
+              static_cast<int>(sizeof(site)), "transition call-site signature covers the observed bytes");
+    const auto callTarget = [&](std::size_t offset) {
+        std::int32_t displacement = 0;
+        std::memcpy(&displacement, site + offset + 1, sizeof(displacement));
+        return 0x102F82F0u + static_cast<std::uint32_t>(offset) + 5u + static_cast<std::uint32_t>(displacement);
+    };
+    expectInt(static_cast<int>(callTarget(Portal2Transition::kSingletonCall)), 0x102F91F0,
+              "first call is CBaseModPanel::GetSingleton");
+    expectInt(static_cast<int>(callTarget(Portal2Transition::kPanelCall)), 0x102FAE20,
+              "second call is GetTransitionEffectPanel");
+    expectInt(static_cast<int>(callTarget(Portal2Transition::kMarkCall)), 0x10307FF0,
+              "third call is MarkTileAt");
+
+    ConfigSnapshot config;
+    expect(Step(MenuItem("SnapTurning"), config, 1) == std::optional<std::string>("true"), true,
+           "snap turning toggles on");
+    expect(Step(MenuItem("SnapTurnAngle"), config, 1).has_value(), false,
+           "snap angle is inert while snap turning is off");
+    config.snapTurning = true;
+    expect(Step(MenuItem("SnapTurnAngle"), config, 1) == std::optional<std::string>("60"), true,
+           "snap angle steps up the preset ladder");
+    expect(Step(MenuItem("SnapTurnAngle"), config, -1) == std::optional<std::string>("30"), true,
+           "snap angle steps down the preset ladder");
+    config.snapTurnAngle = 22.5f;
+    expect(Step(MenuItem("SnapTurnAngle"), config, 1) == std::optional<std::string>("30"), true,
+           "off-ladder snap angle snaps to the next preset");
+    config.snapTurnAngle = 90.0f;
+    expect(Step(MenuItem("SnapTurnAngle"), config, 1).has_value(), false, "snap angle stops at 90");
+    expect(Step(MenuItem("TurnSpeed"), config, 1).has_value(), false,
+           "smooth turn speed is inert while snap turning is on");
+    config.snapTurning = false;
+    expect(Step(MenuItem("TurnSpeed"), config, 1) == std::optional<std::string>("0.2"), true,
+           "smooth turn speed steps on its grid");
+    config.turnSpeed = 0.12f;
+    expect(Step(MenuItem("TurnSpeed"), config, 1) == std::optional<std::string>("0.15"), true,
+           "off-grid turn speed snaps up");
+    expect(Step(MenuItem("TurnSpeed"), config, -1) == std::optional<std::string>("0.1"), true,
+           "off-grid turn speed snaps down");
+    config.turnSpeed = 1.0f;
+    expect(Step(MenuItem("TurnSpeed"), config, 1).has_value(), false, "turn speed stops at the menu maximum");
+    config.vrScale = 100.0f;
+    expect(Step(MenuItem("VRScale"), config, 1).has_value(), false,
+           "a config value above the menu range never steps down when increasing");
+    expect(Step(MenuItem("MovementDirection"), config, 1) == std::optional<std::string>("LeftController"), true,
+           "movement direction cycles forward");
+    expect(Step(MenuItem("MovementDirection"), config, -1) == std::optional<std::string>("RightController"), true,
+           "movement direction wraps backward like a list button");
+    config.roomscaleMode = RoomscaleMotion::Mode::ActiveExperimental;
+    expect(Enabled(MenuItem("6DOF"), config), false, "positional tracking is locked by active roomscale");
+    config.roomscaleMode = RoomscaleMotion::Mode::Off;
+
+    expectText(DisplayValue(MenuItem("SnapTurning"), config), "Disabled", "toggle uses Portal 2 wording");
+    expectText(DisplayValue(MenuItem("MovementDirection"), config), "Head", "choice shows its label");
+    config.hapticsIntensity = 0.8f;
+    expectText(DisplayValue(MenuItem("HapticsIntensity"), config), "80%", "vibration strength is a percentage");
+    expectText(DisplayValue(MenuItem("SnapTurnAngle"), config), "90\xC2\xB0", "snap angle shows degrees");
+    config.heightOffsetMeters = 0.05f;
+    expectText(DisplayValue(MenuItem("HeightOffsetMeters"), config), "+0.05 m", "height offset is signed");
+    config.heightOffsetMeters = 0.0f;
+    expectText(DisplayValue(MenuItem("HeightOffsetMeters"), config), "0.00 m", "zero height offset is unsigned");
+    expectText(DisplayValue(MenuItem("IPDScale"), config), "1.00x", "IPD scale is a multiplier");
+    expectText(DisplayValue(MenuItem("RenderWindow"), config), "Disabled", "desktop mirror uses list labels");
+
+    std::istringstream overridesFile("# comment\nSnapTurning=true # inline\nRoomscaleMode=ActiveExperimental\n"
+                                     "TurnSpeed = 0.3\nBogus=1\nHaptics=\n");
+    const auto overrides = ParseOverrides(overridesFile);
+    expectInt(static_cast<int>(overrides.size()), 2, "overrides keep only menu keys with values");
+    expect(overrides.count("RoomscaleMode") == 0, true, "restart-only keys never come from the in-game file");
+    std::istringstream roundTrip(SerializeOverrides(overrides));
+    expect(ParseOverrides(roundTrip) == overrides, true, "overrides file round-trips");
+    std::istringstream layered(ComposeConfigText("SnapTurning=false\nTurnSpeed=0.15\nVRScale=40\n", overrides));
+    const auto layeredConfig = ParseConfig(layered, ConfigSnapshot{});
+    expect(layeredConfig.value.snapTurning, true, "in-game override wins over config.txt");
+    expectNear(layeredConfig.value.turnSpeed, 0.3f, "in-game number override wins over config.txt");
+    expectNear(layeredConfig.value.vrScale, 40.0f, "config.txt keys without overrides still apply");
+    expect(layeredConfig.errors.empty(), true, "layered config parses cleanly");
+
+    ConfigSnapshot active;
+    active.roomscaleMode = RoomscaleMotion::Mode::ActiveExperimental;
+    std::istringstream rejected(ComposeConfigText("RoomscaleMode=ActiveExperimental\n6DOF=true\n", {{"6DOF", "false"}}));
+    const auto rejectedConfig = ApplyRuntimeConfig(active, ParseConfig(rejected, active), true);
+    expect(rejectedConfig.value.sixDof, true, "dependent override rejection keeps the active value");
+
+    expectInt(TallTiles(7), 4, "seven rows fit the native four-tile Video dialog");
+    expectInt(TallTiles(9), 5, "main VR page is five tiles tall");
+    expectInt(TallTiles(10), 6, "advanced VR page is six tiles tall");
+    // Native Video dialog measured at 2560x1440 (3 px per unit): body 300,615 1050x600,
+    // first cursor bar at y=683 (75 px), Back button 146x45 at 300,1251.
+    const auto video = LayoutPage(3.0f, 300, 1215, 7, 120, {86, 199}, 45);
+    expectInt(video.body.y, 615, "Video body top");
+    expectInt(video.body.w, 1050, "Video body width is seven tiles");
+    expectInt(video.tab.y, 465, "title tab sits one tile above the body");
+    expectInt(video.tab.w, 300, "short titles use a two-tile tab");
+    expectInt(video.rows[0].x, 303, "rows inset one unit from the body");
+    expectInt(video.rows[0].w, 1044, "rows span the body minus two units");
+    const auto bar = CursorBar(video.rows[0], 3.0f);
+    expectInt(bar.y, 683, "cursor bar top matches the native dialog");
+    expectInt(bar.h, 75, "cursor bar is 25 units tall");
+    expectInt(video.footer[0].y, 1251, "footer sits 12 units below the body");
+    expectInt(video.footer[0].w, 146, "footer width is text plus 20 units");
+    expectInt(video.footer[1].x, 482, "footer buttons are 12 units apart");
+    expectInt(LayoutPage(3.0f, 300, 1215, 7, 350, {}, 45).tab.w, 450, "long titles widen the tab by tiles");
+    expectInt(EntryRect({303, 600, 744, 60}, 75).y, 675, "VR entry sits one row pitch below CONTROLLER");
+
+    HitAreas areas;
+    areas.layout = video;
+    areas.unit = 3.0f;
+    areas.arrowRow = 0;
+    areas.decrease = {1000, 683, 60, 75};
+    areas.increase = {1270, 683, 60, 75};
+    expect(HitTest(areas, 1010, 700).type == TargetType::Decrease, true, "left arrow hit");
+    expect(HitTest(areas, 1280, 700).type == TargetType::Increase, true, "right arrow hit");
+    const auto row = HitTest(areas, 500, 770);
+    expect(row.type == TargetType::Row && row.index == 1, true, "row hit uses the cursor bar band");
+    const auto footer = HitTest(areas, 520, 1270);
+    expect(footer.type == TargetType::Footer && footer.index == 1, true, "footer button hit");
+    expect(HitTest(areas, 320, 1211).type == TargetType::Body, true, "empty dialog area is still the dialog");
+    expect(HitTest(areas, 10, 10).type == TargetType::None, true, "outside the dialog");
+
+    auto focus = MoveFocus({false, 8}, 9, 2, 1);
+    expect(focus.footer && focus.index == 0, true, "down from the last row reaches the footer");
+    focus = MoveFocus(focus, 9, 2, 1);
+    expect(!focus.footer && focus.index == 0, true, "down from the footer wraps to the first row");
+    focus = MoveFocus(focus, 9, 2, -1);
+    expect(focus.footer && focus.index == 0, true, "up from the first row reaches the footer");
+    focus = MoveFocus(focus, 9, 2, -1);
+    expect(!focus.footer && focus.index == 8, true, "up from the footer returns to the last row");
+    expectInt(MoveFooterFocus({true, 1}, 2, 1).index, 1, "footer focus clamps at the last button");
+}
+
 int main()
 {
+    TestVrOptions();
     MuzzleOrigin::Sample muzzle;
     expect(muzzle.Origin({200,50,60}, {0,90,0}, 1, 2, 1.0).has_value(), false,
            "missing muzzle sample cannot fall back to controller origin");

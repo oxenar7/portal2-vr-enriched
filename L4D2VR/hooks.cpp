@@ -420,6 +420,8 @@ void Hooks::Initialize()
 	}
 	m_CompatibilityHooks.Install([](const std::string &warning) { Logger::Write(warning); });
 	m_VR->m_NativeRumbleHookActive = hkRumbleEffect.isEnabled;
+	Logger::Write(std::string("In-game VR options paint hook: ") +
+		(hkPaintTraverseEx.isEnabled ? "OK" : "MISSING (Options > VR hidden; VR/config.txt still applies)"));
 	Logger::Write(std::string("Haptic hooks: RumbleEffect=") + (hkRumbleEffect.isEnabled ? "OK" : "MISSING") +
 		" PropButtonPress=" + (hkPropButtonPress.isEnabled ? "OK" : "MISSING") +
 		" FloorButtonPress=" + (hkFloorButtonPress.isEnabled ? "OK" : "MISSING") +
@@ -887,6 +889,9 @@ int Hooks::initSourceHooks()
 	REGISTER_IF_RESOLVED(hkPropButtonPress, m_Game->m_Offsets->PropButtonPress.address, dPropButtonPress);
 	REGISTER_IF_RESOLVED(hkFloorButtonPress, m_Game->m_Offsets->FloorButtonPress.address, dFloorButtonPress);
 	REGISTER_IF_RESOLVED(hkFloorButtonUnpress, m_Game->m_Offsets->FloorButtonUnpress.address, dFloorButtonUnpress);
+
+	// Options > VR paints above every menu panel; unresolved when the VGUI ABI is unverified.
+	REGISTER_IF_RESOLVED(hkPaintTraverseEx, m_VR->m_OptionsMenu.PaintTarget(), dPaintTraverseEx);
 
 	// Portal Gun VFX
 	REQUIRE_HOOK(hkGetDefaultFOV, m_Game->m_Offsets->GetDefaultFOV.address, dGetDefaultFOV);
@@ -2023,6 +2028,13 @@ bool __fastcall Hooks::dUpdateObjectVM(void* ecx, void* edx, void* pPlayer, floa
 		m_VR->NoteHeldObjectUpdate();
 
 	return value;
+}
+
+void __fastcall Hooks::dPaintTraverseEx(void *ecx, void *edx, std::uintptr_t panel, bool paintPopups)
+{
+	hkPaintTraverseEx.fOriginal(ecx, panel, paintPopups);
+	if (RuntimePublished())
+		m_VR->m_OptionsMenu.Paint(panel, paintPopups);
 }
 
 void __cdecl Hooks::dRumbleEffect(int splitSlot, int index, int data, int flags) {

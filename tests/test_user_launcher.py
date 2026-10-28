@@ -185,6 +185,43 @@ class SettingsTests(unittest.TestCase):
                 core.stage_install(repo, game, state_path, "baseline", config_values=values)
             self.assertEqual(config.read_bytes(), b"user edit")
 
+    def test_ingame_settings_merge_valid_menu_keys_only(self):
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            (game / "VR").mkdir()
+            (game / "VR/ingame_settings.txt").write_text(
+                "# Written by the game\nSnapTurning=true\nTurnSpeed=9 # out of range\n"
+                "RoomscaleMode=Off\nSnapTurnAngle = 30\n", encoding="utf-8")
+            ingame = self.settings.read_ingame_settings(game)
+            self.assertEqual(ingame, {"SnapTurning": "true", "TurnSpeed": "9", "SnapTurnAngle": "30"})
+            values = self.settings.recommended_settings()
+            merged = self.settings.merge_ingame_settings(values, ingame)
+            self.assertEqual(merged["SnapTurning"], "true")
+            self.assertEqual(merged["SnapTurnAngle"], "30")
+            self.assertEqual(merged["TurnSpeed"], values["TurnSpeed"])
+            self.assertEqual(merged["RoomscaleMode"], values["RoomscaleMode"])
+            self.assertEqual(self.settings.read_ingame_settings(game / "missing"), {})
+
+    def test_ingame_keys_match_the_mod_menu_and_launcher_schema(self):
+        header = (REPO / "L4D2VR/vr_settings.h").read_text(encoding="utf-8")
+        import re
+        menu_keys = set(re.findall(r'(?:Toggle|Numeric)\("(\w+)"', header))
+        menu_keys |= set(re.findall(r'\.key = "(\w+)"', header))
+        self.assertEqual(menu_keys, set(self.settings.INGAME_KEYS))
+        self.assertLessEqual(self.settings.INGAME_KEYS, {item.key for item in self.settings.SETTINGS})
+
+    def test_retire_keeps_an_ingame_file_changed_after_import(self):
+        with TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            (game / "VR").mkdir()
+            path = game / "VR/ingame_settings.txt"
+            path.write_text("SnapTurning=true\n", encoding="utf-8")
+            imported = self.settings.read_ingame_settings(game)
+            path.write_text("SnapTurning=false\n", encoding="utf-8")
+            self.assertFalse(self.settings.retire_ingame_settings(game, imported))
+            self.assertTrue(path.exists())
+            self.assertTrue(self.settings.retire_ingame_settings(game, {"SnapTurning": "false"}))
+            self.assertFalse(path.exists())
 
 class LauncherTests(unittest.TestCase):
     def setUp(self):
@@ -377,6 +414,20 @@ class LauncherTests(unittest.TestCase):
         self.assertTrue(state["managed_files"])
         self.assertIn("Restore", self.app.status_var.get())
 
+    def test_ingame_changes_load_as_unsaved_edits_and_retire_after_apply(self):
+        (self.game / "VR").mkdir(parents=True, exist_ok=True)
+        ingame = self.game / "VR/ingame_settings.txt"
+        ingame.write_text("SnapTurning=true\nSnapTurnAngle=30\n", encoding="utf-8")
+        other = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path)
+        self.assertEqual(other.vars["SnapTurning"].get(), "true")
+        self.assertIn("unsaved", other.profile_var.get())
+        self.assertIn("Options > VR", other.status_var.get())
+        other.apply()
+        values = config_values((self.game / "VR/config.txt").read_text())
+        self.assertEqual(values["SnapTurning"], "true")
+        self.assertEqual(values["SnapTurnAngle"], "30")
+        self.assertFalse(ingame.exists())
+        self.assertEqual(json.loads(self.prefs_path.read_text())["values"]["SnapTurning"], "true")
 
 if __name__ == "__main__":
     unittest.main()

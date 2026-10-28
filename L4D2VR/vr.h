@@ -16,6 +16,7 @@
 #include "menu_overlay_placement.h"
 #include "muzzle_origin.h"
 #include "openvr_session.h"
+#include "vr_options_menu.h"
 #include <filesystem>
 
 #define MAX_STR_LEN 256
@@ -293,6 +294,10 @@ public:
 	ConfigSnapshot m_Config;
 	std::filesystem::file_time_type m_ConfigLastModified{};
 	std::chrono::steady_clock::time_point m_NextConfigCheck{};
+	// Options > VR writes VR/ingame_settings.txt, layered over config.txt.
+	VrOptionsMenu m_OptionsMenu;
+	VrSettings::Overrides m_SettingsOverrides;
+	std::filesystem::file_time_type m_SettingsLastModified{};
 
 	VR() {};
 	VR(Game *game);
@@ -363,6 +368,9 @@ public:
 	void ResetPosition();
 	void GetPoseData(vr::TrackedDevicePose_t &poseRaw, TrackedDevicePoseData &poseOut);
 	void ParseConfigFile();
+	bool WriteMenuSettings(const VrSettings::Overrides &overrides);
+	bool ApplyMenuSetting(const std::string &key, const std::string &value);
+	void ResetMenuSettings();
 	Vector Trace(uint32_t* localPlayer, bool &didHit);
 	Vector TraceEye(uint32_t* localPlayer, Vector cameraPos, Vector eyePos, QAngle& eyeAngle);
 };

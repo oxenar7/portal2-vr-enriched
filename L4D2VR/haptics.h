@@ -103,7 +103,7 @@ inline Pattern EventPattern(Event event)
     return {};
 }
 
-constexpr float kHoldAmplitude = 0.08f;
+constexpr float kHoldAmplitude = 0.065f;
 constexpr float kHoldPulseSeconds = 0.06f;
 constexpr auto kHoldPulseInterval = std::chrono::milliseconds(50);
 

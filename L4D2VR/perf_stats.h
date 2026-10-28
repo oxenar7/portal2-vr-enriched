@@ -154,6 +154,86 @@ inline CompositorCounts CountsSince(const CompositorCounts &start, const Composi
             delta(start.reprojected, now.reprojected), delta(start.timedOut, now.timedOut)};
 }
 
+// DXVK pipeline compiler counters, cumulative for the device.
+struct CompilerCounts
+{
+    std::uint64_t tasksDone = 0;  // background compiles finished by the workers
+    std::uint64_t tasksTotal = 0; // background compiles requested
+    std::uint64_t pipelines = 0;  // pipeline instances created
+    std::uint64_t libraries = 0;  // GPL shader libraries compiled
+};
+
+// Compiler activity over one log window. A frame is busy when compiles were
+// queued at its Present or finished since the previous one: in those frames
+// the workers competed with the game, SteamVR and the streamer for the CPU.
+class CompilerActivity
+{
+public:
+    // Records the counters read at a Present; returns whether the frame was busy.
+    bool Note(const CompilerCounts &now)
+    {
+        const std::uint64_t queued = Queued(now);
+        const bool busy = queued > 0 || (m_HaveLast && now.tasksDone != m_Last.tasksDone);
+        if (!m_HaveStart) {
+            m_Start = now;
+            m_HaveStart = true;
+        }
+        m_Last = now;
+        m_HaveLast = true;
+        m_MaxQueued = (std::max)(m_MaxQueued, queued);
+        if (busy) ++m_BusyFrames;
+        return busy;
+    }
+
+    // " compiled=N queued=N busy=N longBusy=N pipes=N libs=N" for the window,
+    // or nothing when the device never reported its counters.
+    std::string Format(std::uint32_t longBusyFrames) const
+    {
+        if (!m_HaveStart) return {};
+        const auto delta = [](std::uint64_t from, std::uint64_t to) { return to >= from ? to - from : 0ull; };
+        char buffer[160];
+        std::snprintf(buffer, sizeof(buffer), " compiled=%llu queued=%llu busy=%u longBusy=%u pipes=%llu libs=%llu",
+                      delta(m_Start.tasksDone, m_Last.tasksDone), m_MaxQueued, m_BusyFrames, longBusyFrames,
+                      delta(m_Start.pipelines, m_Last.pipelines), delta(m_Start.libraries, m_Last.libraries));
+        return buffer;
+    }
+
+    void StartWindow()
+    {
+        m_Start = m_Last;
+        m_HaveStart = m_HaveLast;
+        m_MaxQueued = 0;
+        m_BusyFrames = 0;
+    }
+
+    void Clear() { *this = {}; }
+
+private:
+    // The two counters are read separately, so a just-finished task can make
+    // the done count overtake the requested count.
+    static std::uint64_t Queued(const CompilerCounts &counts)
+    {
+        return counts.tasksTotal > counts.tasksDone ? counts.tasksTotal - counts.tasksDone : 0;
+    }
+
+    CompilerCounts m_Start{};
+    CompilerCounts m_Last{};
+    bool m_HaveStart = false;
+    bool m_HaveLast = false;
+    std::uint64_t m_MaxQueued = 0;
+    std::uint32_t m_BusyFrames = 0;
+};
+
+// " vm=used vmMax=total" in MiB: the 32-bit game's virtual address space.
+inline std::string FormatAddressSpace(std::uint64_t totalBytes, std::uint64_t availableBytes)
+{
+    if (!totalBytes || availableBytes > totalBytes) return {};
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), " vm=%llu vmMax=%llu", (totalBytes - availableBytes) >> 20,
+                  totalBytes >> 20);
+    return buffer;
+}
+
 // "name=avg/p95/max" in milliseconds, or nothing when the metric had no samples.
 inline std::string FormatMetric(Metric metric, const Summary &summary)
 {

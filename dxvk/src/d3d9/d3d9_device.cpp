@@ -4442,6 +4442,14 @@ namespace dxvk {
                 {static_cast<std::uint32_t>(idleResult)}) != RenderConditionChange::None)
           Logger::warn(str::format("Portal2VR Present queue drain: hr=", idleResult));
         if (SUCCEEDED(idleResult)) {
+          if (game->m_VR->m_Config.perfLog) {
+            const DxvkStatCounters stats = m_dxvkDevice->getStatCounters();
+            game->m_VR->PerfNoteCompiler({
+              stats.getCtr(DxvkStatCounter::PipeTasksDone),
+              stats.getCtr(DxvkStatCounter::PipeTasksTotal),
+              stats.getCtr(DxvkStatCounter::PipeCountGraphics),
+              stats.getCtr(DxvkStatCounter::PipeCountLibrary)});
+          }
           game->m_VR->PerfNotePresent(presentMs, drainMs, submitCount != 0);
           game->m_VR->Update();
           if (submitCount)

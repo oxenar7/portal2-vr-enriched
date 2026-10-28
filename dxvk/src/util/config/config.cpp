@@ -556,6 +556,15 @@ namespace dxvk {
     { R"(\\Gothic(3|3Final| III Forsaken Gods)\.exe$)", {{
       { "d3d9.supportDFFormats",           "False" },
     }} },
+    /* Portal 2 (Portal2VR)                       *
+     * Async only covers render targets drawn in  *
+     * consecutive frames. Water reflections and  *
+     * effects seen for the first time compiled   *
+     * inline and froze the headset for up to a   *
+     * second; GPL fast-links them instead.       */
+    { R"(\\portal2\.exe$)", {{
+      { "dxvk.enableGraphicsPipelineLibrary", "Auto" },
+    }} },
     /* Sonic Adventure 2                          */
     { R"(\\Sonic Adventure 2\\(launcher|sonic2app)\.exe$)", {{
       { "d3d9.floatEmulation",            "Strict" },

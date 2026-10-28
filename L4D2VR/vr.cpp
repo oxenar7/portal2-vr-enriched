@@ -501,8 +501,10 @@ void VR::PerfReset()
     m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = m_PerfLastPairMs = m_PerfLastSubmitMs = 0.0;
     m_PerfWorstFrame = {};
     m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
-    m_PerfLongFrames = m_PerfFastFrames = 0;
+    m_PerfLongFrames = m_PerfFastFrames = m_PerfLongBusyFrames = 0;
     m_PerfHaveCounts = false;
+    m_PerfCompiler.Clear();
+    m_PerfFrameCompilerBusy = false;
 }
 
 void VR::PerfRecord(PerfStats::Metric metric, double milliseconds)
@@ -520,6 +522,12 @@ void VR::PerfNotePresent(double presentMs, double drainMs, bool fastSubmit)
     PerfRecord(PerfStats::Metric::Drain, drainMs);
     m_PerfPendingDrainMs = drainMs;
     if (fastSubmit && m_Config.perfLog) ++m_PerfFastFrames;
+}
+
+void VR::PerfNoteCompiler(const PerfStats::CompilerCounts &counts)
+{
+    if (m_Config.perfLog && m_PerfCompiler.Note(counts))
+        m_PerfFrameCompilerBusy = true;
 }
 
 unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[3]) const
@@ -562,9 +570,13 @@ void VR::PerfBeginFrame(std::chrono::steady_clock::time_point now)
         m_PerfWindow.Add(PerfStats::Metric::Frame, frame.frame);
         m_PerfWindow.Add(PerfStats::Metric::MainWork, frame.main);
         if (frame.frame > m_PerfWorstFrame.frame) m_PerfWorstFrame = frame;
-        if (PerfStats::IsLongFrame(frame.frame, m_PerfDisplayHz)) ++m_PerfLongFrames;
+        if (PerfStats::IsLongFrame(frame.frame, m_PerfDisplayHz)) {
+            ++m_PerfLongFrames;
+            if (m_PerfFrameCompilerBusy) ++m_PerfLongBusyFrames;
+        }
     }
     m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = m_PerfLastPairMs = m_PerfLastSubmitMs = 0.0;
+    m_PerfFrameCompilerBusy = false;
     m_PerfLastUpdateStart = now;
 
     ++m_PerfFrames;
@@ -623,14 +635,20 @@ void VR::PerfFlush(std::chrono::steady_clock::time_point now)
         m_PerfFastFrames, m_PerfInGameFrames, m_PerfMenuFrames, m_PerfLevelLoads, m_PerfLongFrames, m_RenderWidth,
         m_RenderHeight, m_PerfDisplayHz, m_AntiAliasing, m_SetupOrigin.x, m_SetupOrigin.y,
         m_SetupOrigin.z, delta.presents, delta.reprojected, delta.dropped, delta.timedOut);
-    Logger::WriteSibling("portal2vr_perf.log", header + PerfStats::FormatMetrics(m_PerfWindow) +
+    MEMORYSTATUSEX memory{};
+    memory.dwLength = sizeof(memory);
+    const std::string addressSpace = GlobalMemoryStatusEx(&memory)
+        ? PerfStats::FormatAddressSpace(memory.ullTotalVirtual, memory.ullAvailVirtual) : std::string();
+    Logger::WriteSibling("portal2vr_perf.log", header + m_PerfCompiler.Format(m_PerfLongBusyFrames) + addressSpace +
+                                                   PerfStats::FormatMetrics(m_PerfWindow) +
                                                    PerfStats::FormatBreakdown(m_PerfWorstFrame));
 
     m_PerfWindow.Clear();
     m_PerfWindowStart = now;
     m_PerfWorstFrame = {};
     m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
-    m_PerfLongFrames = m_PerfFastFrames = 0;
+    m_PerfLongFrames = m_PerfFastFrames = m_PerfLongBusyFrames = 0;
+    m_PerfCompiler.StartWindow();
     m_PerfCountsStart = countsNow;
     m_PerfHaveCounts = haveCounts;
 }

@@ -157,6 +157,24 @@ static void TestPerfStats()
     expect(PerfStats::IsLongFrame(13.0, 120.0f), true, "the long threshold follows the refresh rate");
     expect(PerfStats::IsLongFrame(500.0, 0.0f), false, "unknown refresh rate never counts long frames");
 
+    PerfStats::CompilerActivity compiler;
+    expectText(compiler.Format(0), "", "no compiler counters means no compiler fields");
+    expect(compiler.Note({10, 10, 50, 7}), false, "an idle compiler leaves the frame unmarked");
+    expect(compiler.Note({10, 14, 52, 7}), true, "queued compiles mark the frame busy");
+    expect(compiler.Note({14, 14, 53, 9}), true, "compiles finished since the last Present mark the frame busy");
+    expect(compiler.Note({14, 14, 53, 9}), false, "the compiler goes idle again");
+    expect(compiler.Note({15, 14, 53, 9}), true, "done overtaking total between reads is not negative work");
+    expectText(compiler.Format(2), " compiled=5 queued=4 busy=3 longBusy=2 pipes=3 libs=2",
+               "compiler fields report the window's deltas, peak queue and busy frames");
+    compiler.StartWindow();
+    expectText(compiler.Format(0), " compiled=0 queued=0 busy=0 longBusy=0 pipes=0 libs=0",
+               "a new window starts from the last counters");
+    compiler.Clear();
+    expectText(compiler.Format(0), "", "a reset compiler window prints nothing");
+    expectText(PerfStats::FormatAddressSpace(4ull << 30, 1ull << 30), " vm=3072 vmMax=4096",
+               "address space reports used and total MiB");
+    expectText(PerfStats::FormatAddressSpace(0, 0), "", "unknown address space prints nothing");
+
     expect(ConfigSnapshot{}.perfLog, true, "perf log is on without any config entry");
     std::istringstream perfConfig("PerfLog=false\nPerfLogIntervalSeconds=10\n");
     const auto parsedPerf = ParseConfig(perfConfig, ConfigSnapshot{});

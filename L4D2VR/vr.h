@@ -328,8 +328,13 @@ public:
 	bool m_PerfWasInGame = false;
 	float m_PerfDisplayHz = 0.0f;
 	std::uint32_t m_PerfFastFrames = 0;
+	PerfStats::CompilerActivity m_PerfCompiler;
+	bool m_PerfFrameCompilerBusy = false;
+	std::uint32_t m_PerfLongBusyFrames = 0;
 	void PerfRecord(PerfStats::Metric metric, double milliseconds);
 	void PerfNotePresent(double presentMs, double drainMs, bool fastSubmit);
+	// DXVK's compiler counters, read by PresentEx while the perf log is on.
+	void PerfNoteCompiler(const PerfStats::CompilerCounts &counts);
 	// Surfaces this frame submits without a device drain (eyes, HUD), or 0
 	// when the frame must drain: menus, MSAA eyes, GpuDrainEachFrame=true.
 	unsigned int FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[3]) const;

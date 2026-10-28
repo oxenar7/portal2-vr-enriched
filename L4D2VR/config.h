@@ -46,6 +46,8 @@ struct ConfigSnapshot {
     float turnSpeed = 0.15f;
     bool snapTurning = false;
     float snapTurnAngle = 45.0f;
+    bool physicalCrouch = true;
+    float physicalCrouchDropMeters = 0.35f;
     bool leftHanded = false;
     float vrScale = 43.2f;
     float ipdScale = 1.0f;
@@ -253,6 +255,8 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
     readFloat("ControllerPitchDegrees", result.value.controllerPitchDegrees, -60.0f, 60.0f);
     readBool("SnapTurning", result.value.snapTurning);
     readFloat("SnapTurnAngle", result.value.snapTurnAngle, 1.0f, 180.0f);
+    readBool("PhysicalCrouch", result.value.physicalCrouch);
+    readFloat("PhysicalCrouchDropMeters", result.value.physicalCrouchDropMeters, 0.15f, 0.8f);
     readBool("LeftHanded", result.value.leftHanded);
     readFloat("VRScale", result.value.vrScale, 1.0f, 200.0f);
     readFloat("IPDScale", result.value.ipdScale, 0.5f, 1.5f);

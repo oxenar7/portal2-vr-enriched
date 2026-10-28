@@ -111,6 +111,13 @@ void PopulateClient(Image &image)
         0xB9,0,0,0,0,0xE8});
     image.U32(0x6FE508, image.At(0x78C010));
     image.U32(0x6FE50D, image.At(0xA08F68));
+    // RecvProp initializers for m_vecViewOffset[2] (0x104) and m_fFlags (0xF8).
+    image.Put(0x74C1A8, {'m','_','v','e','c','V','i','e','w','O','f','f','s','e','t','[','2',']',0});
+    image.Put(0x8F8E9, {0x68,0x04,0x01,0,0,0x68});
+    image.U32(0x8F8EF, image.At(0x74C1A8));
+    image.Put(0x742218, {'m','_','f','F','l','a','g','s',0});
+    image.Put(0x92CA4, {0x68,0xF8,0,0,0,0x68});
+    image.U32(0x92CAA, image.At(0x742218));
 }
 
 void TestHash()
@@ -213,6 +220,23 @@ int main()
     client.Seal(0x750000);
     Expect(!ResolveImage(client.bytes, client.size, kClientHash, Symbol::ViewModelFov).address,
         "changed cvar constructor reference rejects FOV fallback");
+
+    const auto fields = ResolvePlayerFieldsImage(client.bytes, client.size, kClientHash);
+    Expect(fields.viewOffsetZ == 0x104 && fields.flags == 0xF8,
+        "player view-offset and flags fields resolve from RecvProp initializers");
+    Expect(!ResolvePlayerFieldsImage(client.bytes, client.size, kServerHash).viewOffsetZ,
+        "player fields reject wrong DLL hash");
+    client.Unseal(0x750000);
+    client.bytes[0x8F8EA] = 0x08;
+    client.Seal(0x750000);
+    Expect(!ResolvePlayerFieldsImage(client.bytes, client.size, kClientHash).viewOffsetZ,
+        "changed view-offset RecvProp offset rejects player fields");
+    client.Unseal(0x750000);
+    client.bytes[0x8F8EA] = 0x04;
+    client.bytes[0x742218] = 'x';
+    client.Seal(0x750000);
+    Expect(!ResolvePlayerFieldsImage(client.bytes, client.size, kClientHash).flags,
+        "changed flags name rejects player fields");
 
     DWORD old = 0;
     VirtualProtect(server.bytes + 0x1000, 0x4FF000, PAGE_READONLY, &old);

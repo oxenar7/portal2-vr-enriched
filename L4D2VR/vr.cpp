@@ -1682,6 +1682,33 @@ void VR::ResetPosition()
     }
 }
 
+float VR::UpdatePhysicalCrouch(C_BasePlayer *player)
+{
+    constexpr int kOnGround = 1 << 0; // FL_ONGROUND
+    const auto now = std::chrono::steady_clock::now();
+    const float deltaSeconds = m_PhysicalCrouchLastUpdate == std::chrono::steady_clock::time_point{} ? 0.0f :
+        std::min(std::chrono::duration<float>(now - m_PhysicalCrouchLastUpdate).count(), 0.1f);
+    m_PhysicalCrouchLastUpdate = now;
+
+    const auto &fields = m_Game->m_Offsets->m_PlayerFields;
+    if (!m_Config.physicalCrouch || !m_6DOF || !fields.viewOffsetZ || !fields.flags || !player) {
+        m_PhysicalCrouch.Reset();
+        return 0.0f;
+    }
+    const bool eligible = m_Game->m_EngineClient->IsInGame() && !m_Game->m_VguiSurface->IsCursorVisible();
+    const bool wasDucking = m_PhysicalCrouch.Ducking();
+    // Before compensation, the view height offset is how far the head sits above its calibrated height.
+    const bool ducking = m_PhysicalCrouch.UpdateIntent(eligible, -m_HmdPosRelative.z / m_VRScale,
+        m_Config.physicalCrouchDropMeters);
+    if (ducking != wasDucking)
+        Logger::Write(ducking ? "Physical crouch: ducking" : "Physical crouch: standing");
+
+    const auto *bytes = reinterpret_cast<const std::uint8_t *>(player);
+    const float viewOffsetZ = *reinterpret_cast<const float *>(bytes + fields.viewOffsetZ);
+    const int flags = *reinterpret_cast<const int *>(bytes + fields.flags);
+    return m_PhysicalCrouch.UpdateCompensation(viewOffsetZ, (flags & kOnGround) != 0, deltaSeconds);
+}
+
 Vector VR::GetMovementForward()
 {
     const TrackingSpace::DeviceDirection hmd{m_TrackingOutputValid, m_HmdForward};
@@ -1750,6 +1777,7 @@ void VR::UpdateTracking()
         ResetMuzzleSample();
         ResetRoomscale(false, true);
         ResetPortalOrientation();
+        m_PhysicalCrouch.Reset();
         m_EyeHeightPlayerEntity = nullptr;
         m_HasEyeHeight = false;
         m_HasLastHmdOffset = false;
@@ -1759,6 +1787,7 @@ void VR::UpdateTracking()
     if (playerIndex != m_EyeHeightPlayerIndex || localPlayer != m_EyeHeightPlayerEntity) {
         ResetRoomscale(false, true);
         ResetPortalOrientation();
+        m_PhysicalCrouch.Reset();
         m_EyeHeightPlayerIndex = playerIndex;
         m_EyeHeightPlayerEntity = localPlayer;
         m_HasEyeHeight = false;
@@ -1805,6 +1834,7 @@ void VR::UpdateTracking()
     m_HmdPosRelative = m_Playspace.HmdOffsetUnits(hmdPosLocal, m_LastEyeHeightUnits);
     m_LastHmdOffsetUnits = m_HmdPosRelative;
     m_HasLastHmdOffset = true;
+    m_HmdPosRelative.z += UpdatePhysicalCrouch(localPlayer);
     m_TrackingOutputValid = true;
     const auto roomscaleStatus = m_RoomscaleObserver.OnPose(
         true, hmdPosLocal, m_PoseFetchSequence, m_Playspace.yawDegrees, m_Playspace.scale,
@@ -2543,6 +2573,8 @@ void VR::ParseConfigFile()
     }
     m_SnapTurning = m_Config.snapTurning;
     m_SnapTurnAngle = m_Config.snapTurnAngle;
+    if (!m_Config.physicalCrouch)
+        m_PhysicalCrouch.Reset();
     m_TurnSpeed = m_Config.turnSpeed;
     m_LeftHanded = m_Config.leftHanded;
     if (!m_IsInitialized)

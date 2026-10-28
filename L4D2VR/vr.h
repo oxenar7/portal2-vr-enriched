@@ -9,6 +9,7 @@
 #include "roomscale_motor.h"
 #include "ui_input.h"
 #include "haptics.h"
+#include "physical_crouch.h"
 #include "render_diagnostics.h"
 #include "render_target_readiness.h"
 #include "vr_resource_lifecycle.h"
@@ -165,6 +166,8 @@ public:
 	int m_EyeHeightPlayerIndex = -1;
 	C_BasePlayer* m_EyeHeightPlayerEntity = nullptr;
 	float m_LastEyeHeightUnits = 0.0f;
+	PhysicalCrouch::State m_PhysicalCrouch;
+	std::chrono::steady_clock::time_point m_PhysicalCrouchLastUpdate{};
 
 	float m_HeightOffset = 0.0;
 
@@ -337,6 +340,7 @@ public:
 	QAngle GetRecommendedViewmodelAbsAngle();
 	void UpdateHMDAngles();
 	void UpdateTracking();
+	float UpdatePhysicalCrouch(C_BasePlayer *player);
 	bool ExperimentalPortalOrientation() const;
 	void QueuePortalTraversal(std::uintptr_t playerKey, std::uintptr_t portalKey,
 	                          const std::optional<PortalOrientation::Rotation> &rotation);

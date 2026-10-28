@@ -32,6 +32,10 @@ SETTINGS = (
             help="Off uses smooth turning; on uses the angle below."),
     Setting("SnapTurnAngle", "Snap angle (degrees)", "Movement", "45", bounds=(1, 180)),
     Setting("TurnSpeed", "Smooth turn speed", "Movement", "0.15", bounds=(.01, 2)),
+    Setting("PhysicalCrouch", "Physical crouch", "Movement", "true", ("false", "true"),
+            help="Duck when your real head drops below the recentered height. Requires 6DOF."),
+    Setting("PhysicalCrouchDropMeters", "Crouch head drop (m)", "Movement", "0.35", bounds=(.15, .8),
+            help="How far the head must drop to duck; you stand up 5 cm earlier."),
     Setting("RenderWindow", "Extra desktop render", "Rendering", "0", ("0", "1"),
             help="1 renders a third view for the monitor; may cost performance. 0 is recommended."),
     Setting("6DOF", "Positional head tracking", "Tracking", "true", ("false", "true")),
@@ -93,11 +97,12 @@ SETTINGS = (
             help="Off logs startup, changed render geometry and failures. On adds repeated allocation/MSAA details and roomscale/aim summaries."),
 )
 BASIC_KEYS = frozenset(("TrackingMode", "MovementDirection", "RoomscaleMode", "SnapTurning",
-                        "SnapTurnAngle", "TurnSpeed", "RenderWindow"))
+                        "SnapTurnAngle", "TurnSpeed", "PhysicalCrouch", "RenderWindow"))
 _EYE_HUD_KEYS = frozenset(("HUDInEyeCentered", "HUDInEyeScale", "HUDInEyeVerticalOffset", "ShowSourceCrosshair"))
 _HAPTICS_KEYS = frozenset(("Haptics", "HapticsIntensity", "HapticsNativeRumble", "HapticsHeldObject", "HapticsButtons"))
+_CROUCH_KEYS = frozenset(("PhysicalCrouch", "PhysicalCrouchDropMeters"))
 # Key groups added after the first complete schema. A saved schema missing whole groups gains their defaults.
-_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS)
+_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS)
 
 
 def recommended_settings() -> dict[str, str]:

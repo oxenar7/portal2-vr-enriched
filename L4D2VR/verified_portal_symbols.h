@@ -24,6 +24,12 @@ struct Result {
     std::uintptr_t shootCaller = 0;
 };
 
+// C_BasePlayer field offsets; zero when the loaded client.dll is not the verified build.
+struct PlayerFields {
+    std::uint32_t viewOffsetZ = 0; // float m_vecViewOffset.z
+    std::uint32_t flags = 0;       // int m_fFlags
+};
+
 namespace Detail {
 
 struct Build {
@@ -188,6 +194,22 @@ inline bool FovWitness(const Image &image)
         image.Match(0x6FE511, {0xE8});
 }
 
+inline bool PlayerFieldWitness(const Image &image)
+{
+    // RecvPropFloat("m_vecViewOffset[2]", 0x104, ...) in DT_LocalPlayerExclusive and
+    // RecvPropInt("m_fFlags", 0xF8, ...): push offset immediately before push name.
+    constexpr char viewOffsetName[] = "m_vecViewOffset[2]";
+    constexpr char flagsName[] = "m_fFlags";
+    return image.Span(0x74C1A8, sizeof(viewOffsetName)) &&
+        std::memcmp(image.bytes + 0x74C1A8, viewOffsetName, sizeof(viewOffsetName)) == 0 &&
+        image.Match(0x8F8E9, {0x68,0x04,0x01,0,0,0x68}) &&
+        image.Word(0x8F8EF, image.At(0x74C1A8), true) &&
+        image.Span(0x742218, sizeof(flagsName)) &&
+        std::memcmp(image.bytes + 0x742218, flagsName, sizeof(flagsName)) == 0 &&
+        image.Match(0x92CA4, {0x68,0xF8,0,0,0,0x68}) &&
+        image.Word(0x92CAA, image.At(0x742218), true);
+}
+
 } // namespace Detail
 
 inline bool HashFileSha256(const wchar_t *path, char (&hex)[65])
@@ -249,27 +271,60 @@ inline Result ResolveImage(const std::uint8_t *source, std::size_t imageSize,
     return {};
 }
 
+inline PlayerFields ResolvePlayerFieldsImage(const std::uint8_t *source, std::size_t imageSize,
+                                             std::string_view sha256)
+{
+    if (sha256 != Detail::client.sha256) return {};
+    Detail::Image image;
+    if (!image.Open(source, imageSize, Detail::client) || !Detail::PlayerFieldWitness(image))
+        return {};
+    return {0x104, 0xF8};
+}
+
+namespace Detail {
+
+// The loaded module's image and the SHA-256 of the file it was loaded from.
+inline bool LoadedImage(const Build &build, const std::uint8_t *&bytes, std::size_t &size,
+                        char (&digest)[65])
+{
+    HMODULE module = GetModuleHandleW(build.module);
+    MODULEINFO info{};
+    if (!module || !GetModuleInformation(GetCurrentProcess(), module, &info, sizeof(info)) ||
+        info.lpBaseOfDll != module || info.SizeOfImage != build.size) return false;
+    std::vector<wchar_t> path(MAX_PATH);
+    for (;;) {
+        const DWORD count = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
+        if (!count) return false;
+        if (count < path.size() - 1) break;
+        if (path.size() >= 32768) return false;
+        path.resize(path.size() * 2);
+    }
+    if (!HashFileSha256(path.data(), digest)) return false;
+    bytes = static_cast<const std::uint8_t *>(info.lpBaseOfDll);
+    size = info.SizeOfImage;
+    return true;
+}
+
+} // namespace Detail
+
 inline Result ResolveLoaded(Symbol symbol)
 {
     if (symbol != Symbol::EyePosition && symbol != Symbol::WeaponShootPosition &&
         symbol != Symbol::ViewModelFov) return {};
-    const auto &build = Detail::For(symbol);
-    HMODULE module = GetModuleHandleW(build.module);
-    MODULEINFO info{};
-    if (!module || !GetModuleInformation(GetCurrentProcess(), module, &info, sizeof(info)) ||
-        info.lpBaseOfDll != module || info.SizeOfImage != build.size) return {};
-    std::vector<wchar_t> path(MAX_PATH);
-    for (;;) {
-        const DWORD count = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
-        if (!count) return {};
-        if (count < path.size() - 1) break;
-        if (path.size() >= 32768) return {};
-        path.resize(path.size() * 2);
-    }
+    const std::uint8_t *bytes = nullptr;
+    std::size_t size = 0;
     char digest[65]{};
-    if (!HashFileSha256(path.data(), digest)) return {};
-    return ResolveImage(static_cast<const std::uint8_t *>(info.lpBaseOfDll),
-        info.SizeOfImage, digest, symbol);
+    if (!Detail::LoadedImage(Detail::For(symbol), bytes, size, digest)) return {};
+    return ResolveImage(bytes, size, digest, symbol);
+}
+
+inline PlayerFields ResolveLoadedPlayerFields()
+{
+    const std::uint8_t *bytes = nullptr;
+    std::size_t size = 0;
+    char digest[65]{};
+    if (!Detail::LoadedImage(Detail::client, bytes, size, digest)) return {};
+    return ResolvePlayerFieldsImage(bytes, size, digest);
 }
 
 } // namespace VerifiedPortalSymbols

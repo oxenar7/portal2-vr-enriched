@@ -11,6 +11,7 @@ NEW_DEFAULTS = {"HUDInEyeCentered": "false", "HUDInEyeScale": "0.45",
                 "HUDInEyeVerticalOffset": "0.05", "ShowSourceCrosshair": "true"}
 HAPTICS_DEFAULTS = {"Haptics": "true", "HapticsIntensity": "1", "HapticsNativeRumble": "true",
                     "HapticsHeldObject": "true", "HapticsButtons": "true"}
+CROUCH_DEFAULTS = {"PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.35"}
 
 
 class EyeHudSettingsTests(unittest.TestCase):
@@ -113,6 +114,17 @@ class EyeHudSettingsTests(unittest.TestCase):
                                         "values": partial}), encoding="utf-8")
             with self.assertRaises(ValueError):
                 settings.load_preferences(path, {})
+
+    def test_pre_crouch_preferences_gain_crouch_defaults(self):
+        pre_crouch = {k: v for k, v in settings.recommended_settings().items() if k not in CROUCH_DEFAULTS}
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original = json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                   "values": dict(pre_crouch, SnapTurning="true")}).encode()
+            path.write_bytes(original)
+            migrated = settings.load_preferences(path, {})
+            self.assertEqual(migrated["values"], {**pre_crouch, "SnapTurning": "true", **CROUCH_DEFAULTS})
+            self.assertEqual(path.read_bytes(), original)
 
     def test_old_complete_schema_still_rejects_invalid_old_value(self):
         old_values = {k: v for k, v in settings.recommended_settings().items() if k not in NEW_DEFAULTS}

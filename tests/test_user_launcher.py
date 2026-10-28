@@ -48,6 +48,7 @@ class SettingsTests(unittest.TestCase):
                 "VerboseDiagnostics": "false", "RenderWindow": "0",
                 "Haptics": "true", "HapticsNativeRumble": "true",
                 "HapticsHeldObject": "true", "HapticsButtons": "true",
+                "PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.35",
             }.items():
                 self.assertEqual(result[key], want, key)
             for key, want in {"HUDDistanceMeters": 1.25, "HUDWidthMeters": 1.65,
@@ -63,7 +64,8 @@ class SettingsTests(unittest.TestCase):
                    "SnapTurning": ["yes", "1"], "HUDWidthMeters": ["0", "2.6"],
                    "ControllerPitchDegrees": ["61"], "PortalShotHapticDurationSeconds": ["0.16"],
                    "ViewmodelAngCustomOffsetZ": ["181"], "Haptics": ["on"],
-                   "HapticsIntensity": ["1.1", "-0.1"]}
+                   "HapticsIntensity": ["1.1", "-0.1"], "PhysicalCrouch": ["yes"],
+                   "PhysicalCrouchDropMeters": ["0.14", "0.81", "nan"]}
         for key, bad_values in invalid.items():
             for value in bad_values:
                 with self.subTest(key=key, value=value):

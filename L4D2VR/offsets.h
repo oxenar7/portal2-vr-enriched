@@ -52,6 +52,7 @@ class Offsets
 {
 public:
     bool m_LaserAvailable = false;
+    VerifiedPortalSymbols::PlayerFields m_PlayerFields = VerifiedPortalSymbols::ResolveLoadedPlayerFields();
     Offset GetFullScreenTexture =        { "client.dll", 0x1A83F0, "A1 ? ? ? ? 85 C0 75 53 8B 0D ? ? ? ? 8B 01 8B 90 ? ? ? ? 6A 00 6A 01 68 ? ? ? ? 68 ? ? ? ? FF D2 50 B9 ? ? ? ? E8 ? ? ? ? 80 3D ? ? ? ? ? 75 1C 8B 0D ? ? ? ? 8B 01 8B 90 ? ? ? ? 68 ? ? ? ? C6 05 ? ? ? ? ? FF D2 A1 ? ? ? ? C3" };
     Offset RenderView =                  { "client.dll", 0x1F2120, "55 8B EC 83 EC 2C 53 56 8B F1 6A 00 8D 8E ? ? ? ? E8 ? ? ? ?" };
     Offset g_pClientMode =               { "client.dll", 0x28A600, "8B 0D ? ? ? ? 8B", 2 };
@@ -232,6 +233,9 @@ public:
         m_LaserAvailable = status.laserAvailable;
         if (!m_LaserAvailable)
             Logger::Write("Laser pointer disabled: optional symbol unavailable.");
+        Logger::Write(m_PlayerFields.viewOffsetZ && m_PlayerFields.flags ?
+            "Player view-offset/flags fields verified; physical crouch available." :
+            "Warning: player view-offset/flags fields unverified; physical crouch is disabled.");
         return status.requiredAvailable;
     }
 };

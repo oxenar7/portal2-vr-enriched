@@ -8,6 +8,7 @@
 #include "../L4D2VR/portal_orientation.h"
 #include "../L4D2VR/ui_input.h"
 #include "../L4D2VR/haptics.h"
+#include "../L4D2VR/physical_crouch.h"
 #include "../L4D2VR/viewport_readiness.h"
 #include "../L4D2VR/render_target_readiness.h"
 #include "../L4D2VR/runtime_publication.h"
@@ -2002,6 +2003,48 @@ int main()
     expect(sharedSession.Acquire(startSession) == &sessionObject, true, "runtime can recover after failed bootstrap");
     expectInt(sessionInitializations, 2, "fresh lifecycle initializes once after previous shutdown");
     sharedSession.Release(stopSession);
+
+    PhysicalCrouch::State crouch;
+    expect(crouch.UpdateIntent(true, 0.34f, 0.35f), false, "head above crouch threshold stays standing");
+    expect(crouch.UpdateIntent(true, 0.35f, 0.35f), true, "head at crouch threshold ducks");
+    expect(crouch.UpdateIntent(true, 0.31f, 0.35f), true, "crouch hysteresis keeps ducking just above threshold");
+    expect(crouch.UpdateIntent(true, 0.29f, 0.35f), false, "head more than 5 cm above threshold stands up");
+    expect(crouch.UpdateIntent(true, 0.50f, 0.35f), true, "deep crouch ducks again");
+    expect(crouch.UpdateIntent(false, 0.50f, 0.35f), false, "menu or cursor releases physical crouch");
+    expect(crouch.UpdateIntent(true, std::numeric_limits<float>::quiet_NaN(), 0.35f), false,
+           "invalid head height never ducks");
+
+    PhysicalCrouch::State camera;
+    expectNear(camera.UpdateCompensation(64.0f, true, 0.016f), 0.0f, "standing view needs no compensation");
+    camera.UpdateIntent(true, 0.4f, 0.35f);
+    expectNear(camera.UpdateCompensation(60.0f, true, 0.05f), 4.0f,
+               "compensation follows Source's duck transition exactly");
+    expectNear(camera.UpdateCompensation(28.0f, true, 0.2f), 36.0f, "fully ducked eye is raised back to the real head");
+    expectNear(camera.UpdateCompensation(28.0f, false, 0.1f), 36.0f, "airborne frames hold the compensation");
+    camera.UpdateIntent(true, 0.1f, 0.35f);
+    expectNear(camera.UpdateCompensation(46.0f, true, 0.2f), 18.0f, "standing up releases with Source's unduck");
+    expectNear(camera.UpdateCompensation(64.0f, true, 0.1f), 0.0f, "unducked eye needs no compensation");
+    expectNear(camera.UpdateCompensation(28.0f, true, 0.1f), 0.0f,
+               "crouch-button duck while physically standing is not compensated");
+
+    PhysicalCrouch::State blocked;
+    blocked.UpdateCompensation(64.0f, true, 0.016f);
+    blocked.UpdateIntent(true, 0.4f, 0.35f);
+    blocked.UpdateCompensation(28.0f, true, 0.5f);
+    blocked.UpdateIntent(true, 0.0f, 0.35f);
+    expectNear(blocked.UpdateCompensation(28.0f, true, 1.0f), 36.0f,
+               "blocked stand keeps the real-head camera briefly");
+    expectNear(blocked.UpdateCompensation(28.0f, true, 0.6f), 0.0f,
+               "blocked stand falls back to Source's ducked eye after the hold");
+    expectNear(blocked.UpdateCompensation(-1.0f, true, 0.016f), 0.0f, "invalid view offset resets compensation");
+
+    PhysicalCrouch::State airborne;
+    airborne.UpdateCompensation(64.0f, true, 0.016f);
+    airborne.UpdateIntent(true, 0.4f, 0.35f);
+    expectNear(airborne.UpdateCompensation(28.0f, false, 0.1f), 0.0f,
+               "airborne duck raises the origin, so the eye is not compensated");
+    expectNear(airborne.UpdateCompensation(28.0f, true, 0.1f), 20.0f,
+               "landing ducked eases compensation in at the speed limit");
 
     if (failures) return 1;
     std::cout << "stabilization tests passed\n";

@@ -1145,6 +1145,8 @@ bool __fastcall Hooks::dCreateMove(void *ecx, void *edx, float flInputSampleTime
 	if (m_VR->m_IsVREnabled && m_VR->m_TrackingOutputValid)
 	{
 		cmd->viewangles = m_VR->m_HmdAngAbs;
+		if (m_VR->m_PhysicalCrouch.Ducking())
+			cmd->buttons |= IN_DUCK;
 
 		vr::InputAnalogActionData_t analogActionData;
 		if (m_VR->GetAnalogActionData(m_VR->m_ActionWalk, analogActionData)) {

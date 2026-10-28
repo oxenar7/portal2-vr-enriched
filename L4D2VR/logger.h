@@ -33,6 +33,29 @@ public:
         OutputDebugStringA(("Portal2VR: " + message + "\n").c_str());
     }
 
+    // A file next to portal2vr.log (the d3d9.dll directory).
+    static std::string SiblingPath(const char *fileName)
+    {
+        std::lock_guard<std::mutex> lock(Mutex());
+        const std::string &path = Path();
+        const auto slash = path.find_last_of("\\/");
+        return (slash == std::string::npos ? std::string() : path.substr(0, slash + 1)) + fileName;
+    }
+
+    // Same timestamped line format as Write, in a sibling file and without
+    // the debugger echo; used for high-volume logs such as the perf log.
+    static void WriteSibling(const char *fileName, const std::string &message)
+    {
+        const std::string path = SiblingPath(fileName);
+        std::lock_guard<std::mutex> lock(Mutex());
+        std::time_t now = std::time(nullptr);
+        std::tm local{};
+        localtime_s(&local, &now);
+        std::ofstream stream(path, std::ios::app);
+        if (stream)
+            stream << std::put_time(&local, "%Y-%m-%d %H:%M:%S") << " " << message << '\n';
+    }
+
 private:
     static std::string &Path()
     {

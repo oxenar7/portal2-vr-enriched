@@ -18,6 +18,7 @@
 #include "muzzle_origin.h"
 #include "openvr_session.h"
 #include "vr_options_menu.h"
+#include "perf_stats.h"
 #include <filesystem>
 
 #define MAX_STR_LEN 256
@@ -301,6 +302,34 @@ public:
 	VrOptionsMenu m_OptionsMenu;
 	VrSettings::Overrides m_SettingsOverrides;
 	std::filesystem::file_time_type m_SettingsLastModified{};
+
+	// Automatic performance log (VR/config.txt PerfLog). Everything below is
+	// touched only from the game thread: with mat_queue_mode 0 RenderView,
+	// PresentEx and Update all run there.
+	PerfStats::Window m_PerfWindow;
+	std::chrono::steady_clock::time_point m_PerfWindowStart{};
+	std::chrono::steady_clock::time_point m_PerfLastUpdateStart{};
+	// Waits inside the frame interval that ends at the next Update: the GPU
+	// drain of this Present and the WaitGetPoses of the previous Update.
+	double m_PerfPendingDrainMs = 0.0;
+	double m_PerfLastWaitPosesMs = 0.0;
+	std::uint32_t m_PerfFrames = 0;
+	std::uint32_t m_PerfStereoFrames = 0;
+	std::uint32_t m_PerfInGameFrames = 0;
+	std::uint32_t m_PerfMenuFrames = 0;
+	std::uint32_t m_PerfLevelLoads = 0;
+	std::uint32_t m_PerfLastTimingFrameIndex = 0;
+	PerfStats::CompositorCounts m_PerfCountsStart{};
+	bool m_PerfHaveCounts = false;
+	bool m_PerfWasInGame = false;
+	float m_PerfDisplayHz = 0.0f;
+	void PerfRecord(PerfStats::Metric metric, double milliseconds);
+	void PerfNotePresent(double presentMs, double drainMs);
+	void PerfBeginFrame(std::chrono::steady_clock::time_point now);
+	void PerfReadCompositorTiming();
+	bool PerfReadCompositorCounts(PerfStats::CompositorCounts &counts);
+	void PerfFlush(std::chrono::steady_clock::time_point now);
+	void PerfReset();
 
 	VR() {};
 	VR(Game *game);

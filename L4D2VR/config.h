@@ -16,6 +16,8 @@
 
 struct ConfigSnapshot {
     bool verboseDiagnostics = false;
+    bool perfLog = true;
+    int perfLogIntervalSeconds = 5;
     TrackingSpace::TrackingMode trackingMode = TrackingSpace::TrackingMode::Seated;
     TrackingSpace::MovementDirection movementDirection = TrackingSpace::MovementDirection::Hmd;
     RoomscaleMotion::Mode roomscaleMode = RoomscaleMotion::Mode::Off;
@@ -227,6 +229,8 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
             result.errors.push_back("PortalOrientationMode is invalid; keeping previous value");
     }
     readBool("VerboseDiagnostics", result.value.verboseDiagnostics);
+    readBool("PerfLog", result.value.perfLog);
+    readInt("PerfLogIntervalSeconds", result.value.perfLogIntervalSeconds, 1, 60);
     readBool("ExperimentalHUDOverlay", result.value.experimentalHudOverlay);
     readBool("HUDInEyeCentered", result.value.hudInEyeCentered);
     readFloat("HUDInEyeScale", result.value.hudInEyeScale, 0.2f, 1.0f);

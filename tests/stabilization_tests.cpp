@@ -26,6 +26,7 @@
 #include "../L4D2VR/vr_settings.h"
 #include "../L4D2VR/portal2_vgui.h"
 #include "../L4D2VR/portal2_transition.h"
+#include "../L4D2VR/perf_stats.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -110,6 +111,51 @@ static void expectText(const std::string &actual, const std::string &expected, c
         std::cerr << caseName << " failed: \"" << actual << "\" != \"" << expected << "\"\n";
         ++failures;
     }
+}
+
+static void TestPerfStats()
+{
+    std::vector<float> samples;
+    for (int i = 1; i <= 100; ++i) samples.push_back(static_cast<float>(i));
+    const auto summary = PerfStats::Summarize(samples);
+    expectInt(static_cast<int>(summary.count), 100, "perf summary counts every sample");
+    expectNear(summary.average, 50.5f, "perf summary averages samples");
+    expectNear(summary.p95, 95.0f, "perf p95 is the 95th of 100 sorted samples");
+    expectNear(summary.maximum, 100.0f, "perf summary keeps the maximum");
+    expectNear(PerfStats::Summarize({7.0f}).p95, 7.0f, "single sample is its own p95");
+    expectInt(static_cast<int>(PerfStats::Summarize({}).count), 0, "empty window summarises to nothing");
+
+    expectNear(static_cast<float>(PerfStats::MainWorkMs(22.2, 9.0, 4.0)), 9.2f,
+               "main work is the frame minus GPU drain and pose wait");
+    expectNear(static_cast<float>(PerfStats::MainWorkMs(10.0, 8.0, 4.0)), 0.0f,
+               "main work never goes negative when waits overlap the boundary");
+
+    PerfStats::Window window;
+    window.Add(PerfStats::Metric::Frame, 11.0);
+    window.Add(PerfStats::Metric::Frame, std::numeric_limits<double>::quiet_NaN());
+    window.Add(PerfStats::Metric::Frame, -1.0);
+    expectInt(static_cast<int>(window.Get(PerfStats::Metric::Frame).count), 1,
+              "invalid perf samples are dropped");
+    expectText(PerfStats::FormatMetrics(window), " frame=11.00/11.00/11.00",
+               "perf line lists only metrics with samples");
+    window.Clear();
+    expectText(PerfStats::FormatMetrics(window), "", "cleared perf window prints nothing");
+
+    const PerfStats::CompositorCounts start{100, 5, 10, 0};
+    const auto delta = PerfStats::CountsSince(start, {190, 6, 25, 1});
+    expectInt(static_cast<int>(delta.presents), 90, "compositor presents are reported per window");
+    expectInt(static_cast<int>(delta.reprojected), 15, "reprojected frames are reported per window");
+    const auto restarted = PerfStats::CountsSince(start, {3, 0, 0, 0});
+    expectInt(static_cast<int>(restarted.presents), 0, "compositor restart reports zero, not a wrap");
+
+    expect(ConfigSnapshot{}.perfLog, true, "perf log is on without any config entry");
+    std::istringstream perfConfig("PerfLog=false\nPerfLogIntervalSeconds=10\n");
+    const auto parsedPerf = ParseConfig(perfConfig, ConfigSnapshot{});
+    expect(parsedPerf.value.perfLog, false, "PerfLog=false turns the perf log off");
+    expectInt(parsedPerf.value.perfLogIntervalSeconds, 10, "perf log interval is configurable");
+    std::istringstream badInterval("PerfLogIntervalSeconds=0\n");
+    expectInt(ParseConfig(badInterval, ConfigSnapshot{}).value.perfLogIntervalSeconds, 5,
+              "out-of-range perf interval keeps the previous value");
 }
 
 static const VrSettings::Item &MenuItem(const char *key)
@@ -273,6 +319,7 @@ static void TestVrOptions()
 int main()
 {
     TestVrOptions();
+    TestPerfStats();
     MuzzleOrigin::Sample muzzle;
     expect(muzzle.Origin({200,50,60}, {0,90,0}, 1, 2, 1.0).has_value(), false,
            "missing muzzle sample cannot fall back to controller origin");

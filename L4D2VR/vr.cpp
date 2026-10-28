@@ -419,6 +419,7 @@ void VR::Update()
             ParseConfigFile();
         }
     }
+    PerfBeginFrame(now);
 
     if (now >= m_NextRoomscaleSummary) {
         m_NextRoomscaleSummary = now + std::chrono::seconds(30);
@@ -461,7 +462,9 @@ void VR::Update()
         }
     }
 
+    const auto submitStart = std::chrono::steady_clock::now();
     SubmitVRTextures();
+    PerfRecord(PerfStats::Metric::Submit, PerfStats::ElapsedMs(submitStart));
     const bool actionsReady = UpdatePosesAndActions();
     GetPoses();
     if (!actionsReady) {
@@ -488,6 +491,117 @@ void VR::Update()
         ReleaseMenuMouse();
         ProcessInput();
     }
+}
+
+void VR::PerfReset()
+{
+    m_PerfWindow.Clear();
+    m_PerfWindowStart = {};
+    m_PerfLastUpdateStart = {};
+    m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = 0.0;
+    m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
+    m_PerfHaveCounts = false;
+}
+
+void VR::PerfRecord(PerfStats::Metric metric, double milliseconds)
+{
+    if (m_Config.perfLog)
+        m_PerfWindow.Add(metric, milliseconds);
+}
+
+void VR::PerfNotePresent(double presentMs, double drainMs)
+{
+    PerfRecord(PerfStats::Metric::Present, presentMs);
+    PerfRecord(PerfStats::Metric::Drain, drainMs);
+    m_PerfPendingDrainMs = drainMs;
+}
+
+void VR::PerfBeginFrame(std::chrono::steady_clock::time_point now)
+{
+    if (!m_Config.perfLog) {
+        if (m_PerfWindowStart != std::chrono::steady_clock::time_point{})
+            PerfReset();
+        return;
+    }
+    if (m_PerfWindowStart == std::chrono::steady_clock::time_point{}) {
+        m_PerfWindowStart = now;
+        m_PerfHaveCounts = PerfReadCompositorCounts(m_PerfCountsStart);
+        if (m_System)
+            m_PerfDisplayHz = m_System->GetFloatTrackedDeviceProperty(
+                vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_DisplayFrequency_Float);
+        Logger::Write("Perf log: " + Logger::SiblingPath("portal2vr_perf.log") + " every " +
+                      std::to_string(m_Config.perfLogIntervalSeconds) + " s");
+    } else if (m_PerfLastUpdateStart != std::chrono::steady_clock::time_point{}) {
+        // The interval since the previous Update holds that Update's
+        // WaitGetPoses and this frame's GPU drain; the rest is game-thread work.
+        const double frameMs = PerfStats::ElapsedMs(m_PerfLastUpdateStart, now);
+        m_PerfWindow.Add(PerfStats::Metric::Frame, frameMs);
+        m_PerfWindow.Add(PerfStats::Metric::MainWork,
+                         PerfStats::MainWorkMs(frameMs, m_PerfPendingDrainMs, m_PerfLastWaitPosesMs));
+    }
+    m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = 0.0;
+    m_PerfLastUpdateStart = now;
+
+    ++m_PerfFrames;
+    if (m_RenderedNewFrame) ++m_PerfStereoFrames;
+    const bool inGame = m_Game->m_EngineClient->IsInGame();
+    if (inGame) ++m_PerfInGameFrames;
+    if (inGame && !m_PerfWasInGame) ++m_PerfLevelLoads;
+    m_PerfWasInGame = inGame;
+    if (m_Game->m_VguiSurface->IsCursorVisible()) ++m_PerfMenuFrames;
+
+    if (PerfStats::ElapsedMs(m_PerfWindowStart, now) >= m_Config.perfLogIntervalSeconds * 1000.0)
+        PerfFlush(now);
+}
+
+void VR::PerfReadCompositorTiming()
+{
+    if (!m_Config.perfLog || !vr::VRCompositor()) return;
+    // One frame ago is the newest frame whose GPU times are complete.
+    vr::Compositor_FrameTiming timing{};
+    timing.m_nSize = sizeof(timing);
+    if (!vr::VRCompositor()->GetFrameTiming(&timing, 1) ||
+        timing.m_nFrameIndex == m_PerfLastTimingFrameIndex)
+        return;
+    m_PerfLastTimingFrameIndex = timing.m_nFrameIndex;
+    m_PerfWindow.Add(PerfStats::Metric::GpuApp, timing.m_flPreSubmitGpuMs + timing.m_flPostSubmitGpuMs);
+    m_PerfWindow.Add(PerfStats::Metric::GpuTotal, timing.m_flTotalRenderGpuMs);
+    m_PerfWindow.Add(PerfStats::Metric::CompositorIdle, timing.m_flCompositorIdleCpuMs);
+}
+
+bool VR::PerfReadCompositorCounts(PerfStats::CompositorCounts &counts)
+{
+    if (!vr::VRCompositor()) return false;
+    vr::Compositor_CumulativeStats stats{};
+    vr::VRCompositor()->GetCumulativeStats(&stats, sizeof(stats));
+    counts = {stats.m_nNumFramePresents, stats.m_nNumDroppedFrames,
+              stats.m_nNumReprojectedFrames, stats.m_nNumTimedOut};
+    return true;
+}
+
+void VR::PerfFlush(std::chrono::steady_clock::time_point now)
+{
+    const double seconds = PerfStats::ElapsedMs(m_PerfWindowStart, now) / 1000.0;
+    PerfStats::CompositorCounts countsNow{};
+    const bool haveCounts = PerfReadCompositorCounts(countsNow);
+    const PerfStats::CompositorCounts delta = haveCounts && m_PerfHaveCounts
+        ? PerfStats::CountsSince(m_PerfCountsStart, countsNow) : PerfStats::CompositorCounts{};
+
+    char header[320];
+    std::snprintf(header, sizeof(header),
+        "win=%.1fs frames=%u fps=%.1f stereo=%u ingame=%u menu=%u loads=%u eye=%ux%u hz=%.0f aa=%u"
+        " pos=%.0f,%.0f,%.0f presents=%u reproj=%u dropped=%u timeout=%u",
+        seconds, m_PerfFrames, seconds > 0.0 ? m_PerfFrames / seconds : 0.0, m_PerfStereoFrames,
+        m_PerfInGameFrames, m_PerfMenuFrames, m_PerfLevelLoads, m_RenderWidth, m_RenderHeight,
+        m_PerfDisplayHz, m_AntiAliasing, m_SetupOrigin.x, m_SetupOrigin.y, m_SetupOrigin.z,
+        delta.presents, delta.reprojected, delta.dropped, delta.timedOut);
+    Logger::WriteSibling("portal2vr_perf.log", header + PerfStats::FormatMetrics(m_PerfWindow));
+
+    m_PerfWindow.Clear();
+    m_PerfWindowStart = now;
+    m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
+    m_PerfCountsStart = countsNow;
+    m_PerfHaveCounts = haveCounts;
 }
 
 bool VR::DetachBackBufferOverlay(bool hide)
@@ -1018,10 +1132,15 @@ void VR::GetPoses()
 bool VR::UpdatePosesAndActions()
 {
     vr::EVRCompositorError poseError;
+    const auto waitStart = std::chrono::steady_clock::now();
     {
         const VRSubmissionScope queue(m_D3DVR);
         poseError = vr::VRCompositor()->WaitGetPoses(m_Poses, vr::k_unMaxTrackedDeviceCount, NULL, 0);
     }
+    m_PerfLastWaitPosesMs = PerfStats::ElapsedMs(waitStart);
+    PerfRecord(PerfStats::Metric::WaitPoses, m_PerfLastWaitPosesMs);
+    if (poseError == vr::VRCompositorError_None)
+        PerfReadCompositorTiming();
     if (poseError != vr::VRCompositorError_None) {
         if (m_LastPoseError != poseError)
             Logger::Write("WaitGetPoses failed: " + std::to_string(poseError));

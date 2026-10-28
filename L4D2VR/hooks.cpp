@@ -987,6 +987,7 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 
 	//VPanel* g_pFullscreenRootPanel = *(VPanel**)(m_Game->m_Offsets->g_pFullscreenRootPanel.address);
 
+	const auto stereoStart = std::chrono::steady_clock::now();
 	IMaterialSystem* matSystem = m_Game->m_MaterialSystem;
 
 	hudViewSetup.width = m_VR->m_RenderWidth;
@@ -1065,7 +1066,9 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 	m_ActiveAimEyeView = &leftEyeView;
 	m_ActiveAimEye = 1;
 	m_ActiveReticleScale = reticleScale;
+	auto eyeStart = std::chrono::steady_clock::now();
 	hkRenderView.fOriginal(ecx, leftEyeView, hudViewSetup, nClearFlags, whatToDraw);
+	m_VR->PerfRecord(PerfStats::Metric::RenderLeft, PerfStats::ElapsedMs(eyeStart));
 	m_ActiveAimEyeView = previousAimEyeView;
 	m_ActiveAimEye = previousAimEye;
 	m_ActiveReticleScale = previousReticleScale;
@@ -1085,7 +1088,9 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 	m_ActiveAimEyeView = &rightEyeView;
 	m_ActiveAimEye = 2;
 	m_ActiveReticleScale = reticleScale;
+	eyeStart = std::chrono::steady_clock::now();
 	hkRenderView.fOriginal(ecx, rightEyeView, hudViewSetup, nClearFlags, whatToDraw);
+	m_VR->PerfRecord(PerfStats::Metric::RenderRight, PerfStats::ElapsedMs(eyeStart));
 	m_ActiveAimEyeView = previousAimEyeView;
 	m_ActiveAimEye = previousAimEye;
 	m_ActiveReticleScale = previousReticleScale;
@@ -1126,10 +1131,13 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 		setup.m_flAspectRatio = aspect;
 
 		//setup.width, setup.height
+		eyeStart = std::chrono::steady_clock::now();
 		hkRenderView.fOriginal(ecx, setup, hudViewSetup, nClearFlags, whatToDraw);
+		m_VR->PerfRecord(PerfStats::Metric::RenderWindow, PerfStats::ElapsedMs(eyeStart));
 	}
 
 
+	m_VR->PerfRecord(PerfStats::Metric::RenderStereo, PerfStats::ElapsedMs(stereoStart));
 	m_VR->m_RenderedNewFrame = true;
     if (m_VR->m_RenderDiagnostics.First(RenderDiagnosticEvent::StereoRendered))
         Logger::Write("RenderView: first stereo pair rendered");

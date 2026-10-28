@@ -3595,12 +3595,14 @@ namespace dxvk {
       m_vrBridge->CaptureBackBufferData();
     }
 
+    const auto presentStart = std::chrono::steady_clock::now();
 	HRESULT result = m_implicitSwapchain->Present(
     pSourceRect,
     pDestRect,
     hDestWindowOverride,
     pDirtyRegion,
     dwFlags);
+    const double presentMs = PerfStats::ElapsedMs(presentStart);
 
     if (FAILED(result) && ownedVR && m_vrBridge != nullptr)
       m_vrBridge->InvalidateBackBufferData();
@@ -3612,11 +3614,14 @@ namespace dxvk {
 	  
 	if (ownedVR && m_vrBridge != nullptr)
     {
+        const auto drainStart = std::chrono::steady_clock::now();
         const HRESULT idleResult = m_vrBridge->WaitDeviceIdle();
+        const double drainMs = PerfStats::ElapsedMs(drainStart);
         if (m_vrDiagnostics.Observe(RenderCondition::ResourceDrain, FAILED(idleResult),
                 {static_cast<std::uint32_t>(idleResult)}) != RenderConditionChange::None)
           Logger::warn(str::format("Portal2VR Present queue drain: hr=", idleResult));
         if (SUCCEEDED(idleResult)) {
+          game->m_VR->PerfNotePresent(presentMs, drainMs);
           game->m_VR->Update();
         } else {
           m_vrBridge->InvalidateBackBufferData();

@@ -1,6 +1,8 @@
 # In game, Options > VR saves changes to VR/ingame_settings.txt, which overrides matching keys below.
 TurnSpeed=0.15
 VerboseDiagnostics=false # Opt in to repeated allocation/MSAA details and reticle/roomscale summaries; startup, changed geometry and failures always logged
+PerfLog=true # Write frame timing summaries to bin/portal2vr_perf.log; no player action needed
+PerfLogIntervalSeconds=5 # 1-60; length of each summary window
 TrackingMode=Seated # Standing uses SteamVR floor height; changing this requires a restart
 MovementDirection=HMD # HMD, LeftController, RightController
 RoomscaleMode=Off # Off, Observe (no movement), or ActiveExperimental (unverified CUserCmd movement; LegacyYaw + 6DOF required; restart)

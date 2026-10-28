@@ -4,7 +4,7 @@ An incremental modernization fork of [Gistix/portal2vr](https://github.com/Gisti
 
 ## Getting started
 
-Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). It does not install Python, SteamVR or drivers automatically.
+Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). Its background artwork also needs Pillow (`py -m pip install pillow`); without it the launcher runs with a plain dark theme. The packaged launcher bundles Pillow. It does not install Python, SteamVR or drivers automatically.
 
 1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
 2. Double-click **`Portal2VR Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal2VR Launcher.pyw`.

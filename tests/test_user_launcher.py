@@ -266,26 +266,44 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.state_path.read_bytes(), self.original_state)
 
     def test_small_window_keeps_play_recovery_actions_accessible(self):
-        import tkinter as tk
-        from tkinter import ttk
-
-        def descendants(widget):
-            for child in widget.winfo_children():
-                yield child
-                yield from descendants(child)
-
         self.root.geometry("860x680")
         self.root.deiconify()
         self.root.update()
-        play = self.app.notebook.winfo_children()[0]
-        button = next(widget for widget in descendants(play)
-                      if isinstance(widget, ttk.Button) and widget.cget("text") == "Open backups")
-        canvas = next((widget for widget in descendants(play) if isinstance(widget, tk.Canvas)), None)
-        if canvas:
-            canvas.yview_moveto(1)
-            self.root.update()
-        self.assertLessEqual(button.winfo_rooty() + button.winfo_height(),
-                             play.winfo_rooty() + play.winfo_height())
+        page = self.app.pages["Play"]
+        button = next(button for button in self.app.buttons if button.text == "Open backups")
+        page.scroll("moveto", 1)
+        self.root.update()
+        top = page.canvas.canvasy(0)
+        self.assertGreaterEqual(button.box[1], top)
+        self.assertLessEqual(button.box[3], top + page.canvas.winfo_height())
+
+    def test_wheel_over_a_choice_scrolls_the_page_without_changing_it(self):
+        from tkinter import ttk
+
+        self.root.geometry("960x640")
+        self.root.deiconify()
+        self.app.show_page("Settings")
+        self.root.update()
+        page = self.app.pages["Settings"]
+        choice = next(widget for widget in page.canvas.winfo_children() if isinstance(widget, ttk.Combobox))
+        before = choice.get()
+        choice.event_generate("<MouseWheel>", delta=-120)
+        self.root.update()
+        self.assertEqual(choice.get(), before)
+        self.assertGreater(page.canvas.canvasy(0), 0)
+
+    def test_flat_theme_without_pillow_builds_every_page(self):
+        from tools import launcher_art
+
+        with patch.object(launcher_art, "Image", None):
+            other = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path)
+        self.assertIsNone(other.art)
+        for name in other.pages:
+            other.show_page(name)
+        self.root.update_idletasks()
+        self.assertIsNotNone(other.launch_button.box)
+        other.save_button.invoke()
+        self.assertTrue(self.prefs_path.exists())
 
     def test_process_query_has_bounded_wait_and_hidden_console(self):
         import subprocess

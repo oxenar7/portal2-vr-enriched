@@ -1020,9 +1020,11 @@ void VR::SubmitExperimentalHUDOverlay()
         m_RenderedNewFrame && m_RenderedHud && m_CreatedVRTextures &&
         m_HmdPose.valid && !m_Game->m_VguiSurface->IsCursorVisible() && m_HUDTexture &&
         TextureSubmissionReady(m_VKHUD);
-    if (!canShow) {
+    if (!canShow || !PlaceExperimentalHUDOverlay()) {
         if (m_Overlay->IsOverlayVisible(m_HUDHandle))
             m_Overlay->HideOverlay(m_HUDHandle);
+        // Reappear straight ahead after menus and loads.
+        m_HUDFollowValid = false;
         return;
     }
     const VRSubmissionScope queue(m_D3DVR);
@@ -1036,6 +1038,155 @@ void VR::SubmitExperimentalHUDOverlay()
             " visibility=" + std::to_string(showError) + " (pixels/alpha/subtitles unverified)");
     if (submissionFailed) {
         m_Overlay->HideOverlay(m_HUDHandle);
+    }
+}
+
+bool VR::PlaceExperimentalHUDOverlay()
+{
+    if (!m_Config.hudLazyFollow) {
+        if (m_HUDHeadLocked)
+            return true;
+        vr::HmdMatrix34_t transform{};
+        transform.m[0][0] = transform.m[1][1] = transform.m[2][2] = 1.0f;
+        transform.m[1][3] = m_Config.hudVerticalOffsetMeters;
+        transform.m[2][3] = -m_Config.hudDistanceMeters;
+        m_HUDHeadLocked = m_Overlay->SetOverlayTransformTrackedDeviceRelative(
+            m_HUDHandle, vr::k_unTrackedDeviceIndex_Hmd, &transform) == vr::VROverlayError_None;
+        m_HUDFollowValid = false;
+        return m_HUDHeadLocked;
+    }
+
+    // Level panel in tracking space: position eases after the head, yaw only
+    // turns once the head leaves the deadzone, and pitch/roll are ignored so
+    // reading never drags the text around.
+    const auto &hmd = m_Poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking.m;
+    const auto now = std::chrono::steady_clock::now();
+    const float horizontal = std::sqrt(hmd[0][2] * hmd[0][2] + hmd[2][2] * hmd[2][2]);
+    const float headYaw = std::atan2(hmd[0][2], hmd[2][2]); // OpenVR forward is -Z
+    if (!m_HUDFollowValid) {
+        if (horizontal < 0.2f)
+            return false; // looking straight up or down: wait for a usable heading
+        m_HUDFollowYaw = headYaw;
+        for (int i = 0; i < 3; ++i)
+            m_HUDFollowPos[i] = hmd[i][3];
+        m_HUDRecentering = false;
+        m_HUDFollowValid = true;
+    } else {
+        const float dt = (std::min)(std::chrono::duration<float>(now - m_HUDFollowLast).count(), 0.1f);
+        const float positionBlend = 1.0f - std::exp(-dt * 8.0f);
+        for (int i = 0; i < 3; ++i)
+            m_HUDFollowPos[i] += (hmd[i][3] - m_HUDFollowPos[i]) * positionBlend;
+        if (horizontal >= 0.2f) {
+            constexpr float kPi = 3.14159265f;
+            const float delta = std::remainder(headYaw - m_HUDFollowYaw, 2.0f * kPi);
+            if (std::fabs(delta) > m_Config.hudFollowDeadzoneDegrees * kPi / 180.0f)
+                m_HUDRecentering = true;
+            if (m_HUDRecentering) {
+                m_HUDFollowYaw += delta * (1.0f - std::exp(-dt * 4.0f));
+                if (std::fabs(delta) < 2.0f * kPi / 180.0f)
+                    m_HUDRecentering = false;
+            }
+        }
+    }
+    m_HUDFollowLast = now;
+
+    const float c = std::cos(m_HUDFollowYaw), s = std::sin(m_HUDFollowYaw);
+    const float distance = m_Config.hudDistanceMeters;
+    vr::HmdMatrix34_t transform{};
+    transform.m[0][0] = c;  transform.m[0][2] = s;
+    transform.m[1][1] = 1.0f;
+    transform.m[2][0] = -s; transform.m[2][2] = c;
+    transform.m[0][3] = m_HUDFollowPos[0] - distance * s;
+    transform.m[1][3] = m_HUDFollowPos[1] + m_Config.hudVerticalOffsetMeters;
+    transform.m[2][3] = m_HUDFollowPos[2] - distance * c;
+    const auto error = m_Overlay->SetOverlayTransformAbsolute(
+        m_HUDHandle, vr::VRCompositor()->GetTrackingSpace(), &transform);
+    if (error != vr::VROverlayError_None) {
+        if (m_RenderDiagnostics.First(RenderDiagnosticEvent::HudFollowFailed))
+            Logger::Write("Caption overlay lazy follow: transform error " + std::to_string(error));
+        return false;
+    }
+    m_HUDHeadLocked = false;
+    return true;
+}
+
+void VR::BoostHUDAlpha(IDirect3DDevice9 *device)
+{
+    float remaining = m_Config.hudCaptionOpacityBoost;
+    if (!device || !m_Config.experimentalHudOverlay || !m_RenderedHud || !m_D9HUDSurface ||
+        remaining < 1.01f)
+        return;
+
+    // VGUI blends into a target cleared to alpha 0, so a translucent caption
+    // box lands with a lower alpha than it has on screen. Scale only the
+    // alpha channel: dst.a += src.a * dst.a, at most x2 per pass; untouched
+    // texels stay fully transparent. Source caches device state, so every
+    // state touched here is restored before returning.
+    IDirect3DStateBlock9 *saved = nullptr;
+    if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved)) || !saved) {
+        if (m_RenderDiagnostics.First(RenderDiagnosticEvent::HudAlphaBoostFailed))
+            Logger::Write("Caption opacity boost: state block unavailable; boost skipped");
+        return;
+    }
+    IDirect3DSurface9 *oldTarget = nullptr, *oldDepth = nullptr;
+    device->GetRenderTarget(0, &oldTarget);
+    device->GetDepthStencilSurface(&oldDepth);
+    D3DSURFACE_DESC desc{};
+    m_D9HUDSurface->GetDesc(&desc);
+
+    device->SetRenderTarget(0, m_D9HUDSurface);
+    device->SetDepthStencilSurface(nullptr);
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetTexture(0, nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+    device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_ALPHA);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+    device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_DESTALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    device->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+
+    struct Vertex { float x, y, z, rhw; DWORD color; };
+    const float w = static_cast<float>(desc.Width) - 0.5f, h = static_cast<float>(desc.Height) - 0.5f;
+    Vertex quad[4] = {{-0.5f, -0.5f, 0, 1, 0}, {w, -0.5f, 0, 1, 0},
+                      {-0.5f, h, 0, 1, 0}, {w, h, 0, 1, 0}};
+    HRESULT drawResult = D3D_OK;
+    while (remaining >= 1.01f && SUCCEEDED(drawResult)) {
+        const float factor = (std::min)(remaining, 2.0f);
+        remaining /= factor;
+        const DWORD alpha = static_cast<DWORD>(std::lround((factor - 1.0f) * 255.0f));
+        for (auto &vertex : quad)
+            vertex.color = alpha << 24;
+        drawResult = device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(Vertex));
+    }
+
+    device->SetRenderTarget(0, oldTarget);
+    device->SetDepthStencilSurface(oldDepth);
+    saved->Apply(); // after the targets: SetRenderTarget resets the viewport
+    saved->Release();
+    if (oldTarget) oldTarget->Release();
+    if (oldDepth) oldDepth->Release();
+    if (!m_HUDAlphaBoostLogged) {
+        m_HUDAlphaBoostLogged = true;
+        Logger::Write("Caption opacity boost x" + std::to_string(m_Config.hudCaptionOpacityBoost) +
+            " applied to " + std::to_string(desc.Width) + "x" + std::to_string(desc.Height) +
+            " HUD surface: hr=" + std::to_string(drawResult));
     }
 }
 

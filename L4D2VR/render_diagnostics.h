@@ -26,6 +26,8 @@ enum class RenderDiagnosticEvent : std::size_t
     HudExplicitUnexpectedPush,
     HudExplicitContextUnavailable,
     HudOverlayShown,
+    HudFollowFailed,
+    HudAlphaBoostFailed,
     CrosshairShouldDrawTrue,
     CrosshairShouldDrawFalse,
     CrosshairTransformTrue,

@@ -225,6 +225,14 @@ public:
 	bool m_IsInitialized = false;
 	bool m_RenderedNewFrame = false;
 	bool m_RenderedHud = false;
+	// Caption overlay placement in tracking space while HUDLazyFollow is on.
+	bool m_HUDHeadLocked = true;
+	bool m_HUDFollowValid = false;
+	bool m_HUDRecentering = false;
+	float m_HUDFollowYaw = 0.0f;
+	float m_HUDFollowPos[3] = {};
+	std::chrono::steady_clock::time_point m_HUDFollowLast;
+	bool m_HUDAlphaBoostLogged = false;
 	bool m_CreatedVRTextures = false;
     RenderTargetRetryState m_RenderTargetRetry;
 	bool m_LaserRequestLogged = false;
@@ -356,6 +364,10 @@ public:
 	bool RepositionOverlays();
 	void CreateExperimentalHUDOverlay();
 	void SubmitExperimentalHUDOverlay();
+	bool PlaceExperimentalHUDOverlay();
+	// Raises the captured caption alpha (HUDCaptionOpacityBoost) on the
+	// device thread before Present hands the HUD surface to OpenVR.
+	void BoostHUDAlpha(IDirect3DDevice9 *device);
 	void GetPoses();
 	bool UpdatePosesAndActions();
 	void GetViewParameters();

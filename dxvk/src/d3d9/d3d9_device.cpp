@@ -4398,6 +4398,8 @@ namespace dxvk {
       const auto waitStart = std::chrono::steady_clock::now();
       previousFrameResult = m_vrBridge->WaitPreviousFrame();
       previousFrameWaitMs = PerfStats::ElapsedMs(waitStart);
+      if (SUCCEEDED(previousFrameResult))
+        game->m_VR->BoostHUDAlpha(this);
       IDirect3DSurface9* backBuffer = nullptr;
       if (SUCCEEDED(GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer)) && backBuffer) {
         // Window presentation resolves separately. OpenVR uses this texture's

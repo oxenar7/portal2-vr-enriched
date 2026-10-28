@@ -3583,7 +3583,14 @@ namespace dxvk {
     if (game && game->m_VR && m_vrDiagnostics.Observe(RenderCondition::PresentOwnership,
             !ownedVR || m_vrBridge == nullptr, {ownedVR, m_vrBridge != nullptr}) != RenderConditionChange::None)
       Logger::warn(str::format("Portal2VR Present ownership: owned=", ownedVR, " bridge=", m_vrBridge != nullptr));
+    double previousFrameWaitMs = 0.0;
+    HRESULT previousFrameResult = D3D_OK;
     if (ownedVR && m_vrBridge != nullptr) {
+      // A stereo frame submitted without a drain may still be on the GPU;
+      // finish it before the capture below retires the image it read.
+      const auto waitStart = std::chrono::steady_clock::now();
+      previousFrameResult = m_vrBridge->WaitPreviousFrame();
+      previousFrameWaitMs = PerfStats::ElapsedMs(waitStart);
       IDirect3DSurface9* backBuffer = nullptr;
       if (SUCCEEDED(GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer)) && backBuffer) {
         // Window presentation resolves separately. OpenVR uses this texture's
@@ -3614,15 +3621,24 @@ namespace dxvk {
 	  
 	if (ownedVR && m_vrBridge != nullptr)
     {
+        // Stereo frames hand their eyes to OpenVR without waiting for the GPU
+        // to go idle; menus, MSAA eyes and failures keep the device drain.
+        IDirect3DSurface9* submitSurfaces[3] = {};
+        const UINT submitCount = SUCCEEDED(previousFrameResult) ?
+          game->m_VR->FastSubmitSurfaces(submitSurfaces) : 0u;
         const auto drainStart = std::chrono::steady_clock::now();
-        const HRESULT idleResult = m_vrBridge->WaitDeviceIdle();
-        const double drainMs = PerfStats::ElapsedMs(drainStart);
+        const HRESULT idleResult = FAILED(previousFrameResult) ? previousFrameResult :
+          submitCount ? m_vrBridge->PrepareSurfacesForSubmit(submitSurfaces, submitCount) :
+          m_vrBridge->WaitDeviceIdle();
+        const double drainMs = previousFrameWaitMs + PerfStats::ElapsedMs(drainStart);
         if (m_vrDiagnostics.Observe(RenderCondition::ResourceDrain, FAILED(idleResult),
                 {static_cast<std::uint32_t>(idleResult)}) != RenderConditionChange::None)
           Logger::warn(str::format("Portal2VR Present queue drain: hr=", idleResult));
         if (SUCCEEDED(idleResult)) {
-          game->m_VR->PerfNotePresent(presentMs, drainMs);
+          game->m_VR->PerfNotePresent(presentMs, drainMs, submitCount != 0);
           game->m_VR->Update();
+          if (submitCount)
+            m_vrBridge->FinishSubmittedFrame(submitSurfaces, submitCount);
         } else {
           m_vrBridge->InvalidateBackBufferData();
           game->m_VR->SuspendInputForRenderFailure();
@@ -7251,6 +7267,15 @@ namespace dxvk {
       ctx->transformImage(
         cImage, cSubresources,
         cOldLayout, cNewLayout);
+    });
+  }
+
+
+  void D3D9DeviceEx::SignalGpuEvent(const Rc<DxvkGpuEvent>& Event) {
+    EmitCs([
+      cEvent = Event
+    ] (DxvkContext* ctx) {
+      ctx->signalGpuEvent(cEvent);
     });
   }
 

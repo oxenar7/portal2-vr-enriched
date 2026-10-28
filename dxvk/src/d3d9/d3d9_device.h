@@ -923,6 +923,10 @@ namespace dxvk {
             VkImageLayout            OldLayout,
             VkImageLayout            NewLayout);
 
+    // Portal2VR: records a GPU event after everything already in the command
+    // stream, used to wait for the end of one submitted VR frame.
+    void SignalGpuEvent(const Rc<DxvkGpuEvent>& Event);
+
     const D3D9ConstantLayout& GetVertexConstantLayout() { return m_vsLayout; }
     const D3D9ConstantLayout& GetPixelConstantLayout()  { return m_psLayout; }
 

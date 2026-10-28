@@ -162,6 +162,10 @@ static void TestPerfStats()
     const auto parsedPerf = ParseConfig(perfConfig, ConfigSnapshot{});
     expect(parsedPerf.value.perfLog, false, "PerfLog=false turns the perf log off");
     expectInt(parsedPerf.value.perfLogIntervalSeconds, 10, "perf log interval is configurable");
+    expect(ConfigSnapshot{}.gpuDrainEachFrame, false, "stereo frames skip the per-frame GPU drain by default");
+    std::istringstream drainConfig("GpuDrainEachFrame=true\n");
+    expect(ParseConfig(drainConfig, ConfigSnapshot{}).value.gpuDrainEachFrame, true,
+           "GpuDrainEachFrame=true restores the per-frame drain");
     std::istringstream badInterval("PerfLogIntervalSeconds=0\n");
     expectInt(ParseConfig(badInterval, ConfigSnapshot{}).value.perfLogIntervalSeconds, 5,
               "out-of-range perf interval keeps the previous value");

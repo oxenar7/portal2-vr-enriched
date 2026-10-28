@@ -42,6 +42,13 @@ IDirect3DVR9 : public IUnknown{
   virtual void STDMETHODCALLTYPE LockSubmissionQueue() = 0;
   virtual void STDMETHODCALLTYPE UnlockSubmissionQueue() = 0;
   virtual void STDMETHODCALLTYPE ReleaseRuntimeLease() = 0;
+  // Stereo submission without a per-frame device-idle wait: wait for the
+  // previous frame's end event, move the submitted surfaces into the layout
+  // OpenVR reads and hand their commands to the queue, then restore them
+  // and mark the end of this frame after the compositor Submit.
+  virtual HRESULT STDMETHODCALLTYPE WaitPreviousFrame() = 0;
+  virtual HRESULT STDMETHODCALLTYPE PrepareSurfacesForSubmit(IDirect3DSurface9 *const *ppSurfaces, UINT count) = 0;
+  virtual HRESULT STDMETHODCALLTYPE FinishSubmittedFrame(IDirect3DSurface9 *const *ppSurfaces, UINT count) = 0;
 };
 
 #ifdef _MSC_VER

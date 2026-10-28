@@ -1,5 +1,7 @@
 #include "../dxvk/dxvk_include.h"
 
+#include <thread>
+
 #include "d3d9_vr.h"
 
 #include "d3d9_include.h"
@@ -149,6 +151,79 @@ namespace dxvk {
             device->unlockSubmission();
             if (result != VK_SUCCESS) return D3DERR_DEVICELOST;
             m_backBufferImages.Drained();
+            m_frameEventPending = false;
+            return D3D_OK;
+        }
+
+        // At most one frame stays in flight: this waits for the previous
+        // frame's end event, which follows its eye rendering and OpenVR's
+        // copies in queue order, and only then retires the back buffer
+        // image that frame may still have been reading.
+        HRESULT STDMETHODCALLTYPE WaitPreviousFrame()
+        {
+            if (m_frameEvent != nullptr && m_frameEventPending) {
+                m_frameEventPending = false;
+                DxvkGpuEventStatus status = m_frameEvent->test();
+                if (status == DxvkGpuEventStatus::Invalid) {
+                    // The CS thread has not recorded the event yet.
+                    m_device->Flush();
+                    m_device->SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
+                    status = m_frameEvent->test();
+                }
+                const auto deadline = dxvk::high_resolution_clock::now() + std::chrono::seconds(1);
+                while (status == DxvkGpuEventStatus::Pending && dxvk::high_resolution_clock::now() < deadline) {
+                    std::this_thread::yield();
+                    status = m_frameEvent->test();
+                }
+                if (status != DxvkGpuEventStatus::Signaled) {
+                    Logger::warn("Portal2VR: previous frame event did not signal; falling back to a device drain");
+                    return WaitDeviceIdle();
+                }
+            }
+            m_backBufferImages.Drained();
+            return D3D_OK;
+        }
+
+        HRESULT STDMETHODCALLTYPE PrepareSurfacesForSubmit(IDirect3DSurface9 *const *ppSurfaces, UINT count)
+        {
+            if (unlikely(ppSurfaces == nullptr))
+                return D3DERR_INVALIDCALL;
+            for (UINT i = 0; i < count; i++) {
+                if (ppSurfaces[i] != nullptr)
+                    TransferSurface(ppSurfaces[i], FALSE);
+            }
+            // Hand the frame to DXVK's submission thread. The compositor Submit
+            // takes the queue lock, which waits for that handoff, not the GPU.
+            m_device->Flush();
+            m_device->SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
+            return D3D_OK;
+        }
+
+        HRESULT STDMETHODCALLTYPE FinishSubmittedFrame(IDirect3DSurface9 *const *ppSurfaces, UINT count)
+        {
+            if (unlikely(ppSurfaces == nullptr))
+                return D3DERR_INVALIDCALL;
+            // transformImage does not update DXVK's layout tracking, so put the
+            // surfaces back where DXVK expects them before the next frame draws.
+            // These barriers come after OpenVR's copies in queue order.
+            for (UINT i = 0; i < count; i++) {
+                if (ppSurfaces[i] == nullptr)
+                    continue;
+                auto *tex = static_cast<D3D9Surface *>(ppSurfaces[i])->GetCommonTexture();
+                const auto &image = tex->GetImage();
+                VkImageSubresourceRange subresources = {
+                  VK_IMAGE_ASPECT_COLOR_BIT,
+                  0, image->info().mipLevels,
+                  0, image->info().numLayers
+                };
+                m_device->TransformImage(tex, &subresources,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image->info().layout);
+            }
+            if (m_frameEvent == nullptr)
+                m_frameEvent = m_device->GetDXVKDevice()->createGpuEvent();
+            m_device->SignalGpuEvent(m_frameEvent);
+            m_device->Flush();
+            m_frameEventPending = true;
             return D3D_OK;
         }
 
@@ -264,6 +339,8 @@ namespace dxvk {
         bool m_hasBackBufferData = false;
         bool m_backBufferCaptureStarted = false;
         RenderConditionDiagnostics m_diagnostics;
+        Rc<DxvkGpuEvent> m_frameEvent;
+        bool m_frameEventPending = false;
     };
 
 }

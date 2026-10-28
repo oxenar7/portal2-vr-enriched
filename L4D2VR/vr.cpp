@@ -501,7 +501,7 @@ void VR::PerfReset()
     m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = m_PerfLastPairMs = m_PerfLastSubmitMs = 0.0;
     m_PerfWorstFrame = {};
     m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
-    m_PerfLongFrames = 0;
+    m_PerfLongFrames = m_PerfFastFrames = 0;
     m_PerfHaveCounts = false;
 }
 
@@ -514,11 +514,27 @@ void VR::PerfRecord(PerfStats::Metric metric, double milliseconds)
     else if (metric == PerfStats::Metric::Submit) m_PerfLastSubmitMs = milliseconds;
 }
 
-void VR::PerfNotePresent(double presentMs, double drainMs)
+void VR::PerfNotePresent(double presentMs, double drainMs, bool fastSubmit)
 {
     PerfRecord(PerfStats::Metric::Present, presentMs);
     PerfRecord(PerfStats::Metric::Drain, drainMs);
     m_PerfPendingDrainMs = drainMs;
+    if (fastSubmit && m_Config.perfLog) ++m_PerfFastFrames;
+}
+
+unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[3]) const
+{
+    // Menus submit the back buffer through an overlay and MSAA eyes submit
+    // their resolve image; both keep the device drain.
+    if (m_Config.gpuDrainEachFrame || !m_RenderedNewFrame || !m_CreatedVRTextures ||
+        m_AntiAliasing != 0 || !m_D9LeftEyeSurface || !m_D9RightEyeSurface)
+        return 0;
+    unsigned int count = 0;
+    surfaces[count++] = m_D9LeftEyeSurface;
+    surfaces[count++] = m_D9RightEyeSurface;
+    if (m_Config.experimentalHudOverlay && m_D9HUDSurface)
+        surfaces[count++] = m_D9HUDSurface;
+    return count;
 }
 
 void VR::PerfBeginFrame(std::chrono::steady_clock::time_point now)
@@ -601,10 +617,10 @@ void VR::PerfFlush(std::chrono::steady_clock::time_point now)
 
     char header[352];
     std::snprintf(header, sizeof(header),
-        "win=%.1fs frames=%u fps=%.1f stereo=%u ingame=%u menu=%u loads=%u long=%u eye=%ux%u hz=%.0f aa=%u"
+        "win=%.1fs frames=%u fps=%.1f stereo=%u fast=%u ingame=%u menu=%u loads=%u long=%u eye=%ux%u hz=%.0f aa=%u"
         " pos=%.0f,%.0f,%.0f presents=%u reproj=%u dropped=%u timeout=%u",
         seconds, m_PerfFrames, seconds > 0.0 ? m_PerfFrames / seconds : 0.0, m_PerfStereoFrames,
-        m_PerfInGameFrames, m_PerfMenuFrames, m_PerfLevelLoads, m_PerfLongFrames, m_RenderWidth,
+        m_PerfFastFrames, m_PerfInGameFrames, m_PerfMenuFrames, m_PerfLevelLoads, m_PerfLongFrames, m_RenderWidth,
         m_RenderHeight, m_PerfDisplayHz, m_AntiAliasing, m_SetupOrigin.x, m_SetupOrigin.y,
         m_SetupOrigin.z, delta.presents, delta.reprojected, delta.dropped, delta.timedOut);
     Logger::WriteSibling("portal2vr_perf.log", header + PerfStats::FormatMetrics(m_PerfWindow) +
@@ -614,7 +630,7 @@ void VR::PerfFlush(std::chrono::steady_clock::time_point now)
     m_PerfWindowStart = now;
     m_PerfWorstFrame = {};
     m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
-    m_PerfLongFrames = 0;
+    m_PerfLongFrames = m_PerfFastFrames = 0;
     m_PerfCountsStart = countsNow;
     m_PerfHaveCounts = haveCounts;
 }
@@ -2785,6 +2801,7 @@ void VR::ParseConfigFile()
         " ExperimentalStereoReticle=" + std::to_string(m_Config.experimentalStereoReticle) +
         " ReticleDistanceScaling=" + std::to_string(m_Config.reticleDistanceScaling) +
         " AntiAliasing=" + std::to_string(m_AntiAliasing) +
+        " GpuDrainEachFrame=" + std::to_string(m_Config.gpuDrainEachFrame) +
         " ExperimentalHUDOverlay=" + std::to_string(m_Config.experimentalHudOverlay) +
         " ExperimentalViewmodelAlignment=" + std::to_string(m_Config.experimentalViewmodelAlignment) +
         " AimFromViewmodelMuzzle=" + std::to_string(m_Config.aimFromViewmodelMuzzle) +

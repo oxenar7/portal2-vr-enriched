@@ -327,8 +327,12 @@ public:
 	bool m_PerfHaveCounts = false;
 	bool m_PerfWasInGame = false;
 	float m_PerfDisplayHz = 0.0f;
+	std::uint32_t m_PerfFastFrames = 0;
 	void PerfRecord(PerfStats::Metric metric, double milliseconds);
-	void PerfNotePresent(double presentMs, double drainMs);
+	void PerfNotePresent(double presentMs, double drainMs, bool fastSubmit);
+	// Surfaces this frame submits without a device drain (eyes, HUD), or 0
+	// when the frame must drain: menus, MSAA eyes, GpuDrainEachFrame=true.
+	unsigned int FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[3]) const;
 	void PerfBeginFrame(std::chrono::steady_clock::time_point now);
 	void PerfReadCompositorTiming();
 	bool PerfReadCompositorCounts(PerfStats::CompositorCounts &counts);

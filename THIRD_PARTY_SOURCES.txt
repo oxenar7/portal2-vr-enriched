@@ -1,20 +1,35 @@
 Vendored third-party sources
 ============================
 
-DXVK (VR fork)
-  Upstream: https://github.com/fholger/dxvk_l4d2vr
-  Base branch: msaa
-  Base commit: 75167aa2859fe7118ae683e717b97303ad379efa
+DXVK (DXVK-GPLALL with Portal2VR hooks)
+  Upstream: https://github.com/Digger1955/dxvk-gplall
+  Base tag: DXVK-GPLALL-2.6.8-2 (6a0ea561f9add008899680e6c313aa21c151e03e)
   License: dxvk/LICENSE (zlib/libpng)
 
+  DXVK 2.6.8 plus async pipeline compilation, the GPL/async state cache
+  and low-latency frame pacing. Submodule content is vendored at the
+  commits that tag pins, headers and C sources only:
+    dxvk/include/vulkan    KhronosGroup/Vulkan-Headers 2fa203425eb4af9dfc6b03f97ef72b0b5bcb8350
+    dxvk/include/spirv     KhronosGroup/SPIRV-Headers  8b246ff75c6615ba4532fe4fde20f1be090c3764
+    dxvk/subprojects/libdisplay-info
+                           doitsujin/libdisplay-info   275e6459c7ab1ddd4b125f28d0440716e4888078
+  Files meson would generate come from the MSVC tree of
+  https://github.com/Hochgeschwindigkeitsrennfahrer/black-mesa-vr for the
+  same tag: dxvk/include/shaders, dxvk/include/buildenv.h,
+  dxvk/subprojects/libdisplay-info/pnp-id-table.c, dxvk/lib32/vulkan-1.lib.
+
   This is an altered source snapshot, not an unmodified upstream release.
-  Relative to the base commit, Portal2VR changes the following files for
-  startup, render-target readiness, VR resource retirement and diagnostics:
+  The VR hooks follow the earlier fork (sd805/fholger dxvk_l4d2vr, msaa
+  branch, 75167aa2) and Portal2VR's own changes. Portal2VR changes:
+    dxvk/include/version.h          (v2.6.8-2+portal2vr)
+    dxvk/src/d3d9/d3d9_common_texture.cpp
+    dxvk/src/d3d9/d3d9_common_texture.h
     dxvk/src/d3d9/d3d9_device.cpp
     dxvk/src/d3d9/d3d9_device.h
     dxvk/src/d3d9/d3d9_interface.cpp
-    dxvk/src/d3d9/d3d9_vr.cpp
-    dxvk/src/d3d9/d3d9_vr.h
+    dxvk/src/d3d9/d3d9_vr.cpp       (new)
+    dxvk/src/d3d9/d3d9_vr.h         (new)
+    dxvk/src/dxvk/dxvk_openvr.cpp
 
 MinHook
   Upstream: https://github.com/TsudaKageyu/minhook

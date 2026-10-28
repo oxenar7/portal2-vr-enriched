@@ -31,6 +31,8 @@
 #include <cstdint>
 #include <unordered_set>
 #include "d3d9_bridge.h"
+#include "d3d9_vr.h"
+#include "L4D2VR/render_condition_diagnostics.h"
 
 #include <vector>
 #include <type_traits>
@@ -239,6 +241,11 @@ namespace dxvk {
             Rc<DxvkDevice>         dxvkDevice);
 
     ~D3D9DeviceEx();
+
+    ULONG STDMETHODCALLTYPE Release() override;
+
+    void SetVRBridge(IDirect3DVR9* bridge) { m_vrBridge = bridge; }
+    IDirect3DVR9* GetVRBridge() const { return m_vrBridge.ptr(); }
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
 
@@ -1150,6 +1157,15 @@ namespace dxvk {
             VkImageLayout            OldLayout,
             VkImageLayout            NewLayout);
 
+    // Portal2VR: records a GPU event after everything already in the command
+    // stream, used to wait for the end of one submitted VR frame.
+    void SignalGpuEvent(const Rc<DxvkEvent>& Event);
+
+    // Portal2VR: keeps an image at one VkImage for its whole lifetime, so a
+    // handle given to OpenVR is never invalidated by memory defragmentation.
+    // Returns false if DXVK could not make the image compatible.
+    bool LockImageForExport(const Rc<DxvkImage>& Image);
+
     const D3D9ConstantLayout& GetVertexConstantLayout() { return m_consts[DxsoProgramType::VertexShader].layout; }
     const D3D9ConstantLayout& GetPixelConstantLayout()  { return m_consts[DxsoProgramType::PixelShader].layout; }
 
@@ -1506,6 +1522,8 @@ namespace dxvk {
 
     uint64_t GetCurrentSequenceNumber();
 
+    void ResolveImage(D3D9CommonTexture* commonTex);
+
     /**
      * \brief Will unmap the least recently used textures if the amount of mapped texture memory exceeds a threshold.
      */
@@ -1627,6 +1645,8 @@ namespace dxvk {
     Com<D3D9Surface, false>         m_autoDepthStencil;
 
     Com<D3D9SwapChainEx, false>     m_implicitSwapchain;
+    Com<IDirect3DVR9>               m_vrBridge;
+    RenderConditionDiagnostics      m_vrDiagnostics;
 
     const D3D9Options               m_d3d9Options;
     DxsoOptions                     m_dxsoOptions;

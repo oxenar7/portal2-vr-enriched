@@ -148,6 +148,15 @@ static void TestPerfStats()
     const auto restarted = PerfStats::CountsSince(start, {3, 0, 0, 0});
     expectInt(static_cast<int>(restarted.presents), 0, "compositor restart reports zero, not a wrap");
 
+    PerfStats::FrameBreakdown worst{21.3, 2.2, 0.9, 4.5, 17.4, 0.2};
+    expectText(PerfStats::FormatBreakdown(worst), " worst=21.3:2.2:0.9:4.5:17.4:0.2",
+               "worst frame lists frame, main, pair, drain, poses and submit");
+    expectText(PerfStats::FormatBreakdown({}), "", "a window without frames has no worst frame");
+    expect(PerfStats::IsLongFrame(16.0, 90.0f), false, "one refresh plus jitter is not a long frame at 90 Hz");
+    expect(PerfStats::IsLongFrame(17.0, 90.0f), true, "a frame over 1.5 refreshes at 90 Hz is long");
+    expect(PerfStats::IsLongFrame(13.0, 120.0f), true, "the long threshold follows the refresh rate");
+    expect(PerfStats::IsLongFrame(500.0, 0.0f), false, "unknown refresh rate never counts long frames");
+
     expect(ConfigSnapshot{}.perfLog, true, "perf log is on without any config entry");
     std::istringstream perfConfig("PerfLog=false\nPerfLogIntervalSeconds=10\n");
     const auto parsedPerf = ParseConfig(perfConfig, ConfigSnapshot{});

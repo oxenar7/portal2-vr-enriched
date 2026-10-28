@@ -498,15 +498,20 @@ void VR::PerfReset()
     m_PerfWindow.Clear();
     m_PerfWindowStart = {};
     m_PerfLastUpdateStart = {};
-    m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = 0.0;
+    m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = m_PerfLastPairMs = m_PerfLastSubmitMs = 0.0;
+    m_PerfWorstFrame = {};
     m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
+    m_PerfLongFrames = 0;
     m_PerfHaveCounts = false;
 }
 
 void VR::PerfRecord(PerfStats::Metric metric, double milliseconds)
 {
-    if (m_Config.perfLog)
-        m_PerfWindow.Add(metric, milliseconds);
+    if (!m_Config.perfLog) return;
+    m_PerfWindow.Add(metric, milliseconds);
+    // Parts of the current frame interval, for the worst-frame breakdown.
+    if (metric == PerfStats::Metric::RenderStereo) m_PerfLastPairMs = milliseconds;
+    else if (metric == PerfStats::Metric::Submit) m_PerfLastSubmitMs = milliseconds;
 }
 
 void VR::PerfNotePresent(double presentMs, double drainMs)
@@ -535,11 +540,15 @@ void VR::PerfBeginFrame(std::chrono::steady_clock::time_point now)
         // The interval since the previous Update holds that Update's
         // WaitGetPoses and this frame's GPU drain; the rest is game-thread work.
         const double frameMs = PerfStats::ElapsedMs(m_PerfLastUpdateStart, now);
-        m_PerfWindow.Add(PerfStats::Metric::Frame, frameMs);
-        m_PerfWindow.Add(PerfStats::Metric::MainWork,
-                         PerfStats::MainWorkMs(frameMs, m_PerfPendingDrainMs, m_PerfLastWaitPosesMs));
+        const PerfStats::FrameBreakdown frame{frameMs,
+            PerfStats::MainWorkMs(frameMs, m_PerfPendingDrainMs, m_PerfLastWaitPosesMs),
+            m_PerfLastPairMs, m_PerfPendingDrainMs, m_PerfLastWaitPosesMs, m_PerfLastSubmitMs};
+        m_PerfWindow.Add(PerfStats::Metric::Frame, frame.frame);
+        m_PerfWindow.Add(PerfStats::Metric::MainWork, frame.main);
+        if (frame.frame > m_PerfWorstFrame.frame) m_PerfWorstFrame = frame;
+        if (PerfStats::IsLongFrame(frame.frame, m_PerfDisplayHz)) ++m_PerfLongFrames;
     }
-    m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = 0.0;
+    m_PerfPendingDrainMs = m_PerfLastWaitPosesMs = m_PerfLastPairMs = m_PerfLastSubmitMs = 0.0;
     m_PerfLastUpdateStart = now;
 
     ++m_PerfFrames;
@@ -582,24 +591,30 @@ bool VR::PerfReadCompositorCounts(PerfStats::CompositorCounts &counts)
 void VR::PerfFlush(std::chrono::steady_clock::time_point now)
 {
     const double seconds = PerfStats::ElapsedMs(m_PerfWindowStart, now) / 1000.0;
+    if (m_System) // the refresh rate can change between sessions of the runtime
+        m_PerfDisplayHz = m_System->GetFloatTrackedDeviceProperty(
+            vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_DisplayFrequency_Float);
     PerfStats::CompositorCounts countsNow{};
     const bool haveCounts = PerfReadCompositorCounts(countsNow);
     const PerfStats::CompositorCounts delta = haveCounts && m_PerfHaveCounts
         ? PerfStats::CountsSince(m_PerfCountsStart, countsNow) : PerfStats::CompositorCounts{};
 
-    char header[320];
+    char header[352];
     std::snprintf(header, sizeof(header),
-        "win=%.1fs frames=%u fps=%.1f stereo=%u ingame=%u menu=%u loads=%u eye=%ux%u hz=%.0f aa=%u"
+        "win=%.1fs frames=%u fps=%.1f stereo=%u ingame=%u menu=%u loads=%u long=%u eye=%ux%u hz=%.0f aa=%u"
         " pos=%.0f,%.0f,%.0f presents=%u reproj=%u dropped=%u timeout=%u",
         seconds, m_PerfFrames, seconds > 0.0 ? m_PerfFrames / seconds : 0.0, m_PerfStereoFrames,
-        m_PerfInGameFrames, m_PerfMenuFrames, m_PerfLevelLoads, m_RenderWidth, m_RenderHeight,
-        m_PerfDisplayHz, m_AntiAliasing, m_SetupOrigin.x, m_SetupOrigin.y, m_SetupOrigin.z,
-        delta.presents, delta.reprojected, delta.dropped, delta.timedOut);
-    Logger::WriteSibling("portal2vr_perf.log", header + PerfStats::FormatMetrics(m_PerfWindow));
+        m_PerfInGameFrames, m_PerfMenuFrames, m_PerfLevelLoads, m_PerfLongFrames, m_RenderWidth,
+        m_RenderHeight, m_PerfDisplayHz, m_AntiAliasing, m_SetupOrigin.x, m_SetupOrigin.y,
+        m_SetupOrigin.z, delta.presents, delta.reprojected, delta.dropped, delta.timedOut);
+    Logger::WriteSibling("portal2vr_perf.log", header + PerfStats::FormatMetrics(m_PerfWindow) +
+                                                   PerfStats::FormatBreakdown(m_PerfWorstFrame));
 
     m_PerfWindow.Clear();
     m_PerfWindowStart = now;
+    m_PerfWorstFrame = {};
     m_PerfFrames = m_PerfStereoFrames = m_PerfInGameFrames = m_PerfMenuFrames = m_PerfLevelLoads = 0;
+    m_PerfLongFrames = 0;
     m_PerfCountsStart = countsNow;
     m_PerfHaveCounts = haveCounts;
 }

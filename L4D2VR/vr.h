@@ -313,6 +313,10 @@ public:
 	// drain of this Present and the WaitGetPoses of the previous Update.
 	double m_PerfPendingDrainMs = 0.0;
 	double m_PerfLastWaitPosesMs = 0.0;
+	double m_PerfLastPairMs = 0.0;
+	double m_PerfLastSubmitMs = 0.0;
+	PerfStats::FrameBreakdown m_PerfWorstFrame{};
+	std::uint32_t m_PerfLongFrames = 0;
 	std::uint32_t m_PerfFrames = 0;
 	std::uint32_t m_PerfStereoFrames = 0;
 	std::uint32_t m_PerfInGameFrames = 0;

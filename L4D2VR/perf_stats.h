@@ -39,7 +39,7 @@ constexpr std::size_t kMetricCount = static_cast<std::size_t>(Metric::Count);
 inline const char *MetricName(Metric metric)
 {
     static constexpr std::array<const char *, kMetricCount> names{
-        "frame", "main", "stereo", "left", "right", "window", "present", "drain",
+        "frame", "main", "pair", "left", "right", "window", "present", "drain",
         "submit", "poses", "gpu", "gpuTotal", "idle"};
     return names[static_cast<std::size_t>(metric)];
 }
@@ -103,6 +103,35 @@ public:
 private:
     std::array<std::vector<float>, kMetricCount> m_Samples;
 };
+
+// One frame interval split into its timed parts. The log keeps the slowest
+// frame of each window so a hitch can be attributed to its cause.
+struct FrameBreakdown
+{
+    double frame = 0.0;
+    double main = 0.0;
+    double pair = 0.0;
+    double drain = 0.0;
+    double poses = 0.0;
+    double submit = 0.0;
+};
+
+// " worst=frame:main:pair:drain:poses:submit" in milliseconds.
+inline std::string FormatBreakdown(const FrameBreakdown &frame)
+{
+    if (frame.frame <= 0.0) return {};
+    char buffer[96];
+    std::snprintf(buffer, sizeof(buffer), " worst=%.1f:%.1f:%.1f:%.1f:%.1f:%.1f", frame.frame,
+                  frame.main, frame.pair, frame.drain, frame.poses, frame.submit);
+    return buffer;
+}
+
+// A frame that took more than one and a half refresh intervals: the
+// compositor showed at least one frame without new content.
+inline bool IsLongFrame(double frameMs, float displayHz)
+{
+    return displayHz > 0.0f && frameMs > 1.5 * 1000.0 / displayHz;
+}
 
 // Compositor counters are cumulative for the process; the log reports the
 // difference over each window.

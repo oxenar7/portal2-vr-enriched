@@ -20,6 +20,7 @@ namespace dxvk {
     uint32_t          semanticIndex;
     uint32_t          registerId;
     DxbcRegMask       componentMask;
+    DxbcRegMask       componentUsed;
     DxbcScalarType    componentType;
     DxbcSystemValue   systemValue;
     uint32_t          streamId;
@@ -53,16 +54,14 @@ namespace dxvk {
             uint32_t     registerId) const;
     
     uint32_t maxRegisterCount() const;
-
-    void printEntries() const;
     
+    static bool compareSemanticNames(
+      const std::string& a,
+      const std::string& b);
+
   private:
     
     std::vector<DxbcSgnEntry> m_entries;
-    
-    bool compareSemanticNames(
-      const std::string& a,
-      const std::string& b) const;
     
   };
   

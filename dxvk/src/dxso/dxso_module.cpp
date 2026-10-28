@@ -21,7 +21,7 @@ namespace dxvk {
     return info;
   }
 
-  DxsoPermutations DxsoModule::compile(
+  Rc<DxvkShader> DxsoModule::compile(
     const DxsoModuleInfo&     moduleInfo,
     const std::string&        fileName,
     const DxsoAnalysisInfo&   analysis,
@@ -34,13 +34,20 @@ namespace dxvk {
     this->runCompiler(*compiler, m_code.iter());
     m_isgn = compiler->isgn();
 
-    m_meta            = compiler->meta();
-    m_constants       = compiler->constants();
-    m_maxDefinedConst = compiler->maxDefinedConstant();
-    m_usedSamplers    = compiler->usedSamplers();
-    m_usedRTs         = compiler->usedRTs();
+    m_meta                 = compiler->meta();
+    m_constants            = compiler->constants();
+    m_maxDefinedFloatConst = compiler->maxDefinedFloatConstant();
+    m_maxDefinedIntConst   = compiler->maxDefinedIntConstant();
+    m_maxDefinedBoolConst  = compiler->maxDefinedBoolConstant();
+    m_usedSamplers         = compiler->usedSamplers();
+    m_textureTypes         = compiler->textureTypes();
 
     compiler->finalize();
+
+    // SM 1 doesn't have explicit output registers and uses R0 instead.
+    // The shader compiler emits the C0 write in finalize, so we have to get the rt mask
+    // after that.
+    m_usedRTs = compiler->usedRTs();
 
     return compiler->compile();
   }

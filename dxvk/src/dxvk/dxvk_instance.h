@@ -8,7 +8,45 @@
 #include "dxvk_options.h"
 
 namespace dxvk {
-  
+
+  /**
+   * \brief Vulkan instance creation parameters
+   */
+  struct DxvkInstanceImportInfo {
+    PFN_vkGetInstanceProcAddr loaderProc;
+    VkInstance instance;
+    uint32_t extensionCount;
+    const char** extensionNames;
+  };
+
+
+  /**
+   * \brief Debug flags
+   */
+  enum class DxvkDebugFlag : uint32_t {
+    Validation        = 0,
+    Capture           = 1,
+    Markers           = 2,
+  };
+
+  using DxvkDebugFlags = Flags<DxvkDebugFlag>;
+
+
+  /**
+   * \brief Instance creation flags
+   *
+   * These flags will be passed to the app version field of the Vulkan
+   * instance, so that drivers can adjust behaviour for some edge cases
+   * that are not implementable with Vulkan itself.
+   */
+  enum class DxvkInstanceFlag : uint32_t {
+    /** Enforce D3D9 behaviour for texture coordinate snapping */
+    ClientApiIsD3D9,
+  };
+
+  using DxvkInstanceFlags = Flags<DxvkInstanceFlag>;
+
+
   /**
    * \brief DXVK instance
    * 
@@ -19,8 +57,21 @@ namespace dxvk {
   class DxvkInstance : public RcObject {
     
   public:
-    
-    DxvkInstance();
+
+    /**
+     * \brief Creates new Vulkan instance
+     * \param [in] flags Instance flags
+     */
+    explicit DxvkInstance(DxvkInstanceFlags flags);
+
+    /**
+     * \brief Imports existing Vulkan instance
+     * \param [in] flags Instance flags
+     */
+    explicit DxvkInstance(
+      const DxvkInstanceImportInfo& args,
+            DxvkInstanceFlags       flags);
+
     ~DxvkInstance();
     
     /**
@@ -105,25 +156,68 @@ namespace dxvk {
     const DxvkInstanceExtensions& extensions() const {
       return m_extensions;
     }
+
+   /**
+    * \brief Instance extension name list
+    * 
+    * Returns the list of extensions that the
+    * instance was created with, provided by
+    * both DXVK and any extension providers.
+    * \returns Instance extension name list
+    */
+    const DxvkNameList& extensionNameList() const {
+      return m_extensionNames;
+    }
+
+    /**
+     * \brief Debug flags
+     * \returns Debug flags
+     */
+    DxvkDebugFlags debugFlags() const {
+      return m_debugFlags;
+    }
     
   private:
 
-    Config              m_config;
-    DxvkOptions         m_options;
+    Config                  m_config;
+    DxvkOptions             m_options;
 
     Rc<vk::LibraryFn>       m_vkl;
     Rc<vk::InstanceFn>      m_vki;
     DxvkInstanceExtensions  m_extensions;
+    DxvkNameSet             m_extensionSet;
+    DxvkNameList            m_extensionNames;
+    DxvkDebugFlags          m_debugFlags = 0u;
+
+    VkDebugUtilsMessengerEXT m_messenger = VK_NULL_HANDLE;
 
     std::vector<DxvkExtensionProvider*> m_extProviders;
     std::vector<Rc<DxvkAdapter>> m_adapters;
     
-    VkInstance createInstance();
+    void createLibraryLoader(
+      const DxvkInstanceImportInfo& args);
+
+    void createInstanceLoader(
+      const DxvkInstanceImportInfo& args,
+            DxvkInstanceFlags       flags);
+
+    std::vector<DxvkExt*> getExtensionList(
+            DxvkInstanceExtensions& ext,
+            bool                    withDebug);
+
+    DxvkNameSet getExtensionSet(
+      const DxvkNameList& extensions);
 
     std::vector<Rc<DxvkAdapter>> queryAdapters();
     
     static void logNameList(const DxvkNameList& names);
-    
+
+    static VkBool32 VKAPI_CALL debugCallback(
+            VkDebugUtilsMessageSeverityFlagBitsEXT  messageSeverity,
+            VkDebugUtilsMessageTypeFlagsEXT         messageTypes,
+      const VkDebugUtilsMessengerCallbackDataEXT*   pCallbackData,
+            void*                                   pUserData);
+
   };
   
 }

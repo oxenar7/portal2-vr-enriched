@@ -1,6 +1,8 @@
 #pragma once
 
 #include "dxvk_image.h"
+#include "dxvk_graphics_state.h"
+#include "dxvk_pipelayout.h"
 #include "dxvk_renderpass.h"
 
 namespace dxvk {
@@ -22,12 +24,12 @@ namespace dxvk {
   /**
    * \brief Framebuffer attachment
    * 
-   * Stores an attachment, as well as the image layout
-   * that will be used for rendering to the attachment.
    */
   struct DxvkAttachment {
-    Rc<DxvkImageView> view    = nullptr;
-    VkImageLayout     layout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    Rc<DxvkImageView> view = nullptr;
+
+    bool operator == (const DxvkAttachment& other) const { return view == other.view; }
+    bool operator != (const DxvkAttachment& other) const { return view != other.view; }
   };
   
   
@@ -40,6 +42,19 @@ namespace dxvk {
   struct DxvkRenderTargets {
     DxvkAttachment depth;
     DxvkAttachment color[MaxNumRenderTargets];
+
+    bool operator == (const DxvkRenderTargets& other) const {
+      bool eq = depth == other.depth;
+
+      for (uint32_t i = 0; i < MaxNumRenderTargets && eq; i++)
+        eq = color[i] == other.color[i];
+
+      return eq;
+    }
+
+    bool operator != (const DxvkRenderTargets& other) const {
+      return !(this->operator == (other));
+    }
   };
 
 
@@ -53,29 +68,13 @@ namespace dxvk {
 
 
   /**
-   * \brief Framebuffer key
+   * \brief Rendering info
    */
-  struct DxvkFramebufferKey {
-    uint64_t            colorViews[MaxNumRenderTargets];
-    uint64_t            depthView;
-    VkRenderPass        renderPass;
-
-    size_t hash() const {
-      DxvkHashState state;
-      state.add(depthView);
-      for (uint32_t i = 0; i < MaxNumRenderTargets; i++)
-        state.add(colorViews[i]);
-      state.add(uint64_t(renderPass));
-      return state;
-    }
-
-    bool eq(const DxvkFramebufferKey& other) const {
-      bool eq = depthView   == other.depthView
-             && renderPass  == other.renderPass;
-      for (uint32_t i = 0; i < MaxNumRenderTargets; i++)
-        eq &= colorViews[i] == other.colorViews[i];
-      return eq;
-    }
+  struct DxvkRenderingInfo {
+    std::array<VkRenderingAttachmentInfo, MaxNumRenderTargets> color = { };
+    VkRenderingAttachmentInfo depth = { };
+    VkRenderingAttachmentInfo stencil = { };
+    VkRenderingInfo rendering = { };
   };
 
 
@@ -93,8 +92,7 @@ namespace dxvk {
 
     DxvkFramebufferInfo(
       const DxvkRenderTargets&      renderTargets,
-      const DxvkFramebufferSize&    defaultSize,
-            DxvkRenderPass*         renderPass);
+      const DxvkFramebufferSize&    defaultSize);
 
     ~DxvkFramebufferInfo();
 
@@ -112,14 +110,6 @@ namespace dxvk {
      */
     DxvkFramebufferSize size() const {
       return m_renderSize;
-    }
-
-    /**
-     * \brief Render pass
-     * \returns Render pass
-     */
-    DxvkRenderPass* renderPass() const {
-      return m_renderPass;
     }
 
     /**
@@ -164,7 +154,7 @@ namespace dxvk {
      * \brief Queries color attachment index of a given attachment
      * \returns The index, or -1 if the given attachment is the depth attachment
      */
-    const int32_t getColorAttachmentIndex(uint32_t id) const {
+    int32_t getColorAttachmentIndex(uint32_t id) const {
       return m_attachments[id];
     }
 
@@ -189,15 +179,6 @@ namespace dxvk {
     int32_t findAttachment(const Rc<DxvkImageView>& view) const;
 
     /**
-     * \brief Checks whether the framebuffer's targets match
-     *
-     * \param [in] renderTargets Render targets to check
-     * \returns \c true if the render targets are the same
-     *          as the ones used for this framebuffer object.
-     */
-    bool hasTargets(const DxvkRenderTargets& renderTargets);
-
-    /**
      * \brief Checks whether view and framebuffer sizes match
      *
      * Tests whether the size of the framebuffer is the same
@@ -220,28 +201,16 @@ namespace dxvk {
     bool isWritable(uint32_t attachmentIndex, VkImageAspectFlags aspects) const;
 
     /**
-     * \brief Generates framebuffer key
-     * \returns Framebuffer key
+     * \brief Generates render target state
+     * \returns Render target state info
      */
-    DxvkFramebufferKey key() const;
-
-    /**
-     * \brief Generatess render pass format
-     *
-     * This render pass format can be used to
-     * look up a compatible render pass.
-     * \param [in] renderTargets Render targets
-     * \returns The render pass format
-     */
-    static DxvkRenderPassFormat getRenderPassFormat(
-      const DxvkRenderTargets&  renderTargets);
+    DxvkRtInfo getRtInfo() const;
 
   private:
 
     DxvkRenderTargets   m_renderTargets;
     DxvkFramebufferSize m_renderSize  = { 0u, 0u, 0u };
     VkSampleCountFlags  m_sampleCount = 0;
-    DxvkRenderPass*     m_renderPass;
 
     uint32_t                                     m_attachmentCount = 0;
     std::array<int32_t, MaxNumRenderTargets + 1> m_attachments;
@@ -255,45 +224,86 @@ namespace dxvk {
   };
 
 
-
   /**
-   * \brief Framebuffer
-   * 
-   * A framebuffer either stores a set of image views
-   * that will be used as render targets, or in case
-   * no render targets are attached, fixed dimensions.
+   * \brief Attachment mask
+   *
+   * Convenience class to track attachment access.
    */
-  class DxvkFramebuffer : public DxvkResource {
-    
+  class DxvkAttachmentMask {
+    constexpr static uint32_t ColorRead     = 1u << 0;
+    constexpr static uint32_t ColorWrite    = 1u << 8;
+    constexpr static uint32_t DepthRead     = 1u << 16;
+    constexpr static uint32_t DepthWrite    = 1u << 17;
+    constexpr static uint32_t StencilRead   = 1u << 18;
+    constexpr static uint32_t StencilWrite  = 1u << 19;
   public:
-    
-    DxvkFramebuffer(
-      const Rc<vk::DeviceFn>&       vkd,
-      const DxvkFramebufferInfo&    info);
-    
-    ~DxvkFramebuffer();
-    
-    /**
-     * \brief Framebuffer handle
-     * \returns Framebuffer handle
-     */
-    VkFramebuffer handle() const {
-      return m_handle;
+
+    DxvkAttachmentMask() = default;
+
+    DxvkAccess getColorAccess(uint32_t index) const {
+      return getAccess(ColorRead << index, ColorWrite << index);
     }
 
-    /**
-     * \brief Framebuffer key
-     */
-    const DxvkFramebufferKey& key() const {
-      return m_key;
+    DxvkAccess getDepthAccess() const {
+      return getAccess(DepthRead, DepthWrite);
     }
-    
+
+    DxvkAccess getStencilAccess() const {
+      return getAccess(StencilRead, StencilWrite);
+    }
+
+    void trackColorRead(uint32_t index) {
+      m_mask |= ColorRead << index;
+    }
+
+    void trackColorWrite(uint32_t index) {
+      m_mask |= ColorWrite << index;
+    }
+
+    void trackDepthRead() {
+      m_mask |= DepthRead;
+    }
+
+    void trackDepthWrite() {
+      m_mask |= DepthWrite;
+    }
+
+    void trackStencilRead() {
+      m_mask |= StencilRead;
+    }
+
+    void trackStencilWrite() {
+      m_mask |= StencilWrite;
+    }
+
+    void unifyDepthStencilAccess() {
+      if (m_mask & (DepthRead | StencilRead))
+        m_mask |= DepthRead | StencilRead;
+      if (m_mask & (DepthWrite | StencilWrite))
+        m_mask |= DepthWrite | StencilWrite;
+    }
+
+    void merge(const DxvkAttachmentMask& other) {
+      m_mask |= other.m_mask;
+    }
+
+    void clear() {
+      m_mask = 0u;
+    }
+
   private:
-    
-    Rc<vk::DeviceFn>    m_vkd;
-    VkFramebuffer       m_handle;
-    DxvkFramebufferKey  m_key;
-    
+
+    uint32_t m_mask = 0u;
+
+    DxvkAccess getAccess(uint32_t readBit, uint32_t writeBit) const {
+      if (m_mask & writeBit)
+        return DxvkAccess::Write;
+      else if (m_mask & readBit)
+        return DxvkAccess::Read;
+      else
+        return DxvkAccess::None;
+    }
+
   };
   
 }

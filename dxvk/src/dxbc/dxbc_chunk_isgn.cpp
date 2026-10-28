@@ -23,7 +23,11 @@ namespace dxvk {
       entry.systemValue     = static_cast<DxbcSystemValue>(reader.readu32());
       entry.componentType   = componentTypes.at(reader.readu32());
       entry.registerId      = reader.readu32();
-      entry.componentMask   = bit::extract(reader.readu32(), 0, 3);
+
+      uint32_t mask = reader.readu32();
+
+      entry.componentMask   = bit::extract(mask, 0, 3);
+      entry.componentUsed   = bit::extract(mask, 8, 11);
 
       if (hasPrecision)
         reader.readu32();
@@ -83,29 +87,23 @@ namespace dxvk {
     return result;
   }
 
-  void DxbcIsgn::printEntries() const {
-    for (auto entry = this->begin(); entry != this->end(); entry++) {
-          Logger::debug(str::format("SGN Entry:\n\t",
-            "semanticName: ",  entry->semanticName, "\n\t",
-            "semanticIndex: ", entry->semanticIndex, "\n\t",
-            "registerId: ",    entry->registerId, "\n\t",
-            "componentMask: ", entry->componentMask.maskString(), "\n\t",
-            "componentType: ", entry->componentType, "\n\t",
-            "systemValue: ",   entry->systemValue, "\n\t",
-            "streamId: ",      entry->streamId, "\n",
-            "\n"));
-    }
-  }
-
 
   bool DxbcIsgn::compareSemanticNames(
-    const std::string& a, const std::string& b) const {
+    const std::string& a, const std::string& b) {
     if (a.size() != b.size())
       return false;
     
     for (size_t i = 0; i < a.size(); i++) {
-      if (std::toupper(a[i]) != std::toupper(b[i]))
-        return false;
+      char ac = a[i];
+      char bc = b[i];
+
+      if (ac != bc) {
+        if (ac >= 'A' && ac <= 'Z') ac += 'a' - 'A';
+        if (bc >= 'A' && bc <= 'Z') bc += 'a' - 'A';
+
+        if (ac != bc)
+          return false;
+      }
     }
     
     return true;

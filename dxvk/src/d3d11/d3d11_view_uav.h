@@ -43,6 +43,10 @@ namespace dxvk {
       return m_info.BindFlags & Flags;
     }
 
+    BOOL HasCounter() const {
+      return m_counterView != nullptr;
+    }
+
     D3D11_RESOURCE_DIMENSION GetResourceType() const {
       D3D11_RESOURCE_DIMENSION type;
       m_resource->GetType(&type);
@@ -57,10 +61,8 @@ namespace dxvk {
       return m_imageView;
     }
     
-    DxvkBufferSlice GetCounterSlice() const {
-      return m_counterBuffer != nullptr
-        ? DxvkBufferSlice(m_counterBuffer)
-        : DxvkBufferSlice();
+    Rc<DxvkBufferView> GetCounterView() const {
+      return m_counterView;
     }
     
     static HRESULT GetDescFromResource(
@@ -85,9 +87,11 @@ namespace dxvk {
     D3D11_VK_VIEW_INFO                m_info;
     Rc<DxvkBufferView>                m_bufferView;
     Rc<DxvkImageView>                 m_imageView;
-    Rc<DxvkBuffer>                    m_counterBuffer;
+    Rc<DxvkBufferView>                m_counterView;
 
-    Rc<DxvkBuffer> CreateCounterBuffer();
+    D3DDestructionNotifier            m_destructionNotifier;
+
+    Rc<DxvkBufferView> CreateCounterBufferView();
     
   };
   

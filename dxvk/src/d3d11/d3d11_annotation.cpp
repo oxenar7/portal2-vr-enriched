@@ -1,8 +1,10 @@
 #include "d3d11_annotation.h"
-#include "d3d11_context.h"
+#include "d3d11_context_def.h"
+#include "d3d11_context_imm.h"
 #include "d3d11_device.h"
 
 #include "../util/util_misc.h"
+#include "../util/util_win32_compat.h"
 
 namespace dxvk {
 
@@ -30,100 +32,108 @@ namespace dxvk {
     registrationFunction(annotation);
   }
 
-  D3D11UserDefinedAnnotation::D3D11UserDefinedAnnotation(D3D11DeviceContext* ctx)
-  : m_container(ctx),
-    m_eventDepth(0) {
-    if (m_container->IsAnnotationEnabled())
+
+  template<typename ContextType>
+  D3D11UserDefinedAnnotation<ContextType>::D3D11UserDefinedAnnotation(
+          ContextType*          container,
+    const Rc<DxvkDevice>&       dxvkDevice)
+  : m_container(container),
+    m_annotationsEnabled(dxvkDevice->debugFlags().test(DxvkDebugFlag::Markers)) {
+    if (!IsDeferred && m_annotationsEnabled)
       RegisterUserDefinedAnnotation<true>(this);
   }
 
-  D3D11UserDefinedAnnotation::D3D11UserDefinedAnnotation(const D3D11UserDefinedAnnotation&)
-  {
-    if (m_container->IsAnnotationEnabled())
-      RegisterUserDefinedAnnotation<true>(this);
-  }
 
-  D3D11UserDefinedAnnotation::~D3D11UserDefinedAnnotation() {
-    if (m_container->IsAnnotationEnabled())
+  template<typename ContextType>
+  D3D11UserDefinedAnnotation<ContextType>::~D3D11UserDefinedAnnotation() {
+    if (!IsDeferred && m_annotationsEnabled)
       RegisterUserDefinedAnnotation<false>(this);
   }
 
 
-  ULONG STDMETHODCALLTYPE D3D11UserDefinedAnnotation::AddRef() {
+  template<typename ContextType>
+  ULONG STDMETHODCALLTYPE D3D11UserDefinedAnnotation<ContextType>::AddRef() {
     return m_container->AddRef();
   }
 
   
-  ULONG STDMETHODCALLTYPE D3D11UserDefinedAnnotation::Release() {
+  template<typename ContextType>
+  ULONG STDMETHODCALLTYPE D3D11UserDefinedAnnotation<ContextType>::Release() {
     return m_container->Release();
   }
 
   
-  HRESULT STDMETHODCALLTYPE D3D11UserDefinedAnnotation::QueryInterface(
+  template<typename ContextType>
+  HRESULT STDMETHODCALLTYPE D3D11UserDefinedAnnotation<ContextType>::QueryInterface(
           REFIID                  riid,
           void**                  ppvObject) {
     return m_container->QueryInterface(riid, ppvObject);
   }
   
 
-  INT STDMETHODCALLTYPE D3D11UserDefinedAnnotation::BeginEvent(
+  template<typename ContextType>
+  INT STDMETHODCALLTYPE D3D11UserDefinedAnnotation<ContextType>::BeginEvent(
           D3DCOLOR                Color,
           LPCWSTR                 Name) {
-    if (!m_container->IsAnnotationEnabled())
+    if (!m_annotationsEnabled || !Name)
       return -1;
 
     D3D10DeviceLock lock = m_container->LockContext();
 
-    m_container->EmitCs([color = Color, labelName = dxvk::str::fromws(Name)](DxvkContext *ctx) {
-      VkDebugUtilsLabelEXT label;
-      label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-      label.pNext = nullptr;
-      label.pLabelName = labelName.c_str();
-      DecodeD3DCOLOR(color, label.color);
-
-      ctx->beginDebugLabel(&label);
+    m_container->EmitCs([
+      cColor = Color,
+      cLabel = dxvk::str::fromws(Name)
+    ] (DxvkContext* ctx) {
+      ctx->beginDebugLabel(vk::makeLabel(cColor, cLabel.c_str()));
     });
 
     return m_eventDepth++;
   }
 
 
-  INT STDMETHODCALLTYPE D3D11UserDefinedAnnotation::EndEvent() {
-    if (!m_container->IsAnnotationEnabled())
+  template<typename ContextType>
+  INT STDMETHODCALLTYPE D3D11UserDefinedAnnotation<ContextType>::EndEvent() {
+    if (!m_annotationsEnabled)
       return -1;
 
     D3D10DeviceLock lock = m_container->LockContext();
 
-    m_container->EmitCs([](DxvkContext *ctx) {
+    if (!m_eventDepth)
+      return 0;
+
+    m_container->EmitCs([] (DxvkContext* ctx) {
       ctx->endDebugLabel();
     });
 
-    return m_eventDepth--;
+    return --m_eventDepth;
   }
 
 
-  void STDMETHODCALLTYPE D3D11UserDefinedAnnotation::SetMarker(
+  template<typename ContextType>
+  void STDMETHODCALLTYPE D3D11UserDefinedAnnotation<ContextType>::SetMarker(
           D3DCOLOR                Color,
           LPCWSTR                 Name) {
-    if (!m_container->IsAnnotationEnabled())
+    if (!m_annotationsEnabled || !Name)
       return;
 
     D3D10DeviceLock lock = m_container->LockContext();
 
-    m_container->EmitCs([color = Color, labelName = dxvk::str::fromws(Name)](DxvkContext *ctx) {
-      VkDebugUtilsLabelEXT label;
-      label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-      label.pNext = nullptr;
-      label.pLabelName = labelName.c_str();
-      DecodeD3DCOLOR(color, label.color);
-
-      ctx->insertDebugLabel(&label);
+    m_container->EmitCs([
+      cColor = Color,
+      cLabel = dxvk::str::fromws(Name)
+    ] (DxvkContext* ctx) {
+      ctx->insertDebugLabel(vk::makeLabel(cColor, cLabel.c_str()));
     });
   }
 
 
-  BOOL STDMETHODCALLTYPE D3D11UserDefinedAnnotation::GetStatus() {
-    return m_container->IsAnnotationEnabled();
+  template<typename ContextType>
+  BOOL STDMETHODCALLTYPE D3D11UserDefinedAnnotation<ContextType>::GetStatus() {
+    return m_annotationsEnabled;
   }
+
+
+  template class D3D11UserDefinedAnnotation<D3D11DeferredContext>;
+  template class D3D11UserDefinedAnnotation<D3D11ImmediateContext>;
 
 }

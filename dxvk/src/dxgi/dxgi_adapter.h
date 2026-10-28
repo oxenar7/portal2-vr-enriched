@@ -111,9 +111,11 @@ namespace dxvk {
     Com<DxgiFactory>  m_factory;
     Rc<DxvkAdapter>   m_adapter;
     DxgiVkAdapter     m_interop;
-    
-    UINT              m_index;
+
+    UINT              m_index = 0u;
     UINT64            m_memReservation[2] = { 0, 0 };
+
+    DXGI_ADAPTER_DESC3 m_desc = { };
 
     dxvk::mutex                       m_mutex;
     dxvk::condition_variable          m_cond;
@@ -122,19 +124,12 @@ namespace dxvk {
     std::unordered_map<DWORD, HANDLE> m_eventMap;
     dxvk::thread                      m_eventThread;
 
+    D3DDestructionNotifier m_destructionNotifier;
+
+    DXGI_ADAPTER_DESC3 GetAdapterDesc() const;
+
     void runEventThread();
-    
-    struct MonitorEnumInfo {
-      UINT      iMonitorId;
-      HMONITOR  oMonitor;
-    };
-    
-    static BOOL CALLBACK MonitorEnumProc(
-            HMONITOR                  hmon,
-            HDC                       hdc,
-            LPRECT                    rect,
-            LPARAM                    lp);
-    
+
   };
 
 }

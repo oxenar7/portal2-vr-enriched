@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "util_vector.h"
 
 namespace dxvk {
@@ -43,6 +45,7 @@ namespace dxvk {
     }
 
     Matrix4(const Matrix4& other) = default;
+    Matrix4& operator=(const Matrix4& other) = default;
 
     Vector4& operator[](size_t index);
     const Vector4& operator[](size_t index) const;
@@ -75,6 +78,8 @@ namespace dxvk {
   Matrix4 transpose(const Matrix4& m);
 
   float determinant(const Matrix4& m);
+
+  std::optional<Matrix4> tryInverse(const Matrix4& m);
 
   Matrix4 inverse(const Matrix4& m);
 

@@ -4,28 +4,45 @@
 
 #include "d3d9_device.h"
 
+#include "../util/util_win32_compat.h"
+
 namespace dxvk {
 
   D3D9Surface::D3D9Surface(
           D3D9DeviceEx*             pDevice,
     const D3D9_COMMON_TEXTURE_DESC* pDesc,
+    const bool                      Extended,
           IUnknown*                 pContainer,
           HANDLE*                   pSharedHandle)
     : D3D9SurfaceBase(
         pDevice,
-        new D3D9CommonTexture( pDevice, pDesc, D3DRTYPE_SURFACE, pSharedHandle),
+        Extended,
+        new D3D9CommonTexture( pDevice, this, pDesc, D3DRTYPE_SURFACE, pSharedHandle),
         0, 0,
         nullptr,
         pContainer) { }
 
   D3D9Surface::D3D9Surface(
           D3D9DeviceEx*             pDevice,
+    const D3D9_COMMON_TEXTURE_DESC* pDesc,
+    const bool                      Extended)
+    : D3D9Surface(
+        pDevice,
+        pDesc,
+        Extended,
+        nullptr,
+        nullptr) { }
+
+  D3D9Surface::D3D9Surface(
+          D3D9DeviceEx*             pDevice,
+    const bool                      Extended,
           D3D9CommonTexture*        pTexture,
           UINT                      Face,
           UINT                      MipLevel,
           IDirect3DBaseTexture9*    pBaseTexture)
     : D3D9SurfaceBase(
         pDevice,
+        Extended,
         pTexture,
         Face, MipLevel,
         pBaseTexture,
@@ -60,7 +77,7 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D9Surface::QueryInterface(REFIID riid, void** ppvObject) {
-    if (ppvObject == nullptr)
+    if (unlikely(ppvObject == nullptr))
       return E_POINTER;
 
     *ppvObject = nullptr;
@@ -72,8 +89,16 @@ namespace dxvk {
       return S_OK;
     }
 
-    Logger::warn("D3D9Surface::QueryInterface: Unknown interface query");
-    Logger::warn(str::format(riid));
+    if (riid == __uuidof(ID3D9VkInteropTexture)) {
+      *ppvObject = ref(m_texture->GetVkInterop());
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(IDirect3DSurface9), riid)) {
+      Logger::warn("D3D9Surface::QueryInterface: Unknown interface query");
+      Logger::warn(str::format(riid));
+    }
+
     return E_NOINTERFACE;
   }
 
@@ -82,7 +107,7 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D9Surface::GetDesc(D3DSURFACE_DESC *pDesc) {
-    if (pDesc == nullptr)
+    if (unlikely(pDesc == nullptr))
       return D3DERR_INVALIDCALL;
 
     auto& desc = *(m_texture->Desc());
@@ -91,10 +116,10 @@ namespace dxvk {
     pDesc->Type               = D3DRTYPE_SURFACE;
     pDesc->Usage              = desc.Usage;
     pDesc->Pool               = desc.Pool;
-    
+
     pDesc->MultiSampleType    = desc.MultiSample;
     pDesc->MultiSampleQuality = desc.MultisampleQuality;
-    pDesc->Width              = std::max(1u, desc.Width >> m_mipLevel);
+    pDesc->Width              = std::max(1u, desc.Width  >> m_mipLevel);
     pDesc->Height             = std::max(1u, desc.Height >> m_mipLevel);
 
     return D3D_OK;
@@ -105,7 +130,47 @@ namespace dxvk {
       return D3DERR_INVALIDCALL;
 
     D3DBOX box;
-    if (pRect != nullptr) {
+    auto& desc = *(m_texture->Desc());
+    D3DRESOURCETYPE type = m_texture->GetType();
+
+    // LockRect clears any existing content present in pLockedRect,
+    // for surfaces in D3DPOOL_DEFAULT. D3D8 additionally clears the content
+    // for non-D3DPOOL_DEFAULT surfaces if their type is not D3DRTYPE_TEXTURE.
+    if (desc.Pool == D3DPOOL_DEFAULT
+     || (m_texture->Device()->IsD3D8Compatible() && type != D3DRTYPE_TEXTURE)) {
+      pLockedRect->pBits = nullptr;
+      pLockedRect->Pitch = 0;
+    }
+
+    if (unlikely(pRect != nullptr)) {
+      D3D9_FORMAT_BLOCK_SIZE blockSize = GetFormatAlignedBlockSize(desc.Format);
+
+      const bool isBlockAlignedFormat = blockSize.Width > 0 && blockSize.Height > 0;
+      const bool isSystemMemSurface   = desc.Pool == D3DPOOL_SYSTEMMEM && type == D3DRTYPE_SURFACE;
+
+      // The boundaries of pRect are validated for D3DPOOL_DEFAULT surfaces
+      // with formats which need to be block aligned, surfaces created via
+      // CreateImageSurface and D3D8 cube textures outside of D3DPOOL_DEFAULT
+      if ((isBlockAlignedFormat && desc.Pool == D3DPOOL_DEFAULT) || isSystemMemSurface
+       || (m_texture->Device()->IsD3D8Compatible() &&
+           desc.Pool != D3DPOOL_DEFAULT && type == D3DRTYPE_CUBETEXTURE)) {
+        const LONG width  = pRect->right  - pRect->left;
+        const LONG height = pRect->bottom - pRect->top;
+
+        const bool invalidDimensions = isSystemMemSurface ? (width < 0 || height < 0) : (width <= 0 || height <= 0);
+        // Negative coordinates
+        if (pRect->left < 0 || pRect->right  < 0
+         || pRect->top  < 0 || pRect->bottom < 0
+        // Negative or zero length dimensions (just negative in case of
+        // D3DPOOL_SYSTEMMEM surfaces, as Legends of Eisenwald tries to lock
+        // and unlock a zero-length pRect and crashes if this fails)
+         || invalidDimensions
+        // Exceeding surface dimensions
+         || static_cast<UINT>(pRect->right)  > std::max(1u, desc.Width  >> m_mipLevel)
+         || static_cast<UINT>(pRect->bottom) > std::max(1u, desc.Height >> m_mipLevel))
+          return D3DERR_INVALIDCALL;
+      }
+
       box.Left   = pRect->left;
       box.Right  = pRect->right;
       box.Top    = pRect->top;
@@ -123,6 +188,8 @@ namespace dxvk {
       pRect != nullptr ? &box : nullptr,
       Flags);
 
+    if (FAILED(hr)) return hr;
+
     pLockedRect->pBits = lockedBox.pBits;
     pLockedRect->Pitch = lockedBox.RowPitch;
 
@@ -136,10 +203,13 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D9Surface::GetDC(HDC *phDC) {
-    if (phDC == nullptr)
+    if (unlikely(phDC == nullptr))
       return D3DERR_INVALIDCALL;
 
     const D3D9_COMMON_TEXTURE_DESC& desc = *m_texture->Desc();
+
+    if (unlikely(!IsSurfaceGetDCCompatibleFormat(desc.Format)))
+      return D3DERR_INVALIDCALL;
 
     D3DLOCKED_RECT lockedRect;
     HRESULT hr = LockRect(&lockedRect, nullptr, 0);
@@ -160,22 +230,27 @@ namespace dxvk {
     createInfo.hBitmap     = nullptr;
     createInfo.hDc         = nullptr;
 
-    D3DKMTCreateDCFromMemory(&createInfo);
+    if (D3DKMTCreateDCFromMemory(&createInfo))
+      Logger::err("D3D9: Failed to create GDI DC");
+
     DeleteDC(createInfo.hDeviceDc);
 
     // These should now be set...
-    m_dcDesc.hDC     = createInfo.hDc;
-    m_dcDesc.hBitmap = createInfo.hBitmap;
+    m_hdc     = createInfo.hDc;
+    m_hbitmap = createInfo.hBitmap;
 
-    *phDC = m_dcDesc.hDC;
+    *phDC = m_hdc;
     return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D9Surface::ReleaseDC(HDC hDC) {
-    if (m_dcDesc.hDC == nullptr || m_dcDesc.hDC != hDC)
+    if (unlikely(m_hdc == nullptr || m_hdc != hDC))
       return D3DERR_INVALIDCALL;
 
-    D3DKMTDestroyDCFromMemory(&m_dcDesc);
+    D3DKMT_DESTROYDCFROMMEMORY desc;
+    desc.hDc     = m_hdc;
+    desc.hBitmap = m_hbitmap;
+    D3DKMTDestroyDCFromMemory(&desc);
 
     HRESULT hr = UnlockRect();
     if (FAILED(hr))

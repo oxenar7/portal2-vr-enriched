@@ -9,7 +9,6 @@
 #include "dxso_analysis.h"
 
 #include "../d3d9/d3d9_constant_layout.h"
-#include "../d3d9/d3d9_shader_permutations.h"
 
 #include <vector>
 
@@ -42,7 +41,7 @@ namespace dxvk {
      *        the compiled SPIR-V for debugging purposes.
      * \returns The compiled shader object
      */
-    DxsoPermutations compile(
+    Rc<DxvkShader> compile(
       const DxsoModuleInfo&     moduleInfo,
       const std::string&        fileName,
       const DxsoAnalysisInfo&   analysis,
@@ -60,7 +59,13 @@ namespace dxvk {
 
     uint32_t usedRTs() { return m_usedRTs; }
 
-    uint32_t maxDefinedConstant() { return m_maxDefinedConst; }
+    int32_t maxDefinedFloatConstant() { return m_maxDefinedFloatConst; }
+
+    int32_t maxDefinedIntConstant() { return m_maxDefinedIntConst; }
+
+    int32_t maxDefinedBoolConstant() { return m_maxDefinedBoolConst; }
+
+    uint32_t textureTypes() { return m_textureTypes; }
 
   private:
 
@@ -76,11 +81,14 @@ namespace dxvk {
     DxsoCode        m_code;
 
     DxsoIsgn        m_isgn;
-    uint32_t        m_usedSamplers;
-    uint32_t        m_usedRTs;
+    uint32_t        m_usedSamplers = 0u;
+    uint32_t        m_usedRTs      = 0u;
+    uint32_t        m_textureTypes = 0u;
 
     DxsoShaderMetaInfo   m_meta;
-    uint32_t             m_maxDefinedConst;
+    int32_t              m_maxDefinedFloatConst = -1;
+    int32_t              m_maxDefinedIntConst = -1;
+    int32_t              m_maxDefinedBoolConst = -1;
     DxsoDefinedConstants m_constants;
 
   };

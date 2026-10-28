@@ -17,6 +17,10 @@ namespace dxvk {
     CaptureType(Type);
   }
 
+  D3D9StateBlock::~D3D9StateBlock() {
+    if (!m_parent->IsD3D8Compatible())
+      m_parent->DecrementLosableCounter();
+  }
 
   HRESULT STDMETHODCALLTYPE D3D9StateBlock::QueryInterface(
           REFIID  riid,
@@ -32,30 +36,42 @@ namespace dxvk {
       return S_OK;
     }
 
-    Logger::warn("D3D9StateBlock::QueryInterface: Unknown interface query");
-    Logger::warn(str::format(riid));
+    if (logQueryInterfaceError(__uuidof(IDirect3DStateBlock9), riid)) {
+      Logger::warn("D3D9StateBlock::QueryInterface: Unknown interface query");
+      Logger::warn(str::format(riid));
+    }
+
     return E_NOINTERFACE;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D9StateBlock::Capture() {
+    D3D9DeviceLock lock = m_parent->LockDevice();
+
+    // A state block can't capture state while another is being recorded.
+    if (unlikely(m_parent->ShouldRecord()))
+      return D3DERR_INVALIDCALL;
+
     if (m_captures.flags.test(D3D9CapturedStateFlag::VertexDecl))
       SetVertexDeclaration(m_deviceState->vertexDecl.ptr());
 
-    ApplyOrCapture<D3D9StateFunction::Capture>();
+    ApplyOrCapture<D3D9StateFunction::Capture, true>();
 
     return D3D_OK;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D9StateBlock::Apply() {
-    m_applying = true;
+    D3D9DeviceLock lock = m_parent->LockDevice();
+
+    // A state block can't be applied while another is being recorded.
+    if (unlikely(m_parent->ShouldRecord()))
+      return D3DERR_INVALIDCALL;
 
     if (m_captures.flags.test(D3D9CapturedStateFlag::VertexDecl) && m_state.vertexDecl != nullptr)
       m_parent->SetVertexDeclaration(m_state.vertexDecl.ptr());
 
-    ApplyOrCapture<D3D9StateFunction::Apply>();
-    m_applying = false;
+    ApplyOrCapture<D3D9StateFunction::Apply, false>();
 
     return D3D_OK;
   }
@@ -115,6 +131,20 @@ namespace dxvk {
   }
 
 
+  HRESULT D3D9StateBlock::SetStreamSourceWithoutOffset(
+          UINT                StreamNumber,
+          D3D9VertexBuffer*   pStreamData,
+          UINT                Stride) {
+    m_state.vertexBuffers[StreamNumber].vertexBuffer = pStreamData;
+
+    m_state.vertexBuffers[StreamNumber].stride = Stride;
+
+    m_captures.flags.set(D3D9CapturedStateFlag::VertexBuffers);
+    m_captures.vertexBuffers.set(StreamNumber, true);
+    return D3D_OK;
+  }
+
+
   HRESULT D3D9StateBlock::SetStreamSourceFreq(UINT StreamNumber, UINT Setting) {
     m_state.streamFreq[StreamNumber] = Setting;
 
@@ -157,6 +187,37 @@ namespace dxvk {
   }
 
 
+  HRESULT D3D9StateBlock::SetLight(DWORD Index, const D3DLIGHT9* pLight) {
+    if (Index >= m_state.lights.size())
+      m_state.lights.resize(Index + 1);
+
+    auto& light = m_state.lights[Index];
+    light.isValid = true;
+    light.light = *pLight;
+
+    m_captures.flags.set(D3D9CapturedStateFlag::Lights);
+    return D3D_OK;
+  }
+
+
+  HRESULT D3D9StateBlock::LightEnable(DWORD Index, BOOL Enable) {
+    if (unlikely(Index >= m_state.lights.size()))
+      m_state.lights.resize(Index + 1);
+
+    // Apply default light on enable, but not disable.
+    // No idea if this is correct, but matches the old logic.
+    auto& light = m_state.lights[Index];
+    light.isEnabled = bool(Enable);
+
+    if (Enable)
+      light.isValid = true;
+
+    m_captures.lightEnabledChanges.set(Index, true);
+    m_captures.flags.set(D3D9CapturedStateFlag::Lights);
+    return D3D_OK;
+  }
+
+
   HRESULT D3D9StateBlock::SetStateTransform(uint32_t idx, const D3DMATRIX* pMatrix) {
     m_state.transforms[idx] = ConvertMatrix(pMatrix);
 
@@ -170,20 +231,14 @@ namespace dxvk {
           DWORD                      Stage,
           D3D9TextureStageStateTypes Type,
           DWORD                      Value) {
+    Stage = std::min(Stage, DWORD(caps::TextureStageCount - 1));
+    Type = std::min(Type, D3D9TextureStageStateTypes(DXVK_TSS_COUNT - 1));
+
     m_state.textureStages[Stage][Type] = Value;
 
     m_captures.flags.set(D3D9CapturedStateFlag::TextureStages);
     m_captures.textureStages.set(Stage, true);
     m_captures.textureStageStates[Stage].set(Type, true);
-    return D3D_OK;
-  }
-
-
-  HRESULT D3D9StateBlock::MultiplyStateTransform(uint32_t idx, const D3DMATRIX* pMatrix) {
-    m_state.transforms[idx] = m_state.transforms[idx] * ConvertMatrix(pMatrix);
-
-    m_captures.flags.set(D3D9CapturedStateFlag::Transforms);
-    m_captures.transforms.set(idx, true);
     return D3D_OK;
   }
 
@@ -293,15 +348,15 @@ namespace dxvk {
 
 
   HRESULT D3D9StateBlock::SetVertexBoolBitfield(uint32_t idx, uint32_t mask, uint32_t bits) {
-    m_state.vsConsts.bConsts[idx] &= ~mask;
-    m_state.vsConsts.bConsts[idx] |= bits & mask;
+    m_state.vsConsts->bConsts[idx] &= ~mask;
+    m_state.vsConsts->bConsts[idx] |= bits & mask;
     return D3D_OK;
   }
 
 
   HRESULT D3D9StateBlock::SetPixelBoolBitfield(uint32_t idx, uint32_t mask, uint32_t bits) {
-    m_state.psConsts.bConsts[idx] &= ~mask;
-    m_state.psConsts.bConsts[idx] |= bits & mask;
+    m_state.psConsts->bConsts[idx] &= ~mask;
+    m_state.psConsts->bConsts[idx] |= bits & mask;
     return D3D_OK;
   }
 
@@ -376,7 +431,7 @@ namespace dxvk {
   void D3D9StateBlock::CapturePixelSamplerStates() {
     m_captures.flags.set(D3D9CapturedStateFlag::SamplerStates);
 
-    for (uint32_t i = 0; i < caps::MaxTexturesPS + 1; i++) {
+    for (uint32_t i = 0; i < FirstVSSamplerSlot; i++) {
       m_captures.samplers.set(i, true);
 
       m_captures.samplerStates[i].set(D3DSAMP_ADDRESSU, true);
@@ -459,7 +514,7 @@ namespace dxvk {
   void D3D9StateBlock::CaptureVertexSamplerStates() {
     m_captures.flags.set(D3D9CapturedStateFlag::SamplerStates);
 
-    for (uint32_t i = caps::MaxTexturesPS + 1; i < SamplerCount; i++) {
+    for (uint32_t i = FirstVSSamplerSlot; i < SamplerCount; i++) {
       m_captures.samplers.set(i, true);
       m_captures.samplerStates[i].set(D3DSAMP_DMAPOFFSET, true);
     }
@@ -470,14 +525,9 @@ namespace dxvk {
     m_captures.flags.set(D3D9CapturedStateFlag::VertexShader);
     m_captures.flags.set(D3D9CapturedStateFlag::VsConstants);
 
-    for (uint32_t i = 0; i < m_parent->GetVertexConstantLayout().floatCount / 32; i++)
-      m_captures.vsConsts.fConsts.dword(i) = std::numeric_limits<uint32_t>::max();
-
-    for (uint32_t i = 0; i < m_parent->GetVertexConstantLayout().intCount / 32; i++)
-      m_captures.vsConsts.iConsts.dword(i) = std::numeric_limits<uint32_t>::max();
-
-    for (uint32_t i = 0; i < m_parent->GetVertexConstantLayout().bitmaskCount; i++)
-      m_captures.vsConsts.bConsts.dword(i) = std::numeric_limits<uint32_t>::max();
+    m_captures.vsConsts.fConsts.setN(m_parent->GetVertexConstantLayout().floatCount);
+    m_captures.vsConsts.iConsts.setN(m_parent->GetVertexConstantLayout().intCount);
+    m_captures.vsConsts.bConsts.setN(m_parent->GetVertexConstantLayout().boolCount);
   }
 
 
@@ -500,6 +550,8 @@ namespace dxvk {
 
       m_captures.flags.set(D3D9CapturedStateFlag::VertexDecl);
       m_captures.flags.set(D3D9CapturedStateFlag::StreamFreq);
+      m_captures.flags.set(D3D9CapturedStateFlag::Lights);
+      m_captures.lightEnabledChanges.setN(m_deviceState->lights.size());
 
       for (uint32_t i = 0; i < caps::MaxStreams; i++)
         m_captures.streamFreq.set(i, true);
@@ -525,8 +577,12 @@ namespace dxvk {
       m_captures.flags.set(D3D9CapturedStateFlag::Material);
     }
 
-    if (Type != D3D9StateBlockType::None)
-      this->Capture();
+    if (Type != D3D9StateBlockType::None) {
+      if (m_captures.flags.test(D3D9CapturedStateFlag::VertexDecl))
+        SetVertexDeclaration(m_deviceState->vertexDecl.ptr());
+
+      ApplyOrCapture<D3D9StateFunction::Capture, false>();
+    }
   }
 
 }

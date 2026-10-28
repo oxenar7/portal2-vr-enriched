@@ -12,11 +12,12 @@ namespace dxvk {
   
   class D3D11Buffer;
   class D3D11CommonTexture;
-  
-  class D3D11ImmediateContext : public D3D11DeviceContext {
+
+  class D3D11ImmediateContext : public D3D11CommonContext<D3D11ImmediateContext> {
+    friend class D3D11CommonContext<D3D11ImmediateContext>;
     friend class D3D11SwapChain;
     friend class D3D11VideoContext;
-    friend class D3D11DeviceContext;
+    friend class D3D11DXGIKeyedMutex;
   public:
     
     D3D11ImmediateContext(
@@ -28,10 +29,6 @@ namespace dxvk {
             REFIID  riid,
             void**  ppvObject);
 
-    D3D11_DEVICE_CONTEXT_TYPE STDMETHODCALLTYPE GetType();
-    
-    UINT STDMETHODCALLTYPE GetContextFlags();
-    
     HRESULT STDMETHODCALLTYPE GetData(
             ID3D11Asynchronous*         pAsync,
             void*                       pData,
@@ -77,62 +74,72 @@ namespace dxvk {
             ID3D11Resource*             pResource,
             UINT                        Subresource);
             
-    void STDMETHODCALLTYPE UpdateSubresource(
-            ID3D11Resource*                   pDstResource,
-            UINT                              DstSubresource,
-      const D3D11_BOX*                        pDstBox,
-      const void*                             pSrcData,
-            UINT                              SrcRowPitch,
-            UINT                              SrcDepthPitch);
-    
-    void STDMETHODCALLTYPE UpdateSubresource1(
-            ID3D11Resource*                   pDstResource,
-            UINT                              DstSubresource,
-      const D3D11_BOX*                        pDstBox,
-      const void*                             pSrcData,
-            UINT                              SrcRowPitch,
-            UINT                              SrcDepthPitch,
-            UINT                              CopyFlags);
-
-    void STDMETHODCALLTYPE OMSetRenderTargets(
-            UINT                              NumViews,
-            ID3D11RenderTargetView* const*    ppRenderTargetViews,
-            ID3D11DepthStencilView*           pDepthStencilView);
-    
-    void STDMETHODCALLTYPE OMSetRenderTargetsAndUnorderedAccessViews(
-            UINT                              NumRTVs,
-            ID3D11RenderTargetView* const*    ppRenderTargetViews,
-            ID3D11DepthStencilView*           pDepthStencilView,
-            UINT                              UAVStartSlot,
-            UINT                              NumUAVs,
-            ID3D11UnorderedAccessView* const* ppUnorderedAccessViews,
-      const UINT*                             pUAVInitialCounts);
-    
     void STDMETHODCALLTYPE SwapDeviceContextState(
             ID3DDeviceContextState*           pState,
             ID3DDeviceContextState**          ppPreviousState);
 
+    void Acquire11on12Resource(
+            ID3D11Resource*             pResource,
+            VkImageLayout               SrcLayout);
+
+    void Release11on12Resource(
+            ID3D11Resource*             pResource,
+            VkImageLayout               DstLayout);
+
     void SynchronizeCsThread(
             uint64_t                          SequenceNumber);
-    
+
+    D3D10Multithread& GetMultithread() {
+        return m_multithread;
+    }
+
+    D3D10DeviceLock LockContext() {
+      return m_multithread.AcquireLock();
+    }
+
+    void InjectCsChunk(
+            DxvkCsQueue                 Queue,
+            DxvkCsChunkRef&&            Chunk,
+            bool                        Synchronize);
+
+    template<typename Fn>
+    void InjectCs(
+            DxvkCsQueue                 Queue,
+            Fn&&                        Command) {
+      auto chunk = AllocCsChunk();
+      chunk->push(std::move(Command));
+
+      InjectCsChunk(Queue, std::move(chunk), false);
+    }
+
   private:
     
     DxvkCsThread            m_csThread;
     uint64_t                m_csSeqNum = 0ull;
-    bool                    m_csIsBusy = false;
 
-    Rc<sync::CallbackFence> m_eventSignal;
-    uint64_t                m_eventCount = 0ull;
     uint32_t                m_mappedImageCount = 0u;
 
-    VkDeviceSize            m_maxImplicitDiscardSize = 0ull;
+    Rc<sync::CallbackFence> m_submissionFence;
+    uint64_t                m_submissionId = 0ull;
+    DxvkSubmitStatus        m_submitStatus;
 
-    dxvk::high_resolution_clock::time_point m_lastFlush
-      = dxvk::high_resolution_clock::now();
-    
-    D3D11VideoContext            m_videoContext;
-    Com<D3D11DeviceContextState> m_stateObject;
-    
+    uint64_t                m_flushSeqNum = 0ull;
+    GpuFlushTracker         m_flushTracker;
+
+    Rc<sync::Fence>         m_stagingBufferFence;
+
+    VkDeviceSize            m_discardMemoryCounter = 0u;
+    VkDeviceSize            m_discardMemoryOnFlush = 0u;
+
+    D3D10Multithread        m_multithread;
+    D3D11VideoContext       m_videoContext;
+
+    Com<D3D11DeviceContextState, false> m_stateObject;
+
+    D3DDestructionNotifier  m_destructionNotifier;
+
+    std::string             m_flushReason;
+
     HRESULT MapBuffer(
             D3D11Buffer*                pResource,
             D3D11_MAP                   MapType,
@@ -150,20 +157,32 @@ namespace dxvk {
             D3D11CommonTexture*         pResource,
             UINT                        Subresource);
     
+    void ReadbackImageBuffer(
+            D3D11CommonTexture*         pResource,
+            UINT                        Subresource);
+
+    void UpdateDirtyImageRegion(
+            D3D11CommonTexture*         pResource,
+            UINT                        Subresource,
+      const D3D11_COMMON_TEXTURE_REGION* pRegion);
+
     void UpdateMappedBuffer(
-            D3D11Buffer*                  pDstBuffer,
-            UINT                          Offset,
-            UINT                          Length,
-      const void*                         pSrcData,
-            UINT                          CopyFlags);
+            D3D11Buffer*                pDstBuffer,
+            UINT                        Offset,
+            UINT                        Length,
+      const void*                       pSrcData,
+            UINT                        CopyFlags);
 
     void SynchronizeDevice();
+
+    void EndFrame(
+            Rc<DxvkLatencyTracker>      LatencyTracker);
     
     bool WaitForResource(
-      const Rc<DxvkResource>&                 Resource,
-            uint64_t                          SequenceNumber,
-            D3D11_MAP                         MapType,
-            UINT                              MapFlags);
+      const DxvkPagedResource&          Resource,
+            uint64_t                    SequenceNumber,
+            D3D11_MAP                   MapType,
+            UINT                        MapFlags);
     
     void EmitCsChunk(DxvkCsChunkRef&& chunk);
 
@@ -176,10 +195,31 @@ namespace dxvk {
 
     uint64_t GetCurrentSequenceNumber();
 
-    void FlushImplicit(BOOL StrongHint);
+    uint64_t GetPendingCsChunks();
 
-    void SignalEvent(HANDLE hEvent);
-    
+    void ApplyDirtyNullBindings();
+
+    void ConsiderFlush(
+            GpuFlushType                FlushType);
+
+    void ExecuteFlush(
+            GpuFlushType                FlushType,
+            HANDLE                      hEvent,
+            BOOL                        Synchronize);
+
+    void ThrottleAllocation();
+
+    void ThrottleDiscard(
+            VkDeviceSize                Size);
+
+    void NotifyRenderPassBoundary();
+
+    DxvkStagingBufferStats GetStagingMemoryStatistics();
+
+    static GpuFlushType GetMaxFlushType(
+            D3D11Device*    pParent,
+      const Rc<DxvkDevice>& Device);
+
   };
   
 }

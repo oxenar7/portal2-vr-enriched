@@ -1,5 +1,7 @@
 #pragma once
 
+#include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "spirv_code_buffer.h"
@@ -15,6 +17,13 @@ namespace dxvk {
     uint32_t literal       = 0;
     uint32_t labelId       = 0;
   };
+
+  struct SpirvMemoryOperands {
+    uint32_t flags         = 0;
+    uint32_t alignment     = 0;
+    uint32_t makeAvailable = 0;
+    uint32_t makeVisible   = 0;
+  };
   
   struct SpirvImageOperands {
     uint32_t flags         = 0;
@@ -27,6 +36,9 @@ namespace dxvk {
     uint32_t gConstOffsets = 0;
     uint32_t sSampleId     = 0;
     uint32_t sMinLod       = 0;
+    uint32_t makeAvailable = 0;
+    uint32_t makeVisible   = 0;
+    bool     sparse        = false;
   };
 
   constexpr uint32_t spvVersion(uint32_t major, uint32_t minor) {
@@ -49,8 +61,8 @@ namespace dxvk {
 
     ~SpirvModule();
     
-    SpirvCodeBuffer compile() const;
-    
+    SpirvCodeBuffer compile();
+
     size_t getInsertionPtr() {
       return m_code.getInsertionPtr();
     }
@@ -63,6 +75,10 @@ namespace dxvk {
       m_code.endInsertion();
     }
     
+    uint32_t getBlockId() const {
+      return m_blockId;
+    }
+
     uint32_t allocateId();
     
     bool hasCapability(
@@ -77,9 +93,7 @@ namespace dxvk {
     void addEntryPoint(
             uint32_t                entryPointId,
             spv::ExecutionModel     executionModel,
-      const char*                   name,
-            uint32_t                interfaceCount,
-      const uint32_t*               interfaceIds);
+      const char*                   name);
     
     void setMemoryModel(
             spv::AddressingModel    addressModel,
@@ -203,6 +217,9 @@ namespace dxvk {
       const uint32_t*               constIds);
     
     uint32_t constUndef(
+            uint32_t                typeId);
+    
+    uint32_t constNull(
             uint32_t                typeId);
     
     uint32_t lateConst32(
@@ -865,7 +882,7 @@ namespace dxvk {
             uint32_t                vector1,
             uint32_t                vector2);
     
-    uint32_t opFOrdNotEqual(
+    uint32_t opFUnordNotEqual(
             uint32_t                resultType,
             uint32_t                vector1,
             uint32_t                vector2);
@@ -937,6 +954,14 @@ namespace dxvk {
 
     uint32_t opNormalize(
             uint32_t                resultType,
+            uint32_t                operand);
+
+    uint32_t opRawAccessChain(
+            uint32_t                resultType,
+            uint32_t                base,
+            uint32_t                stride,
+            uint32_t                index,
+            uint32_t                offset,
             uint32_t                operand);
 
     uint32_t opReflect(
@@ -1027,11 +1052,21 @@ namespace dxvk {
     uint32_t opLoad(
             uint32_t                typeId,
             uint32_t                pointerId);
-    
+
+    uint32_t opLoad(
+            uint32_t                typeId,
+            uint32_t                pointerId,
+      const SpirvMemoryOperands&    operands);
+
     void opStore(
             uint32_t                pointerId,
             uint32_t                valueId);
-    
+
+    void opStore(
+            uint32_t                pointerId,
+            uint32_t                valueId,
+      const SpirvMemoryOperands&    operands);
+
     uint32_t opInterpolateAtCentroid(
             uint32_t                resultType,
             uint32_t                interpolant);
@@ -1061,7 +1096,11 @@ namespace dxvk {
             uint32_t                coordinates,
             uint32_t                texel,
       const SpirvImageOperands&     operands);
-    
+
+    uint32_t opImageSparseTexelsResident(
+            uint32_t                resultType,
+            uint32_t                residentCode);
+
     uint32_t opImageTexelPointer(
             uint32_t                resultType,
             uint32_t                image,
@@ -1226,8 +1265,6 @@ namespace dxvk {
     
     void opReturn();
     
-    void opKill();
-
     void opDemoteToHelperInvocation();
     
     void opEmitVertex(
@@ -1235,12 +1272,21 @@ namespace dxvk {
     
     void opEndPrimitive(
             uint32_t                streamId);
-    
+
+    void opBeginInvocationInterlock();
+
+    void opEndInvocationInterlock();
+
+    uint32_t opSinCos(
+            uint32_t                x,
+            bool                    useBuiltIn);
+
   private:
     
     uint32_t m_version;
     uint32_t m_id             = 1;
     uint32_t m_instExtGlsl450 = 0;
+    uint32_t m_blockId        = 0;
     
     SpirvCodeBuffer m_capabilities;
     SpirvCodeBuffer m_extensions;
@@ -1254,8 +1300,11 @@ namespace dxvk {
     SpirvCodeBuffer m_variables;
     SpirvCodeBuffer m_code;
 
+    std::unordered_set<uint32_t> m_uniqueTypes;
     std::unordered_set<uint32_t> m_lateConsts;
-    
+
+    std::vector<uint32_t> m_interfaceVars;
+
     uint32_t defType(
             spv::Op                 op, 
             uint32_t                argCount,
@@ -1269,12 +1318,34 @@ namespace dxvk {
     
     void instImportGlsl450();
     
+    uint32_t getMemoryOperandWordCount(
+      const SpirvMemoryOperands&    op) const;
+
+    void putMemoryOperands(
+      const SpirvMemoryOperands&    op);
+
     uint32_t getImageOperandWordCount(
       const SpirvImageOperands&     op) const;
     
     void putImageOperands(
       const SpirvImageOperands&     op);
-    
+
+    bool isInterfaceVar(
+            spv::StorageClass       sclass) const;
+
+    void classifyBlocks(
+            std::unordered_set<uint32_t>& reachableBlocks,
+            std::unordered_set<uint32_t>& mergeBlocks);
+
+    static constexpr double sincosTaylorFactor(uint32_t power) {
+      double result = 1.0;
+
+      for (uint32_t i = 1; i <= power; i++)
+        result *= pi * 0.25f / double(i);
+
+      return result;
+    }
+
   };
   
 }

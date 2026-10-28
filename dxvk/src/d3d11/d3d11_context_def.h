@@ -1,30 +1,19 @@
 #pragma once
 
-#include "d3d11_buffer.h"
 #include "d3d11_cmdlist.h"
 #include "d3d11_context.h"
-#include "d3d11_texture.h"
 
 #include <vector>
 
 namespace dxvk {
   
   struct D3D11DeferredContextMapEntry {
-    D3D11DeferredContextMapEntry() { }
-    D3D11DeferredContextMapEntry(
-            ID3D11Resource*           pResource,
-            UINT                      Subresource,
-            D3D11_RESOURCE_DIMENSION  ResourceType,
-      const D3D11_MAPPED_SUBRESOURCE& MappedResource)
-    : Resource(pResource, Subresource, ResourceType),
-      MapInfo(MappedResource) { }
-
-    D3D11ResourceRef          Resource;
-    D3D11_MAPPED_SUBRESOURCE  MapInfo;
+    uint64_t                  ResourceCookie = 0u;
+    D3D11_MAPPED_SUBRESOURCE  MapInfo = { };
   };
   
-  class D3D11DeferredContext : public D3D11DeviceContext {
-    friend class D3D11DeviceContext;
+  class D3D11DeferredContext : public D3D11CommonContext<D3D11DeferredContext> {
+    friend class D3D11CommonContext<D3D11DeferredContext>;
   public:
     
     D3D11DeferredContext(
@@ -32,10 +21,10 @@ namespace dxvk {
       const Rc<DxvkDevice>& Device,
             UINT            ContextFlags);
     
-    D3D11_DEVICE_CONTEXT_TYPE STDMETHODCALLTYPE GetType();
-    
-    UINT STDMETHODCALLTYPE GetContextFlags();
-    
+    HRESULT STDMETHODCALLTYPE QueryInterface(
+            REFIID                      riid,
+            void**                      ppvObject);
+
     HRESULT STDMETHODCALLTYPE GetData(
             ID3D11Asynchronous*         pAsync,
             void*                       pData,
@@ -81,30 +70,15 @@ namespace dxvk {
             ID3D11Resource*             pResource,
             UINT                        Subresource);
     
-    void STDMETHODCALLTYPE UpdateSubresource(
-            ID3D11Resource*                   pDstResource,
-            UINT                              DstSubresource,
-      const D3D11_BOX*                        pDstBox,
-      const void*                             pSrcData,
-            UINT                              SrcRowPitch,
-            UINT                              SrcDepthPitch);
-
-    void STDMETHODCALLTYPE UpdateSubresource1(
-            ID3D11Resource*                   pDstResource,
-            UINT                              DstSubresource,
-      const D3D11_BOX*                        pDstBox,
-      const void*                             pSrcData,
-            UINT                              SrcRowPitch,
-            UINT                              SrcDepthPitch,
-            UINT                              CopyFlags);
-
     void STDMETHODCALLTYPE SwapDeviceContextState(
            ID3DDeviceContextState*           pState,
            ID3DDeviceContextState**          ppPreviousState);
 
+    D3D10DeviceLock LockContext() {
+      return D3D10DeviceLock();
+    }
+
   private:
-    
-    const UINT m_contextFlags;
     
     // Command list that we're recording
     Com<D3D11CommandList> m_commandList;
@@ -116,6 +90,11 @@ namespace dxvk {
     
     // Begun and ended queries, will also be stored in command list
     std::vector<Com<D3D11Query, false>> m_queriesBegun;
+
+    // Chunk ID within the current command list
+    uint64_t m_chunkId = 0ull;
+
+    D3DDestructionNotifier m_destructionNotifier;
 
     HRESULT MapBuffer(
             ID3D11Resource*               pResource,
@@ -139,6 +118,8 @@ namespace dxvk {
     
     void EmitCsChunk(DxvkCsChunkRef&& chunk);
 
+    uint64_t GetCurrentChunkId() const;
+
     void TrackTextureSequenceNumber(
             D3D11CommonTexture*           pResource,
             UINT                          Subresource);
@@ -146,14 +127,11 @@ namespace dxvk {
     void TrackBufferSequenceNumber(
             D3D11Buffer*                  pResource);
 
-    D3D11DeferredContextMapEntry* FindMapEntry(
-            ID3D11Resource*               pResource,
-            UINT                          Subresource);
+    D3D11_MAPPED_SUBRESOURCE FindMapEntry(
+            uint64_t                      Coookie);
 
     void AddMapEntry(
-            ID3D11Resource*               pResource,
-            UINT                          Subresource,
-            D3D11_RESOURCE_DIMENSION      ResourceType,
+            uint64_t                      Cookie,
       const D3D11_MAPPED_SUBRESOURCE&     MapInfo);
 
     static DxvkCsChunkFlags GetCsChunkFlags(

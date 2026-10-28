@@ -17,6 +17,15 @@ namespace dxvk {
   struct DxgiOptions {
     DxgiOptions(const Config& config);
 
+    void incRef() {
+      m_useCount.fetch_add(1u, std::memory_order_acquire);
+    }
+
+    void decRef() {
+      if (m_useCount.fetch_sub(1u, std::memory_order_release) == 1u)
+        delete this;
+    }
+
     /// Override PCI vendor and device IDs reported to the
     /// application. This may make apps think they are running
     /// on a different GPU than they do and behave differently.
@@ -30,11 +39,39 @@ namespace dxvk {
     VkDeviceSize maxDeviceMemory;
     VkDeviceSize maxSharedMemory;
 
-    /// Emulate UMA
-    bool emulateUMA;
+    /// Reports Nvidia GPUs running on the proprietary driver as a different
+    /// vendor (usually AMD). Proton will generally disable this option.
+    bool hideNvidiaGpu;
 
-    /// Enables nvapi workaround
-    bool nvapiHack;
+    /// Reports Nvidia GPUs running on NVK as a different vendor (usually AMD)
+    bool hideNvkGpu;
+
+    /// Reports AMD GPUs as a different vendor (usually Nvidia)
+    bool hideAmdGpu;
+
+    /// Reports Intel GPUs as a different vendor (usually AMD)
+    bool hideIntelGpu;
+
+    /// Enable HDR
+    bool enableHDR;
+
+    /// Enable support for dummy composition swapchains
+    bool enableDummyCompositionSwapchain;
+
+    /// Limit frame rate
+    int32_t maxFrameRate;
+
+    /// Sync interval. Overrides the value
+    /// passed to IDXGISwapChain::Present.
+    int32_t syncInterval;
+
+    /// Forced refresh rate, disable other modes
+    uint32_t forceRefreshRate;
+
+  private:
+
+    std::atomic<uint32_t> m_useCount = { 0u };
+
   };
   
 }

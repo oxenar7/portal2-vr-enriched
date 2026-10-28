@@ -9,13 +9,14 @@ namespace dxvk {
 
   // Doesn't compare everything, only what we use in SWVP.
 
-  size_t D3D9VertexDeclHash::operator () (const D3D9VertexElements& key) const {
+  size_t D3D9VertexDeclHash::operator () (const D3D9CompactVertexElements& key) const {
     DxvkHashState hash;
 
     std::hash<BYTE> bytehash;
     std::hash<WORD> wordhash;
 
-    for (auto& element : key) {
+    for (uint32_t i = 0; i < key.size(); i++) {
+      const auto& element = key[i];
       hash.add(wordhash(element.Stream));
       hash.add(wordhash(element.Offset));
       hash.add(bytehash(element.Type));
@@ -27,7 +28,7 @@ namespace dxvk {
     return hash;
   }
 
-  bool D3D9VertexDeclEq::operator () (const D3D9VertexElements& a, const D3D9VertexElements& b) const {
+  bool D3D9VertexDeclEq::operator () (const D3D9CompactVertexElements& a, const D3D9CompactVertexElements& b) const {
     if (a.size() != b.size())
       return false;
 
@@ -109,12 +110,24 @@ namespace dxvk {
       m_module.opLabel(m_module.allocateId());
     }
 
-    void compile(const D3D9VertexDecl* pDecl) {
+    void compile(const D3D9CompactVertexElements& elements) {
       uint32_t uint_t     = m_module.defIntType(32, false);
       uint32_t float_t    = m_module.defFloatType(32);
       uint32_t vec4_t     = m_module.defVectorType(float_t, 4);
 
       uint32_t vec4_singular_array_t = m_module.defArrayType(vec4_t, m_module.constu32(1));
+
+      uint32_t push_const_t = m_module.defStructTypeUnique(1, &uint_t);
+      m_module.decorate(push_const_t, spv::DecorationBlock);
+      m_module.setDebugName(push_const_t, "pc_t");
+      m_module.setDebugMemberName(push_const_t, 0, "offset");
+      m_module.memberDecorateOffset(push_const_t, 0, sizeof(D3D9RenderStateInfo));
+
+      uint32_t push_const_uint_ptr_t = m_module.defPointerType(uint_t, spv::StorageClassPushConstant);
+      uint32_t push_const_ptr_t = m_module.defPointerType(push_const_t, spv::StorageClassPushConstant);
+
+      uint32_t pushConst = m_module.newVar(push_const_ptr_t, spv::StorageClassPushConstant);
+      m_module.setDebugName(pushConst, "pc");
 
       // Setup the buffer
       uint32_t bufferSlot = getSWVPBufferSlot();
@@ -130,26 +143,42 @@ namespace dxvk {
       m_module.decorateDescriptorSet(buffer, 0);
       m_module.decorateBinding(buffer, bufferSlot);
 
-      m_bufferResource.slot   = bufferSlot;
-      m_bufferResource.type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-      m_bufferResource.view   = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
-      m_bufferResource.access = VK_ACCESS_SHADER_WRITE_BIT;
+      m_bufferBinding = { };
+      m_bufferBinding.set             = 0u;
+      m_bufferBinding.binding         = bufferSlot;
+      m_bufferBinding.resourceIndex   = bufferSlot;
+      m_bufferBinding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      m_bufferBinding.access          = VK_ACCESS_SHADER_WRITE_BIT;
 
       // Load our builtins
       uint32_t primitiveIdPtr = m_module.newVar(m_module.defPointerType(uint_t, spv::StorageClassInput), spv::StorageClassInput);
       m_module.decorateBuiltIn(primitiveIdPtr, spv::BuiltInPrimitiveId);
-      m_entryPointInterfaces.push_back(primitiveIdPtr);
 
       uint32_t primitiveId = m_module.opLoad(uint_t, primitiveIdPtr);
-
+      
       // The size of any given vertex
-      uint32_t vertexSize       = m_module.constu32(pDecl->GetSize() / sizeof(uint32_t));
+      uint32_t size = 0;
+      for (uint32_t i = 0; i < elements.size(); i++) {
+        const auto& element = elements[i];
+        if (element.Stream == 0 && element.Type != D3DDECLTYPE_UNUSED) {
+          size = std::max(size, element.Offset + GetDecltypeSize(D3DDECLTYPE(element.Type)));
+        }
+      }
 
-      //The offset of this vertex from the beginning of the buffer
+      uint32_t vertexSize       = m_module.constu32(size / sizeof(uint32_t));
+
+      // The offset of this vertex from the beginning of the buffer
+      uint32_t pushConstIndex = m_module.constu32(0u);
+
+      uint32_t globalOffset = m_module.opLoad(uint_t, m_module.opAccessChain(
+        push_const_uint_ptr_t, pushConst, 1, &pushConstIndex));
+               globalOffset = m_module.opShiftRightLogical(uint_t, globalOffset, m_module.constu32(2u));
+
       uint32_t thisVertexOffset = m_module.opIMul(uint_t, vertexSize, primitiveId);
+               thisVertexOffset = m_module.opIAdd(uint_t, thisVertexOffset, globalOffset);
 
-
-      for (auto& element : pDecl->GetElements()) {
+      for (uint32_t i = 0; i < elements.size(); i++) {
+        const auto& element = elements[i];
         // Load the slot associated with this element
         DxsoSemantic semantic = { DxsoUsage(element.Usage), element.UsageIndex };
 
@@ -172,8 +201,6 @@ namespace dxvk {
         uint32_t zero = m_module.constu32(0);
         elementVar = m_module.opAccessChain(m_module.defPointerType(vec4_t, spv::StorageClassInput), elementPtr, 1, &zero);
         elementVar = m_module.opLoad(vec4_t, elementVar);
-
-        m_entryPointInterfaces.push_back(elementPtr);
 
         // The offset of this element from the beginning of any given vertex
         uint32_t perVertexElementOffset = m_module.constu32(element.Offset / sizeof(uint32_t));
@@ -253,8 +280,8 @@ namespace dxvk {
 
         // Bitcast to dwords before we write.
         uint32_t dwordCount  = GetDecltypeSize(D3DDECLTYPE(element.Type)) / sizeof(uint32_t);
-        uint32_t dwordVector = m_module.opBitcast(
-          m_module.defVectorType(uint_t, dwordCount),
+        uint32_t dwordVal = m_module.opBitcast(
+          dwordCount != 1 ? m_module.defVectorType(uint_t, dwordCount) : uint_t,
           componentSet);
 
         // Finally write each dword to the buffer!
@@ -262,7 +289,7 @@ namespace dxvk {
           std::array<uint32_t, 2> bufferIndices = { m_module.constu32(0), elementOffset };
 
           uint32_t writeDest = m_module.opAccessChain(m_module.defPointerType(uint_t, spv::StorageClassUniform), buffer, bufferIndices.size(), bufferIndices.data());
-          uint32_t currentDword = m_module.opCompositeExtract(uint_t, dwordVector, 1, &i);
+          uint32_t currentDword = dwordCount != 1 ? m_module.opCompositeExtract(uint_t, dwordVal, 1, &i) : dwordVal;
 
           m_module.opStore(writeDest, currentDword);
 
@@ -276,16 +303,16 @@ namespace dxvk {
       m_module.functionEnd();
 
       m_module.addEntryPoint(m_entryPointId,
-        spv::ExecutionModelGeometry, "main",
-        m_entryPointInterfaces.size(),
-        m_entryPointInterfaces.data());
+        spv::ExecutionModelGeometry, "main");
       m_module.setDebugName(m_entryPointId, "main");
 
       DxvkShaderCreateInfo info;
       info.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
-      info.resourceSlotCount = 1;
-      info.resourceSlots = &m_bufferResource;
+      info.bindingCount = 1;
+      info.bindings = &m_bufferBinding;
+      info.pushConstSize = sizeof(D3D9RenderStateInfo) + sizeof(D3D9SwvpEmuArgs);
       info.inputMask = m_inputMask;
+      info.inputTopology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
 
       return new DxvkShader(info, m_module.compile());
     }
@@ -294,16 +321,13 @@ namespace dxvk {
 
     SpirvModule m_module;
 
-    std::vector<uint32_t> m_entryPointInterfaces;
     uint32_t              m_entryPointId = 0;
     uint32_t              m_inputMask = 0u;
-    DxvkResourceSlot      m_bufferResource;
+    DxvkBindingInfo       m_bufferBinding;
 
   };
 
-  Rc<DxvkShader> D3D9SWVPEmulator::GetShaderModule(D3D9DeviceEx* pDevice, const D3D9VertexDecl* pDecl) {
-    auto& elements = pDecl->GetElements();
-
+  Rc<DxvkShader> D3D9SWVPEmulator::GetShaderModule(D3D9DeviceEx* pDevice, D3D9CompactVertexElements&& elements) {
     // Use the shader's unique key for the lookup
     { std::unique_lock<dxvk::mutex> lock(m_mutex);
       
@@ -321,13 +345,13 @@ namespace dxvk {
     // This shader has not been compiled yet, so we have to create a
     // new module. This takes a while, so we won't lock the structure.
     D3D9SWVPEmulatorGenerator generator(name);
-    generator.compile(pDecl);
+    generator.compile(elements);
     Rc<DxvkShader> shader = generator.finalize();
 
     shader->setShaderKey(key);
     pDevice->GetDXVKDevice()->registerShader(shader);
 
-    const std::string dumpPath = env::getEnvVar("DXVK_SHADER_DUMP_PATH");
+    const std::string& dumpPath = pDevice->GetOptions()->shaderDumpPath;
 
     if (dumpPath.size() != 0) {
       std::ofstream dumpStream(
@@ -342,7 +366,8 @@ namespace dxvk {
     // that object instead and discard the newly created module.
     { std::unique_lock<dxvk::mutex> lock(m_mutex);
       
-      auto status = m_modules.insert({ elements, shader });
+      std::pair<D3D9CompactVertexElements, Rc<DxvkShader>> pair = { std::move(elements), shader };
+      auto status = m_modules.insert(std::move(pair));
       if (!status.second)
         return status.first->second;
     }

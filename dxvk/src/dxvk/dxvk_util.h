@@ -3,16 +3,180 @@
 #include "dxvk_include.h"
 
 namespace dxvk::util {
-  
+
+  /**
+   * \brief Debug utils label type
+   */
+  enum class DxvkDebugLabelType : uint32_t {
+    External,               ///< App-provided scope
+    InternalRenderPass,     ///< Internal render pass markers
+    InternalBarrierControl, ///< Barrier control markers
+  };
+
+  /**
+   * \brief Debug label wrapper
+   *
+   * Wrapper around a Vulkan debug label that
+   * persistently stores the string in question.
+   */
+  class DxvkDebugLabel {
+
+  public:
+
+    DxvkDebugLabel(const VkDebugUtilsLabelEXT& label, DxvkDebugLabelType type)
+    : m_text(label.pLabelName ? label.pLabelName : ""), m_type(type) {
+      for (uint32_t i = 0; i < m_color.size(); i++)
+        m_color[i] = label.color[i];
+    }
+
+    DxvkDebugLabelType type() const {
+      return m_type;
+    }
+
+    VkDebugUtilsLabelEXT get() const {
+      VkDebugUtilsLabelEXT label = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
+      label.pLabelName = m_text.c_str();
+      for (uint32_t i = 0; i < m_color.size(); i++)
+        label.color[i] = m_color[i];
+      return label;
+    }
+
+  private:
+
+    std::string           m_text;
+    std::array<float, 4>  m_color = { };
+    DxvkDebugLabelType    m_type;
+
+  };
+
+
+  /**
+   * \brief Built-in shader stage
+   *
+   * Stores pointer to shader code and code size.
+   */
+  struct DxvkBuiltInShaderStage {
+    DxvkBuiltInShaderStage() = default;
+
+    template<size_t N>
+    DxvkBuiltInShaderStage(const uint32_t (&dwords)[N], const VkSpecializationInfo* s)
+    : size(N * sizeof(uint32_t)), code(&dwords[0]), spec(s) { }
+
+    size_t                      size = 0u;
+    const uint32_t*             code = nullptr;
+    const VkSpecializationInfo* spec = nullptr;
+  };
+
+
+  /**
+   * \brief Built-in graphics pipeline state
+   *
+   * For any state not explicitly specified, sane
+   * defaults will be chosen as necessary.
+   */
+  struct DxvkBuiltInGraphicsState {
+    /** Vertex shader. Must be defined. */
+    DxvkBuiltInShaderStage vs;
+    /** Geometry shader. */
+    DxvkBuiltInShaderStage gs;
+    /** Fragment shader. */
+    DxvkBuiltInShaderStage fs;
+    /** Color attachment format. */
+    VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+    /** Depth-stencil attachment format */
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+    /** Sample count */
+    VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
+    /** Vertex input state. If null, a default state containing
+     *  no vertex attributes or bindings will be used. */
+    const VkPipelineVertexInputStateCreateInfo* viState = nullptr;
+    /** Primitive topology state. If null, this will use a
+     *  triangle list without primitive restart. */
+    const VkPipelineInputAssemblyStateCreateInfo* iaState = nullptr;
+    /** Rasterization state. If null, this will use a default
+     *  state without any back-face culling. */
+    const VkPipelineRasterizationStateCreateInfo* rsState = nullptr;
+    /** Depth-stencil state. If null, no depth or stencil tests
+     *  will be performed by the pipeline. */
+    const VkPipelineDepthStencilStateCreateInfo* dsState = nullptr;
+    /** Blend state for the color attachment. If null, blending
+     *  will be disabled and all color components are written. */
+    const VkPipelineColorBlendAttachmentState* cbAttachment = nullptr;
+    /** Additional dynamic states. These will be added to the
+     *  default set of viewport and scissor states. */
+    uint32_t dynamicStateCount = 0u;
+    const VkDynamicState* dynamicStates = nullptr;
+  };
+
+
+  /**
+   * \brief Built-in shader stage helper
+   *
+   * Useful when creating built-in pipelines.
+   */
+  class DxvkBuiltInShaderStages {
+
+  public:
+
+    uint32_t count() const {
+      return m_stageCount;
+    }
+
+    const VkPipelineShaderStageCreateInfo* infos() const {
+      return m_stages.data();
+    }
+
+    template<size_t N>
+    void addStage(VkShaderStageFlagBits stage, const uint32_t (&code)[N], const VkSpecializationInfo* specInfo) {
+      auto& moduleInfo = m_modules.at(m_stageCount);
+      moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+      moduleInfo.codeSize = sizeof(uint32_t) * N;
+      moduleInfo.pCode = &code[0];
+
+      auto& stageInfo = m_stages.at(m_stageCount);
+      stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+      stageInfo.pNext = &moduleInfo;
+      stageInfo.stage = stage;
+      stageInfo.pName = "main";
+      stageInfo.pSpecializationInfo = specInfo;
+
+      m_stageCount += 1u;
+    }
+
+  private:
+
+    uint32_t m_stageCount = 0u;
+
+    std::array<VkShaderModuleCreateInfo, 3>         m_modules = { };
+    std::array<VkPipelineShaderStageCreateInfo, 3>  m_stages  = { };
+
+  };
+
+
   /**
    * \brief Gets pipeline stage flags for shader stages
    * 
    * \param [in] shaderStages Shader stage flags
    * \returns Corresponding pipeline stage flags
    */
-  VkPipelineStageFlags pipelineStages(
-          VkShaderStageFlags shaderStages);
+  inline VkPipelineStageFlags pipelineStages(
+          VkShaderStageFlags shaderStages) {
+    return (shaderStages & VK_SHADER_STAGE_ALL_GRAPHICS) << 3
+         | (shaderStages & VK_SHADER_STAGE_COMPUTE_BIT) << 6;
+  }
   
+  /**
+   * \brief Gets shader stage flags included in pipeline stages
+   *
+   * \param [in] pipelineStages Pipeline stage flags
+   * \returns Corresponding shader stage flags, if any
+   */
+  inline VkShaderStageFlags shaderStages(
+          VkPipelineStageFlags pipelineStages) {
+    return ((pipelineStages >> 3) & VK_SHADER_STAGE_ALL_GRAPHICS)
+         | ((pipelineStages >> 6) & VK_SHADER_STAGE_COMPUTE_BIT);
+  }
+
   /**
    * \brief Computes number of mip levels for an image
    * 
@@ -159,7 +323,7 @@ namespace dxvk::util {
    */
   inline VkExtent3D computeMipLevelExtent(VkExtent3D size, uint32_t level, VkFormat format, VkImageAspectFlags aspect) {
     if (unlikely(!(aspect & (VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)))) {
-      auto plane = &imageFormatInfo(format)->planes[vk::getPlaneIndex(aspect)];
+      auto plane = &lookupFormatInfo(format)->planes[vk::getPlaneIndex(aspect)];
       size.width  /= plane->blockSize.width;
       size.height /= plane->blockSize.height;
     }
@@ -284,6 +448,19 @@ namespace dxvk::util {
   VkDeviceSize computeImageDataSize(VkFormat format, VkExtent3D extent);
 
   /**
+   * \brief Computes image data size, in bytes
+   *
+   * Convenience method that can be used to compute the number
+   * of bytes required to store image data in a given format
+   * for the given aspects.
+   * \param [in] format The image format
+   * \param [in] extent Image size, in pixels
+   * \param [in] aspects Aspect mask
+   * \returns Data size, in bytes
+   */
+  VkDeviceSize computeImageDataSize(VkFormat format, VkExtent3D extent, VkImageAspectFlags aspects);
+
+  /**
    * \brief Applies a component mapping to a component mask
    * 
    * For each component, the component specified in the mapping
@@ -324,7 +501,17 @@ namespace dxvk::util {
   VkComponentMapping resolveSrcComponentMapping(
           VkComponentMapping          dstMapping,
           VkComponentMapping          srcMapping);
-  
+
+  /**
+   * \brief Remaps alpha blend factor to a color one
+   *
+   * Needed when rendering to alpha-only render targets
+   * which we only support through single-channel formats.
+   * \param [in] factor Alpha blend factor
+   * \returns Corresponding color blend factor
+   */
+  VkBlendFactor remapAlphaToColorBlendFactor(VkBlendFactor factor);
+
   bool isIdentityMapping(
           VkComponentMapping          mapping);
 
@@ -348,5 +535,114 @@ namespace dxvk::util {
   
   bool isDualSourceBlendFactor(
           VkBlendFactor               factor);
-  
+
+  /**
+   * \brief Determines sample positions
+   *
+   * \param [in] sampleCount Sample count
+   * \param [in] center Whether to center samples or use default locations
+   * \returns Sample location structure
+   */
+  VkSampleLocationsInfoEXT setupSampleLocations(
+          VkSampleCountFlagBits       sampleCount,
+          VkBool32                    center);
+
+  /**
+   * \brief Computes unsigned normalized value
+   *
+   * Doesn't necessarily do perfect rounding.
+   * \param [in] float Float value
+   * \param [in] bits Bit count
+   * \returns Normalized value
+   */
+  inline uint32_t computeUnorm(float f, uint32_t bits) {
+    f = std::max(f, 0.0f);
+    f = std::min(f, 1.0f);
+    return uint32_t((f * float((1u << bits) - 1u)) + 0.5f);
+  }
+
+  /**
+   * \brief Computes signed normalized value
+   *
+   * Doesn't necessarily do perfect rounding.
+   * \param [in] float Float value
+   * \param [in] bits Bit count
+   * \returns Normalized value
+   */
+  inline uint32_t computeSnorm(float f, uint32_t bits) {
+    f = std::max(f, -1.0f);
+    f = std::min(f,  1.0f);
+    return int32_t((f * float((1u << (bits - 1u)) - 1u)) + (f < 0.0f ? -0.5f : 0.5f));
+  }
+
+  /**
+   * \brief Computes clear payload for compressed image blocks
+   *
+   * Ignores whether the format is sRGB or not. If this is relevant,
+   * the input color must be converted into the correct space first.
+   * Does not support BC6H or BC7 formats.
+   * \param [in] format Image format
+   * \param [in] color Clear color, as floats
+   * \returns Block data as unsigned integers
+   */
+  inline VkClearColorValue encodeClearBlockValue(
+          VkFormat                    format,
+    const VkClearColorValue&          color) {
+    VkClearColorValue result = { };
+
+    switch (format) {
+      case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+      case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+      case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+      case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: {
+        // Encode clear color as color0, table will be all zeroes
+        result.uint32[0] = (computeUnorm(color.float32[2], 5) <<  0)
+                         | (computeUnorm(color.float32[1], 6) <<  5)
+                         | (computeUnorm(color.float32[0], 5) << 11);
+      } return result;
+
+      case VK_FORMAT_BC2_SRGB_BLOCK:
+      case VK_FORMAT_BC2_UNORM_BLOCK: {
+        // Alpha is encoded in the first four bytes as four-bit
+        // values. The color portion is identical to BC1.
+        uint32_t alpha = 0x11111111u * computeUnorm(color.float32[3], 4);
+        result.uint32[0] = alpha;
+        result.uint32[1] = alpha;
+        result.uint32[2] = (computeUnorm(color.float32[2], 5) <<  0)
+                         | (computeUnorm(color.float32[1], 6) <<  5)
+                         | (computeUnorm(color.float32[0], 5) << 11);
+      } return result;
+
+      case VK_FORMAT_BC3_UNORM_BLOCK:
+      case VK_FORMAT_BC3_SRGB_BLOCK: {
+        // Encode alpha as alpha0, color portion identical to BC1
+        result.uint32[0] = computeUnorm(color.float32[3], 8);
+        result.uint32[2] = (computeUnorm(color.float32[2], 5) <<  0)
+                         | (computeUnorm(color.float32[1], 6) <<  5)
+                         | (computeUnorm(color.float32[0], 5) << 11);
+      } return result;
+
+      case VK_FORMAT_BC4_SNORM_BLOCK: {
+        result.uint32[0] = computeSnorm(color.float32[0], 8);
+      } return result;
+
+      case VK_FORMAT_BC4_UNORM_BLOCK: {
+        result.uint32[0] = computeUnorm(color.float32[0], 8);
+      } return result;
+
+      case VK_FORMAT_BC5_SNORM_BLOCK: {
+        result.uint32[0] = computeSnorm(color.float32[0], 8);
+        result.uint32[2] = computeSnorm(color.float32[1], 8);
+      } return result;
+
+      case VK_FORMAT_BC5_UNORM_BLOCK: {
+        result.uint32[0] = computeUnorm(color.float32[0], 8);
+        result.uint32[2] = computeUnorm(color.float32[1], 8);
+      } return result;
+
+      default:
+        return color;
+    }
+  }
+
 }

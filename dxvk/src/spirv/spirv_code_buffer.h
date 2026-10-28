@@ -1,7 +1,5 @@
 #pragma once
 
-#include <spirv/spirv.hpp>
-
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -23,6 +21,8 @@ namespace dxvk {
     
     SpirvCodeBuffer();
     explicit SpirvCodeBuffer(uint32_t size);
+    SpirvCodeBuffer(const SpirvCodeBuffer &) = default;
+    SpirvCodeBuffer(SpirvCodeBuffer &&) = default;
     SpirvCodeBuffer(uint32_t size, const uint32_t* data);
     SpirvCodeBuffer(std::istream& stream);
     
@@ -31,6 +31,9 @@ namespace dxvk {
     : SpirvCodeBuffer(N, data) { }
     
     ~SpirvCodeBuffer();
+
+    SpirvCodeBuffer &operator=(const SpirvCodeBuffer &) = default;
+    SpirvCodeBuffer &operator=(SpirvCodeBuffer &&) = default;
     
     /**
      * \brief Code data
@@ -86,6 +89,14 @@ namespace dxvk {
      */
     uint32_t allocId();
     
+    /**
+     * \brief Appends an instruction
+     *
+     * Slightly faster than individually adding words.
+     * \param [in] ins Instruction
+     */
+    void append(const SpirvInstruction& ins);
+
     /**
      * \brief Merges two code buffers
      * 

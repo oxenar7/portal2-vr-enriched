@@ -14,10 +14,17 @@ namespace dxvk {
     if (m_mapMode == D3D9_COMMON_BUFFER_MAP_MODE_BUFFER)
       m_stagingBuffer = CreateStagingBuffer();
 
-    m_sliceHandle = GetMapBuffer()->getSliceHandle();
+    m_allocation = GetMapBuffer()->storage();
 
     if (m_desc.Pool != D3DPOOL_DEFAULT)
       m_dirtyRange = D3D9Range(0, m_desc.Size);
+
+    m_uploadAtDraw = m_parent->GetOptions()->forceDrawTimeBufferUpload;
+  }
+
+  D3D9CommonBuffer::~D3D9CommonBuffer() {
+    if (m_desc.Pool == D3DPOOL_DEFAULT)
+      m_parent->DecrementLosableCounter();
   }
 
 
@@ -40,8 +47,23 @@ namespace dxvk {
   }
 
 
-  HRESULT D3D9CommonBuffer::ValidateBufferProperties(const D3D9_BUFFER_DESC* pDesc) {
-    if (pDesc->Size == 0)
+  HRESULT D3D9CommonBuffer::ValidateBufferProperties(const D3D9_BUFFER_DESC* pDesc, const bool IsExtended) {
+    if (unlikely(pDesc->Size == 0))
+      return D3DERR_INVALIDCALL;
+
+    // Neither vertex nor index buffers can be created in D3DPOOL_SCRATCH
+    // or in D3DPOOL_MANAGED with D3DUSAGE_DYNAMIC. On extended devices,
+    // D3DPOOL_MANAGED can not be used at all, regardless of usage flags.
+    if (unlikely(pDesc->Pool == D3DPOOL_SCRATCH
+             || (pDesc->Pool == D3DPOOL_MANAGED && (IsExtended ||
+                                                    pDesc->Usage & D3DUSAGE_DYNAMIC))))
+      return D3DERR_INVALIDCALL;
+
+    // D3DUSAGE_AUTOGENMIPMAP, D3DUSAGE_DEPTHSTENCIL and D3DUSAGE_RENDERTARGET
+    // are not permitted on index or vertex buffers.
+    if (unlikely((pDesc->Usage & D3DUSAGE_AUTOGENMIPMAP)
+              || (pDesc->Usage & D3DUSAGE_DEPTHSTENCIL)
+              || (pDesc->Usage & D3DUSAGE_RENDERTARGET)))
       return D3DERR_INVALIDCALL;
 
     return D3D_OK;
@@ -55,6 +77,20 @@ namespace dxvk {
       if (NeedsUpload())
         m_parent->FlushBuffer(this);
     }
+  }
+
+  
+  D3D9_COMMON_BUFFER_MAP_MODE D3D9CommonBuffer::DetermineMapMode(const D3D9Options* options) const {
+    if (m_desc.Pool != D3DPOOL_DEFAULT)
+      return D3D9_COMMON_BUFFER_MAP_MODE_BUFFER;
+
+    if (!(m_desc.Usage & D3DUSAGE_DYNAMIC))
+      return D3D9_COMMON_BUFFER_MAP_MODE_BUFFER;
+
+    if (!options->allowDirectBufferMapping)
+      return D3D9_COMMON_BUFFER_MAP_MODE_BUFFER;
+
+    return D3D9_COMMON_BUFFER_MAP_MODE_DIRECT;
   }
 
 
@@ -88,12 +124,20 @@ namespace dxvk {
       info.stages |= VK_PIPELINE_STAGE_HOST_BIT;
       info.access |= VK_ACCESS_HOST_WRITE_BIT;
 
-      if (!(m_desc.Usage & D3DUSAGE_WRITEONLY))
-        info.access |= VK_ACCESS_HOST_READ_BIT;
-
       memoryFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                  |  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-                  |  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                  |  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+      if ((m_desc.Usage & D3DUSAGE_WRITEONLY) == 0
+        || DoPerDrawUpload()
+        || m_parent->CanOnlySWVP()
+        || m_parent->GetOptions()->cachedWriteOnlyBuffers) {
+        // Never use uncached memory on devices that support SWVP because we might end up reading from it.
+
+        info.access |= VK_ACCESS_HOST_READ_BIT;
+        memoryFlags |= VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      } else {
+        memoryFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      }
     }
     else {
       info.stages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -101,11 +145,6 @@ namespace dxvk {
       info.access |= VK_ACCESS_TRANSFER_WRITE_BIT;
 
       memoryFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    }
-
-    if (memoryFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT && m_parent->GetOptions()->apitraceMode) {
-      memoryFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-                  |  VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     }
 
     return m_parent->GetDXVKDevice()->createBuffer(info, memoryFlags);

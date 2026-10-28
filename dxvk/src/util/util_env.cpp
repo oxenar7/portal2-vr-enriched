@@ -6,6 +6,10 @@
 #ifdef __linux__
 #include <unistd.h>
 #include <limits.h>
+#elif defined(__FreeBSD__)
+#include <sys/sysctl.h>
+#include <unistd.h>
+#include <limits.h>
 #endif
 
 #include "util_env.h"
@@ -20,12 +24,23 @@ namespace dxvk::env {
     result.resize(MAX_PATH + 1);
 
     DWORD len = ::GetEnvironmentVariableW(str::tows(name).c_str(), result.data(), MAX_PATH);
-    result.resize(len);
+    if (!len || len >= MAX_PATH)
+      return "";
+    result.resize(len + 1);
 
     return str::fromws(result.data());
 #else
     const char* result = std::getenv(name);
     return result ? result : "";
+#endif
+  }
+
+
+  bool isWineVulkan() {
+#ifdef _WIN32
+    return bool(::GetModuleHandleA("winevulkan.dll"));
+#else
+    return false;
 #endif
   }
 
@@ -76,7 +91,9 @@ namespace dxvk::env {
     exePath.resize(MAX_PATH + 1);
 
     DWORD len = ::GetModuleFileNameW(NULL, exePath.data(), MAX_PATH);
-    exePath.resize(len);
+    if (!len || len == MAX_PATH)
+      return "";
+    exePath.resize(len + 1);
 
     return str::fromws(exePath.data());
 #elif defined(__linux__)
@@ -85,6 +102,17 @@ namespace dxvk::env {
     size_t count = readlink("/proc/self/exe", exePath.data(), exePath.size());
 
     return std::string(exePath.begin(), exePath.begin() + count);
+#elif defined(__FreeBSD__)
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, getpid()};
+    char exePath[PATH_MAX] = {};
+    size_t size = PATH_MAX;
+
+    if (sysctl(mib, 4, exePath, &size, NULL, 0) != 0) {
+        // throw error here?
+        return "";
+    }
+
+    return std::string(exePath);
 #endif
   }
   
@@ -93,13 +121,17 @@ namespace dxvk::env {
 #ifdef _WIN32
     using SetThreadDescriptionProc = HRESULT (WINAPI *) (HANDLE, PCWSTR);
 
-    static auto proc = reinterpret_cast<SetThreadDescriptionProc>(
+    static auto SetThreadDescription = reinterpret_cast<SetThreadDescriptionProc>(
       ::GetProcAddress(::GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription"));
 
-    if (proc != nullptr) {
-      auto wideName = std::vector<WCHAR>(name.length() + 1);
-      str::tows(name.c_str(), wideName.data(), wideName.size());
-      (*proc)(::GetCurrentThread(), wideName.data());
+    if (SetThreadDescription) {
+      std::array<wchar_t, 16> wideName = { };
+
+      str::transcodeString(
+        wideName.data(), wideName.size() - 1,
+        name.data(), name.size());
+
+      SetThreadDescription(::GetCurrentThread(), wideName.data());
     }
 #else
     std::array<char, 16> posixName = {};
@@ -111,11 +143,20 @@ namespace dxvk::env {
 
   bool createDirectory(const std::string& path) {
 #ifdef _WIN32
-    WCHAR widePath[MAX_PATH];
-    str::tows(path.c_str(), widePath);
-    return !!CreateDirectoryW(widePath, nullptr);
+    std::array<WCHAR, MAX_PATH + 1> widePath;
+
+    size_t length = str::transcodeString(
+      widePath.data(), widePath.size() - 1,
+      path.data(), path.size());
+
+    widePath[length] = L'\0';
+
+    if (!CreateDirectoryW(widePath.data(), nullptr))
+      return GetLastError() == ERROR_ALREADY_EXISTS;
+
+    return true;
 #else
-    return std::filesystem::create_directories(path);
+    return std::filesystem::is_directory(path) || std::filesystem::create_directories(path);
 #endif
   }
   

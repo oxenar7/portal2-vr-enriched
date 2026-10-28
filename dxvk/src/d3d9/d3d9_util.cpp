@@ -1,5 +1,7 @@
 #include "d3d9_util.h"
 
+#include "../util/util_win32_compat.h"
+
 namespace dxvk {
 
   typedef HRESULT (STDMETHODCALLTYPE *D3DXDisassembleShader) (
@@ -37,9 +39,10 @@ namespace dxvk {
 
 
   HRESULT DecodeMultiSampleType(
+    const Rc<DxvkDevice>&           pDevice,
           D3DMULTISAMPLE_TYPE       MultiSample,
           DWORD                     MultisampleQuality,
-          VkSampleCountFlagBits*    pCount) {
+          VkSampleCountFlagBits*    pSampleCount) {
     uint32_t sampleCount = std::max<uint32_t>(MultiSample, 1u);
 
     // Check if this is a power of two...
@@ -49,8 +52,14 @@ namespace dxvk {
     if (MultiSample == D3DMULTISAMPLE_NONMASKABLE)
       sampleCount = 1u << MultisampleQuality;
 
-    if (pCount != nullptr)
-      *pCount = VkSampleCountFlagBits(sampleCount);
+    const auto& limits = pDevice->properties().core.properties.limits;
+    VkSampleCountFlags supportedSampleCounts = limits.framebufferColorSampleCounts & limits.framebufferDepthSampleCounts;
+
+    if ((sampleCount & supportedSampleCounts) == 0)
+      return D3DERR_INVALIDCALL;
+
+    if (pSampleCount)
+      *pSampleCount = VkSampleCountFlagBits(sampleCount);
 
     return D3D_OK;
   }
@@ -90,14 +99,14 @@ namespace dxvk {
   }
 
 
-  VkFormatFeatureFlags GetImageFormatFeatures(DWORD Usage) {
-    VkFormatFeatureFlags features = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+  VkFormatFeatureFlags2 GetImageFormatFeatures(DWORD Usage) {
+    VkFormatFeatureFlags2 features = VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT;
 
     if (Usage & D3DUSAGE_DEPTHSTENCIL)
-      features |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+      features |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT;
 
     if (Usage & D3DUSAGE_RENDERTARGET)
-      features |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+      features |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT;
 
     return features;
   }
@@ -133,22 +142,22 @@ namespace dxvk {
     switch (type) {
       default:
       case D3DPT_TRIANGLELIST:
-        return { VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,  VK_FALSE, 0 };
+        return DxvkInputAssemblyState(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false);
 
       case D3DPT_POINTLIST:
-        return { VK_PRIMITIVE_TOPOLOGY_POINT_LIST,     VK_FALSE, 0 };
+        return DxvkInputAssemblyState(VK_PRIMITIVE_TOPOLOGY_POINT_LIST, false);
 
       case D3DPT_LINELIST:
-        return { VK_PRIMITIVE_TOPOLOGY_LINE_LIST,      VK_FALSE, 0 };
+        return DxvkInputAssemblyState(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, false);
 
       case D3DPT_LINESTRIP:
-        return { VK_PRIMITIVE_TOPOLOGY_LINE_STRIP,     VK_FALSE, 0 };
+        return DxvkInputAssemblyState(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, false);
 
       case D3DPT_TRIANGLESTRIP:
-        return { VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, VK_FALSE, 0 };
+        return DxvkInputAssemblyState(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false);
 
       case D3DPT_TRIANGLEFAN:
-        return { VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN,   VK_FALSE, 0 };
+        return DxvkInputAssemblyState(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, false);
     }
   }
 
@@ -185,55 +194,6 @@ namespace dxvk {
       case D3DBLENDOP_REVSUBTRACT:  return VK_BLEND_OP_REVERSE_SUBTRACT;
       case D3DBLENDOP_MIN:          return VK_BLEND_OP_MIN;
       case D3DBLENDOP_MAX:          return VK_BLEND_OP_MAX;
-    }
-  }
-
-
-  VkFilter DecodeFilter(D3DTEXTUREFILTERTYPE Filter) {
-    switch (Filter) {
-    case D3DTEXF_NONE:
-    case D3DTEXF_POINT:
-      return VK_FILTER_NEAREST;
-    default:
-      return VK_FILTER_LINEAR;
-    }
-  }
-
-
-  D3D9MipFilter DecodeMipFilter(D3DTEXTUREFILTERTYPE Filter) {
-    D3D9MipFilter filter;
-    filter.MipsEnabled = Filter != D3DTEXF_NONE;
-
-    switch (Filter) {
-    case D3DTEXF_POINT:
-    case D3DTEXF_NONE:
-      filter.MipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST; break;
-    default:
-      filter.MipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR; break;
-    }
-
-    return filter;
-  }
-
-
-  bool IsAnisotropic(D3DTEXTUREFILTERTYPE Filter) {
-    return Filter == D3DTEXF_ANISOTROPIC;
-  }
-
-
-  VkSamplerAddressMode DecodeAddressMode(D3DTEXTUREADDRESS Mode) {
-    switch (Mode) {
-      default:
-      case D3DTADDRESS_WRAP:
-        return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-      case D3DTADDRESS_MIRROR:
-        return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
-      case D3DTADDRESS_CLAMP:
-        return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-      case D3DTADDRESS_BORDER:
-        return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-      case D3DTADDRESS_MIRRORONCE:
-        return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
     }
   }
 
@@ -409,6 +369,17 @@ namespace dxvk {
         || Format == D3D9Format::DF16
         || Format == D3D9Format::DF24
         || Format == D3D9Format::INTZ;
+  }
+
+  bool IsDepthStencilFormat(D3D9Format Format) {
+    return IsDepthFormat(Format) || Format == D3D9Format::S8_LOCKABLE;
+  }
+
+  bool IsLockableDepthStencilFormat(D3D9Format Format) {
+    return Format == D3D9Format::S8_LOCKABLE
+        || Format == D3D9Format::D16_LOCKABLE
+        || Format == D3D9Format::D32_LOCKABLE
+        || Format == D3D9Format::D32F_LOCKABLE;
   }
 
 }

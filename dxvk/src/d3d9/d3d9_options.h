@@ -22,6 +22,19 @@ namespace dxvk {
     int32_t customDeviceId;
     std::string customDeviceDesc;
 
+    /// Reports Nvidia GPUs running on the proprietary driver as a different
+    /// vendor (usually AMD)
+    bool hideNvidiaGpu;
+
+    /// Reports Nvidia GPUs running on NVK as a different vendor (usually AMD)
+    bool hideNvkGpu;
+
+    /// Reports AMD GPUs as a different vendor (usually Nvidia)
+    bool hideAmdGpu;
+
+    /// Reports Intel GPUs as a different vendor (usually AMD)
+    bool hideIntelGpu;
+
     /// Present interval. Overrides the value
     /// in D3DPRESENT_PARAMS used in swapchain present.
     int32_t presentInterval;
@@ -34,10 +47,7 @@ namespace dxvk {
     int32_t maxFrameRate;
 
     /// Set the max shader model the device can support in the caps.
-    int32_t shaderModel;
-
-    /// Whether or not managed resources should stay in memory until unlock, or until manually evicted.
-    bool evictManagedOnUnlock;
+    uint32_t shaderModel;
 
     /// Whether or not to set the process as DPI aware in Windows when the API interface is created.
     bool dpiAware;
@@ -53,26 +63,8 @@ namespace dxvk {
     /// Whether or not to do a fast path clear if we're close enough to the whole render target.
     bool lenientClear;
 
-    /// Back buffer count for the Vulkan swap chain.
-    /// Overrides buffer count in present parameters.
-    int32_t numBackBuffers;
-
-    /// Don't create an explicit front buffer in our own swapchain. The Vulkan swapchain is unaffected.
-    /// Some games don't handle front/backbuffer flipping very well because they don't always redraw
-    /// each frame completely, and rely on old pixel data from the previous frame to still be there.
-    /// When this option is set and a game only requests one backbuffer, there will be no flipping in
-    /// our own swapchain, so the game will always draw to the same buffer and can rely on old pixel
-    /// data to still be there after a Present call.
-    /// This means that D3D9SwapChainEx::GetFrontBufferData returns data from the backbuffer of the
-    /// previous frame, which is the same as the current backbuffer if only 1 backbuffer was requested.
-    bool noExplicitFrontBuffer;
-
     /// Defer surface creation
     bool deferSurfaceCreation;
-
-    /// Whether to transition to general
-    /// for rendering hazards
-    bool generalHazards;
 
     /// Anisotropic filter override
     ///
@@ -89,14 +81,17 @@ namespace dxvk {
     /// D3D9 Floating Point Emulation (anything * 0 = 0)
     D3D9FloatEmulation d3d9FloatEmulation;
 
+    /// Support depth formats for cube textures
+    bool supportCubeDepthFormats;
+
     /// Support the DF16 & DF24 texture format
     bool supportDFFormats;
 
     /// Support X4R4G4B4
     bool supportX4R4G4B4;
 
-    /// Support D32
-    bool supportD32;
+    /// Use D32f for D24
+    bool useD32forD24;
 
     /// Disable D3DFMT_A8 for render targets.
     /// Specifically to work around a game
@@ -111,24 +106,21 @@ namespace dxvk {
     /// failing resource allocation.
     bool memoryTrackTest;
 
-    /// Support VCACHE query
-    bool supportVCache;
-
     /// Forced aspect ratio, disable other modes
     std::string forceAspectRatio;
 
-    /// Enable dialog mode (ie. no exclusive fullscreen)
-    bool enableDialogMode;
+    /// Forced refresh rate, disable other modes
+    uint32_t forceRefreshRate;
+
+    /// Restrict the mode count to ensure a maximum total count of 24
+    bool modeCountCompatibility;
 
     /// Always use a spec constant to determine sampler type (instead of just in PS 1.x)
     /// Works around a game bug in Halo CE where it gives cube textures to 2d/volume samplers
     bool forceSamplerTypeSpecConstants;
 
-    /// Forces an MSAA level on the swapchain
-    int32_t forceSwapchainMSAA;
-
-    /// Allow D3DLOCK_DONOTWAIT
-    bool allowDoNotWait;
+    /// Forces sample rate shading
+    bool forceSampleRateShading;
 
     /// Allow D3DLOCK_DISCARD
     bool allowDiscard;
@@ -136,27 +128,62 @@ namespace dxvk {
     /// Enumerate adapters by displays
     bool enumerateByDisplays;
 
-    /// Should we make our Mads a FFma or do it the long way with an FMul and an FAdd?
-    /// This solves some rendering bugs in games that have z-pass shaders which
-    /// don't match entirely to the regular vertex shader in this way.
-    bool longMad;
-
-    /// Tear-free mode if vsync is disabled
-    /// Tearing mode if vsync is enabled
-    Tristate tearFree;
-
-    /// Workaround for games using alpha test == 1.0, etc due to wonky interpolation or
-    /// misc. imprecision on some vendors
-    bool alphaTestWiggleRoom;
-
-    /// Apitrace mode: Maps all buffers in cached memory.
-    bool apitraceMode;
+    /// Cached dynamic buffers: Maps all buffers in cached memory.
+    bool cachedWriteOnlyBuffers;
 
     /// Use device local memory for constant buffers.
     bool deviceLocalConstantBuffers;
 
     /// Disable direct buffer mapping
     bool allowDirectBufferMapping;
+
+    /// Force flushing D3DPOOL_DEFAULT buffers at draw time rather than on unlock
+    /// Used to work around game bugs in source engine games like CSGO and Insurgency.
+    /// Those games write to buffers after unlocking them. Uploading on unlock leads to black
+    /// objects because they never get their proper UVs.
+    bool forceDrawTimeBufferUpload;
+
+    /// Ignore the lock range passed to Buffer::Lock for buffers in the D3DPOOL_DEFAULT and mark the whole buffer
+    /// dirty instead.
+    /// Used for games that pass incorrect values.
+    bool ignoreDefaultBufferLockRange;
+
+    /// Don't use non seamless cube maps
+    bool seamlessCubes;
+
+    /// Mipmap LOD bias
+    ///
+    /// Enforces the given LOD bias for all samplers.
+    float samplerLodBias;
+
+    /// Clamps negative LOD bias
+    bool clampNegativeLodBias;
+
+    /// How much virtual memory will be used for textures (in MB).
+    int32_t textureMemory;
+
+    /// Shader dump path
+    std::string shaderDumpPath;
+
+    /// Enable emulation of device loss when a fullscreen app loses focus
+    bool deviceLossOnFocusLoss;
+
+    /// Disable counting losable resources and rejecting calls to Reset() if any are still alive
+    bool countLosableResources;
+
+    /// Ensure that for the same D3D commands the output VK commands
+    /// don't change between runs. Useful for comparative benchmarking,
+    /// can negatively affect performance.
+    bool reproducibleCommandStream;
+
+    /// Enable depth texcoord Z (Dref) scaling (D3D8 quirk)
+    int32_t drefScaling;
+
+    /// Enable slow sincos emulation
+    bool sincosEmulation;
+
+    /// Add an extra front buffer to make GetFrontBufferData() work correctly when the swapchain only has a single buffer
+    bool extraFrontbuffer;
   };
 
 }

@@ -5,25 +5,6 @@
 
 namespace dxvk::util {
   
-  VkPipelineStageFlags pipelineStages(
-          VkShaderStageFlags shaderStages) {
-    VkPipelineStageFlags result = 0;
-    if (shaderStages & VK_SHADER_STAGE_COMPUTE_BIT)
-      result |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-    if (shaderStages & VK_SHADER_STAGE_VERTEX_BIT)
-      result |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-    if (shaderStages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT)
-      result |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
-    if (shaderStages & VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT)
-      result |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
-    if (shaderStages & VK_SHADER_STAGE_GEOMETRY_BIT)
-      result |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
-    if (shaderStages & VK_SHADER_STAGE_FRAGMENT_BIT)
-      result |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    return result;
-  }
-  
-  
   uint32_t computeMipLevelCount(VkExtent3D imageSize) {
     uint32_t maxDim = std::max(imageSize.width, imageSize.height);
              maxDim = std::max(imageSize.depth, maxDim);
@@ -85,10 +66,10 @@ namespace dxvk::util {
           uint32_t          imageLayers,
     const DxvkFormatInfo*   formatInfo,
           VkImageAspectFlags aspectMask) {
-    for (uint32_t i = 0; i < imageLayers; i++) {
-      auto dstData = reinterpret_cast<      char*>(dstBytes);
-      auto srcData = reinterpret_cast<const char*>(srcBytes);
+    auto dstData = reinterpret_cast<      char*>(dstBytes);
+    auto srcData = reinterpret_cast<const char*>(srcBytes);
 
+    for (uint32_t k = 0; k < imageLayers; k++) {
       for (auto aspects = aspectMask; aspects; ) {
         auto aspect = vk::getNextAspect(aspects);
         auto extent = imageExtent;
@@ -163,11 +144,17 @@ namespace dxvk::util {
 
 
   VkDeviceSize computeImageDataSize(VkFormat format, VkExtent3D extent) {
-    const DxvkFormatInfo* formatInfo = imageFormatInfo(format);
+    const DxvkFormatInfo* formatInfo = lookupFormatInfo(format);
+    return computeImageDataSize(format, extent, formatInfo->aspectMask);
+  }
+
+
+  VkDeviceSize computeImageDataSize(VkFormat format, VkExtent3D extent, VkImageAspectFlags aspects) {
+    const DxvkFormatInfo* formatInfo = lookupFormatInfo(format);
 
     VkDeviceSize size = 0;
 
-    for (auto aspects = formatInfo->aspectMask; aspects; ) {
+    while (aspects) {
       auto aspect = vk::getNextAspect(aspects);
       auto elementSize = formatInfo->elementSize;
       auto planeExtent = extent;
@@ -291,6 +278,48 @@ namespace dxvk::util {
   }
 
 
+  VkBlendFactor remapAlphaToColorBlendFactor(VkBlendFactor factor) {
+    switch (factor) {
+      // Make sure we use the red component from the
+      // fragment shader since alpha may be undefined
+      case VK_BLEND_FACTOR_SRC_ALPHA:
+        return VK_BLEND_FACTOR_SRC_COLOR;
+
+      case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+        return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+
+      case VK_BLEND_FACTOR_SRC1_ALPHA:
+        return VK_BLEND_FACTOR_SRC1_COLOR;
+
+      case VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA:
+        return VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+
+      // This is defined to always be 1 for alpha
+      case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
+        return VK_BLEND_FACTOR_ONE;
+
+      // Make sure we use the red component from the
+      // attachment since there is no alpha component
+      case VK_BLEND_FACTOR_DST_ALPHA:
+        return VK_BLEND_FACTOR_DST_COLOR;
+
+      case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+        return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+
+      // For blend constants we actually need to do the
+      // opposite and make sure we always use alpha
+      case VK_BLEND_FACTOR_CONSTANT_COLOR:
+        return VK_BLEND_FACTOR_CONSTANT_ALPHA;
+
+      case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+        return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+
+      default:
+        return factor;
+    }
+  }
+
+
   bool isIdentityMapping(
           VkComponentMapping          mapping) {
     return (mapping.r == VK_COMPONENT_SWIZZLE_R || mapping.r == VK_COMPONENT_SWIZZLE_IDENTITY)
@@ -341,6 +370,70 @@ namespace dxvk::util {
         || factor == VK_BLEND_FACTOR_SRC1_ALPHA
         || factor == VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR
         || factor == VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+  }
+
+
+  VkSampleLocationsInfoEXT setupSampleLocations(
+          VkSampleCountFlagBits       sampleCount,
+          VkBool32                    center) {
+    static const std::array<VkSampleLocationEXT, 16u> s_centerLocations = {{
+      { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f },
+      { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f },
+      { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f },
+      { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f }, { 0.5f, 0.5f },
+    }};
+
+    static const std::array<VkSampleLocationEXT, 32u> s_defaultLocations = {{
+      /* Invalid resource */
+      { 0.5f, 0.5f },
+      /* 1 samples */
+      { 0.5f, 0.5f },
+      /* 2 samples */
+      { 0.75f, 0.75f },
+      { 0.25f, 0.25f },
+      /* 4 samples */
+      { 0.375f, 0.125f },
+      { 0.875f, 0.375f },
+      { 0.125f, 0.625f },
+      { 0.625f, 0.875f },
+      /* 8 samples */
+      { 0.5625f, 0.3125f },
+      { 0.4375f, 0.6875f },
+      { 0.8125f, 0.5625f },
+      { 0.3125f, 0.1875f },
+      { 0.1875f, 0.8125f },
+      { 0.0625f, 0.4375f },
+      { 0.6875f, 0.9375f },
+      { 0.9375f, 0.0625f },
+      /* 16 samples */
+      { 0.5625f, 0.5625f },
+      { 0.4375f, 0.3125f },
+      { 0.3125f, 0.6250f },
+      { 0.7500f, 0.4375f },
+      { 0.1875f, 0.3750f },
+      { 0.6250f, 0.8125f },
+      { 0.8125f, 0.6875f },
+      { 0.6875f, 0.1875f },
+      { 0.3750f, 0.8750f },
+      { 0.5000f, 0.0625f },
+      { 0.2500f, 0.1250f },
+      { 0.1250f, 0.7500f },
+      { 0.0000f, 0.5000f },
+      { 0.9375f, 0.2500f },
+      { 0.8750f, 0.9375f },
+      { 0.0625f, 0.0000f },
+    }};
+
+    uint32_t count = uint32_t(sampleCount);
+
+    VkSampleLocationsInfoEXT locations = { VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT };
+    locations.sampleLocationsPerPixel = sampleCount;
+    locations.sampleLocationGridSize = { 1u, 1u };
+    locations.sampleLocationsCount = count;
+    locations.pSampleLocations = center
+      ? &s_centerLocations[0u]
+      : &s_defaultLocations[count];
+    return locations;
   }
 
 }

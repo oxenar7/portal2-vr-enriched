@@ -8,8 +8,9 @@ namespace dxvk {
 
   D3D9VertexBuffer::D3D9VertexBuffer(
           D3D9DeviceEx*      pDevice,
-    const D3D9_BUFFER_DESC*  pDesc)
-  : D3D9VertexBufferBase(pDevice, pDesc) {
+    const D3D9_BUFFER_DESC*  pDesc,
+    const bool               Extended)
+  : D3D9VertexBufferBase(pDevice, pDesc, Extended) {
 
   }
 
@@ -29,8 +30,11 @@ namespace dxvk {
       return S_OK;
     }
 
-    Logger::warn("D3D9VertexBuffer::QueryInterface: Unknown interface query");
-    Logger::warn(str::format(riid));
+    if (logQueryInterfaceError(__uuidof(IDirect3DVertexBuffer9), riid)) {
+      Logger::warn("D3D9VertexBuffer::QueryInterface: Unknown interface query");
+      Logger::warn(str::format(riid));
+    }
+
     return E_NOINTERFACE;
   }
 
@@ -65,8 +69,9 @@ namespace dxvk {
 
   D3D9IndexBuffer::D3D9IndexBuffer(
           D3D9DeviceEx*      pDevice,
-    const D3D9_BUFFER_DESC*  pDesc)
-  : D3D9IndexBufferBase(pDevice, pDesc) {
+    const D3D9_BUFFER_DESC*  pDesc,
+    const bool               Extended)
+  : D3D9IndexBufferBase(pDevice, pDesc, Extended) {
 
   }
 
@@ -86,8 +91,11 @@ namespace dxvk {
       return S_OK;
     }
 
-    Logger::warn("D3D9IndexBuffer::QueryInterface: Unknown interface query");
-    Logger::warn(str::format(riid));
+    if (logQueryInterfaceError(__uuidof(IDirect3DIndexBuffer9), riid)) {
+      Logger::warn("D3D9IndexBuffer::QueryInterface: Unknown interface query");
+      Logger::warn(str::format(riid));
+    }
+
     return E_NOINTERFACE;
   }
 

@@ -2,8 +2,6 @@ d3d11_res = wrc_generator.process('version.rc')
 
 dxgi_common_src = [
   '../dxgi/dxgi_format.cpp',
-  '../dxgi/dxgi_monitor.cpp',
-  '../dxgi/dxgi_swapchain.cpp',
 ]
 
 d3d10_src = [
@@ -37,11 +35,14 @@ d3d11_src = [
   'd3d11_depth_stencil.cpp',
   'd3d11_device.cpp',
   'd3d11_enums.cpp',
+  'd3d11_features.cpp',
+  'd3d11_fence.cpp',
   'd3d11_gdi.cpp',
   'd3d11_initializer.cpp',
   'd3d11_input_layout.cpp',
   'd3d11_interop.cpp',
   'd3d11_main.cpp',
+  'd3d11_on_12.cpp',
   'd3d11_options.cpp',
   'd3d11_query.cpp',
   'd3d11_rasterizer.cpp',
@@ -65,16 +66,36 @@ d3d11_shaders = files([
   'shaders/d3d11_video_blit_vert.vert',
 ])
 
-d3d11_dll = shared_library('d3d11'+dll_ext, dxgi_common_src + d3d11_src + d3d10_src,
+d3d11_ld_args      = []
+d3d11_link_depends = []
+
+if platform == 'windows'
+  d3d11_dxgi_deps = [ lib_gdi32, lib_dxgi ]
+else
+  d3d11_ld_args      += [ '-Wl,--version-script', join_paths(meson.current_source_dir(), 'd3d11.sym') ]
+  d3d11_link_depends += files('d3d11.sym')
+  d3d11_dxgi_deps = [ dxgi_dep ]
+endif
+
+d3d11_dll = shared_library(dxvk_name_prefix+'d3d11', dxgi_common_src + d3d11_src + d3d10_src,
     glsl_generator.process(d3d11_shaders), d3d11_res,
-  name_prefix         : '',
-  dependencies        : [ lib_dxgi, dxbc_dep, dxvk_dep ],
+  dependencies        : d3d11_dxgi_deps + [ dxbc_dep, dxvk_dep ],
   include_directories : dxvk_include_path,
   install             : true,
   vs_module_defs      : 'd3d11'+def_spec_ext,
+  link_args           : d3d11_ld_args,
+  link_depends        : [ d3d11_link_depends ],
+  kwargs              : dxvk_so_version,
 )
 
 d3d11_dep = declare_dependency(
   link_with           : [ d3d11_dll ],
   include_directories : [ dxvk_include_path ],
 )
+
+if platform != 'windows'
+  pkg.generate(d3d11_dll,
+    filebase: dxvk_pkg_prefix + 'd3d11',
+    subdirs:  'dxvk',
+  )
+endif

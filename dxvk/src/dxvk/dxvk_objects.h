@@ -7,10 +7,10 @@
 #include "dxvk_meta_clear.h"
 #include "dxvk_meta_copy.h"
 #include "dxvk_meta_mipgen.h"
-#include "dxvk_meta_pack.h"
 #include "dxvk_meta_resolve.h"
 #include "dxvk_pipemanager.h"
 #include "dxvk_renderpass.h"
+#include "dxvk_sampler.h"
 #include "dxvk_unbound.h"
 
 #include "../util/util_lazy.h"
@@ -24,8 +24,8 @@ namespace dxvk {
     DxvkObjects(DxvkDevice* device)
     : m_device          (device),
       m_memoryManager   (device),
-      m_renderPassPool  (device),
-      m_pipelineManager (device, &m_renderPassPool),
+      m_pipelineManager (device),
+      m_samplerPool     (device),
       m_eventPool       (device),
       m_queryPool       (device),
       m_dummyResources  (device) {
@@ -36,12 +36,12 @@ namespace dxvk {
       return m_memoryManager;
     }
 
-    DxvkRenderPassPool& renderPassPool() {
-      return m_renderPassPool;
-    }
-
     DxvkPipelineManager& pipelineManager() {
       return m_pipelineManager;
+    }
+
+    DxvkSamplerPool& samplerPool() {
+      return m_samplerPool;
     }
 
     DxvkGpuEventPool& eventPool() {
@@ -72,18 +72,14 @@ namespace dxvk {
       return m_metaResolve.get(m_device);
     }
     
-    DxvkMetaPackObjects& metaPack() {
-      return m_metaPack.get(m_device);
-    }
-
   private:
 
     DxvkDevice*                   m_device;
 
     DxvkMemoryAllocator           m_memoryManager;
-    DxvkRenderPassPool            m_renderPassPool;
     DxvkPipelineManager           m_pipelineManager;
 
+    DxvkSamplerPool               m_samplerPool;
     DxvkGpuEventPool              m_eventPool;
     DxvkGpuQueryPool              m_queryPool;
 
@@ -93,7 +89,6 @@ namespace dxvk {
     Lazy<DxvkMetaClearObjects>    m_metaClear;
     Lazy<DxvkMetaCopyObjects>     m_metaCopy;
     Lazy<DxvkMetaResolveObjects>  m_metaResolve;
-    Lazy<DxvkMetaPackObjects>     m_metaPack;
 
   };
 

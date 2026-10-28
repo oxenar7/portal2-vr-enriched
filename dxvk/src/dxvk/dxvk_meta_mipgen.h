@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include "../util/util_small_vector.h"
+
 #include "dxvk_meta_blit.h"
 
 namespace dxvk {
@@ -13,23 +15,14 @@ namespace dxvk {
    * a render pass object for mip map generation.
    * This must be created per image view.
    */
-  class DxvkMetaMipGenRenderPass : public DxvkResource {
+  class DxvkMetaMipGenViews {
     
   public:
     
-    DxvkMetaMipGenRenderPass(
-      const Rc<vk::DeviceFn>&   vkd,
+    DxvkMetaMipGenViews(
       const Rc<DxvkImageView>&  view);
     
-    ~DxvkMetaMipGenRenderPass();
-    
-    /**
-     * \brief Render pass handle
-     * \returns Render pass handle
-     */
-    VkRenderPass renderPass() const {
-      return m_renderPass;
-    }
+    ~DxvkMetaMipGenViews();
     
     /**
      * \brief Source image view type
@@ -38,7 +31,7 @@ namespace dxvk {
      * resource descriptor needs to have.
      * \returns Source image view type
      */
-    VkImageViewType viewType() const {
+    VkImageViewType getSrcViewType() const {
       return m_srcViewType;
     }
     
@@ -48,45 +41,108 @@ namespace dxvk {
      * Number of mip levels to generate.
      * \returns Render pass count
      */
-    uint32_t passCount() const {
+    uint32_t getPassCount() const {
       return m_passes.size();
     }
     
     /**
-     * \brief Framebuffer handles
+     * \brief Source image view
      * 
-     * Returns image view and framebuffer handles
-     * required to generate a single mip level.
      * \param [in] pass Render pass index
-     * \returns Object handles for the given pass
+     * \returns Source image view handle for the given pass
      */
-    DxvkMetaBlitPass pass(uint32_t passId) const {
-      return m_passes.at(passId);
+    Rc<DxvkImageView> getSrcView(uint32_t passId) const {
+      return m_passes[passId].src;
     }
-    
+
+    /**
+     * \brief Destination image view
+     * 
+     * \param [in] pass Render pass index
+     * \returns Destination image view handle for the given pass
+     */
+    Rc<DxvkImageView> getDstView(uint32_t passId) const {
+      return m_passes[passId].dst;
+    }
+
+    /**
+     * \brief Returns subresource that will only be read
+     * \returns Top level of the image view
+     */
+    VkImageSubresourceRange getTopSubresource() const {
+      VkImageSubresourceRange sr = m_view->imageSubresources();
+      sr.levelCount = 1;
+      return sr;
+    }
+
+    /**
+     * \brief Returns subresource that will only be written
+     * \returns Top level of the image view
+     */
+    VkImageSubresourceRange getBottomSubresource() const {
+      VkImageSubresourceRange sr = m_view->imageSubresources();
+      sr.baseMipLevel += sr.levelCount - 1;
+      sr.levelCount = 1;
+      return sr;
+    }
+
+    /**
+     * \brief Returns all subresources that will be written
+     * \returns All mip levels except the top level
+     */
+    VkImageSubresourceRange getAllTargetSubresources() const {
+      VkImageSubresourceRange sr = m_view->imageSubresources();
+      sr.baseMipLevel += 1;
+      sr.levelCount -= 1;
+      return sr;
+    }
+
+    /**
+     * \brief Returns all subresources that will be read
+     * \returns All mip levels except the bottom level
+     */
+    VkImageSubresourceRange getAllSourceSubresources() const {
+      VkImageSubresourceRange sr = m_view->imageSubresources();
+      sr.levelCount -= 1;
+      return sr;
+    }
+
+    /**
+     * \brief Returns subresource read in a given pass
+     *
+     * \param [in] pass Pass index
+     * \returns The source subresource
+     */
+    VkImageSubresourceRange getSourceSubresource(uint32_t pass) const {
+      VkImageSubresourceRange sr = m_view->imageSubresources();
+      sr.baseMipLevel += pass;
+      sr.levelCount = 1;
+      return sr;
+    }
+
     /**
      * \brief Framebuffer size for a given pass
      * 
      * Stores the width, height, and layer count
      * of the framebuffer for the given pass ID.
      */
-    VkExtent3D passExtent(uint32_t passId) const;
+    VkExtent3D computePassExtent(uint32_t passId) const;
     
   private:
-    
-    Rc<vk::DeviceFn>  m_vkd;
+
+    struct PassViews {
+      Rc<DxvkImageView> src;
+      Rc<DxvkImageView> dst;
+    };
+
     Rc<DxvkImageView> m_view;
     
-    VkRenderPass m_renderPass;
+    VkImageViewType m_srcViewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
+    VkImageViewType m_dstViewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
     
-    VkImageViewType m_srcViewType;
-    VkImageViewType m_dstViewType;
+    small_vector<PassViews, 16> m_passes;
     
-    std::vector<DxvkMetaBlitPass> m_passes;
-    
-    VkRenderPass createRenderPass() const;
-    
-    DxvkMetaBlitPass createFramebuffer(uint32_t pass) const;
+    PassViews createViews(uint32_t pass) const;
     
   };
   

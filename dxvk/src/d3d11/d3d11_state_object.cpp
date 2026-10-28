@@ -4,7 +4,8 @@ namespace dxvk {
 
   D3D11DeviceContextState::D3D11DeviceContextState(
           D3D11Device*         pDevice)
-  : D3D11DeviceChild<ID3DDeviceContextState>(pDevice) {
+  : D3D11DeviceChild<ID3DDeviceContextState>(pDevice),
+    m_destructionNotifier(this) {
 
   }
 
@@ -29,8 +30,16 @@ namespace dxvk {
       return S_OK;
     }
 
-    Logger::warn("D3D11DeviceContextState::QueryInterface: Unknown interface query");
-    Logger::warn(str::format(riid));
+    if (riid == __uuidof(ID3DDestructionNotifier)) {
+      *ppvObject = ref(&m_destructionNotifier);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(ID3DDeviceContextState), riid)) {
+      Logger::warn("D3D11DeviceContextState::QueryInterface: Unknown interface query");
+      Logger::warn(str::format(riid));
+    }
+
     return E_NOINTERFACE;
   }
 

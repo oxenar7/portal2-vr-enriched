@@ -46,7 +46,7 @@ namespace dxvk {
 
     }
 
-    inline bool IsDegenerate() { return min == max; }
+    inline bool IsDegenerate() const { return min == max; }
 
     inline void Conjoin(D3D9Range range) {
       if (IsDegenerate())
@@ -78,6 +78,8 @@ namespace dxvk {
             D3D9DeviceEx*      pDevice,
       const D3D9_BUFFER_DESC*  pDesc);
 
+    ~D3D9CommonBuffer();
+
     HRESULT Lock(
             UINT   OffsetToLock,
             UINT   SizeToLock,
@@ -89,11 +91,7 @@ namespace dxvk {
     /**
     * \brief Determine the mapping mode of the buffer, (ie. direct mapping or backed)
     */
-    inline D3D9_COMMON_BUFFER_MAP_MODE DetermineMapMode(const D3D9Options* options) const {
-      return (m_desc.Pool == D3DPOOL_DEFAULT && (m_desc.Usage & (D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY)) && options->allowDirectBufferMapping)
-        ? D3D9_COMMON_BUFFER_MAP_MODE_DIRECT
-        : D3D9_COMMON_BUFFER_MAP_MODE_BUFFER;
-    }
+    D3D9_COMMON_BUFFER_MAP_MODE DetermineMapMode(const D3D9Options* options) const;
 
     /**
     * \brief Get the mapping mode of the buffer, (ie. direct mapping or backed)
@@ -127,20 +125,21 @@ namespace dxvk {
 
     template <D3D9_COMMON_BUFFER_TYPE Type>
     inline DxvkBufferSlice GetBufferSlice(VkDeviceSize offset, VkDeviceSize length) const {
-      return DxvkBufferSlice(GetBuffer<Type>(), offset, length);
+     if (likely(length && offset < m_desc.Size)) {
+        return DxvkBufferSlice(GetBuffer<Type>(), offset,
+          std::min<VkDeviceSize>(m_desc.Size - offset, length));
+     }
+
+      return DxvkBufferSlice();
     }
 
-    inline DxvkBufferSliceHandle AllocMapSlice() {
-      return GetMapBuffer()->allocSlice();
+    inline Rc<DxvkResourceAllocation> DiscardMapSlice() {
+      m_allocation = GetMapBuffer()->allocateStorage();
+      return m_allocation;
     }
 
-    inline DxvkBufferSliceHandle DiscardMapSlice() {
-      m_sliceHandle = GetMapBuffer()->allocSlice();
-      return m_sliceHandle;
-    }
-
-    inline DxvkBufferSliceHandle GetMappedSlice() const {
-      return m_sliceHandle;
+    inline Rc<DxvkResourceAllocation> GetMappedSlice() const {
+      return m_allocation;
     }
 
     inline DWORD GetMapFlags() const      { return m_mapFlags; }
@@ -148,17 +147,12 @@ namespace dxvk {
 
     inline const D3D9_BUFFER_DESC* Desc() const { return &m_desc; }
 
-    static HRESULT ValidateBufferProperties(const D3D9_BUFFER_DESC* pDesc);
+    static HRESULT ValidateBufferProperties(const D3D9_BUFFER_DESC* pDesc, const bool IsExtended);
 
     /**
      * \brief The range of the buffer that was changed using Lock calls
      */
     inline D3D9Range& DirtyRange()  { return m_dirtyRange; }
-
-    /**
-     * \brief The range of the buffer that might currently be read by the GPU
-     */
-    inline D3D9Range& GPUReadingRange() { return m_gpuReadingRange; }
 
     /**
     * \brief Whether or not the buffer was written to by the GPU (in IDirect3DDevice9::ProcessVertices)
@@ -182,21 +176,12 @@ namespace dxvk {
     /**
      * \brief Whether or not the staging buffer needs to be copied to the actual buffer
      */
-    inline bool NeedsUpload() { return m_desc.Pool != D3DPOOL_DEFAULT && !m_dirtyRange.IsDegenerate(); }
-
-    inline bool DoesStagingBufferUploads() const { return m_uploadUsingStaging; }
-
-    inline void EnableStagingBufferUploads() {
-      if (GetMapMode() != D3D9_COMMON_BUFFER_MAP_MODE_BUFFER)
-        return;
-
-      m_uploadUsingStaging = true;
-    }
+    inline bool NeedsUpload() const { return (m_desc.Pool != D3DPOOL_DEFAULT || m_uploadAtDraw) && m_mapMode != D3D9_COMMON_BUFFER_MAP_MODE_DIRECT && !m_dirtyRange.IsDegenerate(); }
 
     void PreLoad();
 
     bool HasSequenceNumber() const {
-      return m_mapMode != D3D9_COMMON_BUFFER_MAP_MODE_DIRECT;
+      return m_mapMode != D3D9_COMMON_BUFFER_MAP_MODE_DIRECT || m_boundMask == 0;
     }
 
      /**
@@ -205,21 +190,29 @@ namespace dxvk {
      * Stores which CS chunk the resource was last used on.
      * \param [in] Seq Sequence number
      */
-    void TrackMappingBufferSequenceNumber(uint64_t Seq) {
+    void TrackBufferSequenceNumber(uint64_t Seq) {
       m_seq = Seq;
     }
 
 
     /**
-     * \brief Queries sequence number for a given subresource
+     * \brief Queries sequence number
      *
      * Returns which CS chunk the resource was last used on.
-     * \param [in] Subresource Subresource index
-     * \returns Sequence number for the given subresource
+     * \returns Sequence number
      */
     uint64_t GetMappingBufferSequenceNumber() const {
       return HasSequenceNumber() ? m_seq
         : DxvkCsThread::SynchronizeAll;
+    }
+
+    bool DoPerDrawUpload() const {
+      return m_desc.Pool == D3DPOOL_SYSTEMMEM && (m_desc.Usage & D3DUSAGE_DYNAMIC) != 0;
+    }
+
+    void SetBound(uint32_t Slot, bool Bound) {
+      m_boundMask &= ~(1u << Slot);
+      m_boundMask |= uint8_t(Bound) << Slot;
     }
 
   private:
@@ -241,22 +234,26 @@ namespace dxvk {
 
     D3D9DeviceEx*               m_parent;
     const D3D9_BUFFER_DESC      m_desc;
-    DWORD                       m_mapFlags;
+    DWORD                       m_mapFlags = 0;
     bool                        m_needsReadback = false;
-    bool                        m_uploadUsingStaging = false;
     D3D9_COMMON_BUFFER_MAP_MODE m_mapMode;
+    bool                        m_uploadAtDraw = false;
 
     Rc<DxvkBuffer>              m_buffer;
     Rc<DxvkBuffer>              m_stagingBuffer;
 
-    DxvkBufferSliceHandle       m_sliceHandle;
+    Rc<DxvkResourceAllocation>  m_allocation;
 
     D3D9Range                   m_dirtyRange;
-    D3D9Range                   m_gpuReadingRange;
 
     uint32_t                    m_lockCount = 0;
 
     uint64_t                    m_seq = 0ull;
+
+    // Tracks which slots the buffer is currently bound to.
+    // 0 if it's not bound at all. Bits 0 - 3 (incl.) are valid
+    // for vertex buffers and only bit 0 is valid for index buffers.
+    uint8_t                     m_boundMask = 0u;
 
   };
 

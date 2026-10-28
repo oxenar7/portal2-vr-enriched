@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <mutex>
 
 #include "dxgi_adapter.h"
 #include "dxgi_monitor.h"
@@ -9,7 +10,48 @@
 #include "../dxvk/dxvk_instance.h"
 
 namespace dxvk {
-    
+
+  class DxgiFactory;
+
+  struct DXVK_VK_GLOBAL_HDR_STATE {
+    uint32_t Serial;
+    DXGI_COLOR_SPACE_TYPE ColorSpace;
+    DXGI_VK_HDR_METADATA  Metadata;
+  };
+
+  class DxgiVkFactory : public IDXGIVkInteropFactory1 {
+
+  public:
+
+    DxgiVkFactory(DxgiFactory* pFactory);
+
+    ULONG STDMETHODCALLTYPE AddRef();
+
+    ULONG STDMETHODCALLTYPE Release();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(
+            REFIID                    riid,
+            void**                    ppvObject);
+
+    void STDMETHODCALLTYPE GetVulkanInstance(
+            VkInstance*               pInstance,
+            PFN_vkGetInstanceProcAddr* ppfnVkGetInstanceProcAddr);
+
+    HRESULT STDMETHODCALLTYPE GetGlobalHDRState(
+            DXGI_COLOR_SPACE_TYPE   *pOutColorSpace,
+            DXGI_HDR_METADATA_HDR10 *pOutMetadata);
+
+    HRESULT STDMETHODCALLTYPE SetGlobalHDRState(
+            DXGI_COLOR_SPACE_TYPE    ColorSpace,
+      const DXGI_HDR_METADATA_HDR10 *pMetadata);
+
+  private:
+
+    DxgiFactory* m_factory;
+
+  };
+
+
   class DxgiFactory : public DxgiObject<IDXGIFactory7> {
     
   public:
@@ -131,27 +173,43 @@ namespace dxvk {
     HRESULT STDMETHODCALLTYPE UnregisterAdaptersChangedEvent(
             DWORD                 Cookie);
 
+    BOOL UseMonitorFallback() const {
+      return m_monitorFallback;
+    }
+
     Rc<DxvkInstance> GetDXVKInstance() const {
       return m_instance;
     }
 
     const DxgiOptions* GetOptions() const {
-      return &m_options;
+      return m_options.ptr();
     }
 
     DxgiMonitorInfo* GetMonitorInfo() {
       return &m_monitorInfo;
     }
+
+    DXVK_VK_GLOBAL_HDR_STATE GlobalHDRState();
     
   private:
     
     Rc<DxvkInstance> m_instance;
+    DxgiVkFactory    m_interop;
+    Rc<DxgiOptions>  m_options;
     DxgiMonitorInfo  m_monitorInfo;
-    DxgiOptions      m_options;
     UINT             m_flags;
-    
-    HWND m_associatedWindow = nullptr;
-    
+    BOOL             m_monitorFallback;
+
+    D3DDestructionNotifier m_destructionNotifier;
+      
+
+    HRESULT STDMETHODCALLTYPE CreateSwapChainBase(
+            IUnknown*             pDevice,
+            HWND                  hWnd,
+      const DXGI_SWAP_CHAIN_DESC1* pDesc,
+      const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc,
+            IDXGIOutput*          pRestrictToOutput,
+            IDXGISwapChain1**     ppSwapChain);
   };
   
 }

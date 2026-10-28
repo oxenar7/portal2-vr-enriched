@@ -10,8 +10,6 @@
 
 namespace dxvk {
 
-  using D3D9GDIDesc = D3DKMT_DESTROYDCFROMMEMORY;
-
   using D3D9SurfaceBase = D3D9Subresource<IDirect3DSurface9>;
   class D3D9Surface final : public D3D9SurfaceBase {
 
@@ -20,11 +18,18 @@ namespace dxvk {
     D3D9Surface(
             D3D9DeviceEx*             pDevice,
       const D3D9_COMMON_TEXTURE_DESC* pDesc,
+      const bool                      Extended,
             IUnknown*                 pContainer,
             HANDLE*                   pSharedHandle);
 
     D3D9Surface(
             D3D9DeviceEx*             pDevice,
+      const D3D9_COMMON_TEXTURE_DESC* pDesc,
+      const bool                      Extended);
+
+    D3D9Surface(
+            D3D9DeviceEx*             pDevice,
+      const bool                      Extended,
             D3D9CommonTexture*        pTexture,
             UINT                      Face,
             UINT                      MipLevel,
@@ -61,7 +66,8 @@ namespace dxvk {
 
   private:
 
-    D3D9GDIDesc m_dcDesc;
+    HDC         m_hdc = nullptr;
+    HANDLE      m_hbitmap = nullptr;
 
   };
 }

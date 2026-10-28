@@ -20,46 +20,73 @@ namespace dxvk {
    * of the graphics and compute pipelines
    * has changed and/or needs to be updated.
    */
-  enum class DxvkContextFlag : uint32_t  {
+  enum class DxvkContextFlag : uint64_t  {
     GpRenderPassBound,          ///< Render pass is currently bound
     GpRenderPassSuspended,      ///< Render pass is currently suspended
+    GpRenderPassSecondaryCmd,   ///< Render pass uses secondary command buffer
+    GpRenderPassSideEffects,    ///< Render pass has side effects
+    GpRenderPassNeedsFlush,     ///< Render pass has pending resolves or discards
     GpXfbActive,                ///< Transform feedback is enabled
-    GpDirtyFramebuffer,         ///< Framebuffer binding is out of date
+    GpDirtyRenderTargets,       ///< Bound render targets are out of date
     GpDirtyPipeline,            ///< Graphics pipeline binding is out of date
     GpDirtyPipelineState,       ///< Graphics pipeline needs to be recompiled
-    GpDirtyResources,           ///< Graphics pipeline resource bindings are out of date
-    GpDirtyDescriptorBinding,   ///< Graphics descriptor set needs to be rebound
     GpDirtyVertexBuffers,       ///< Vertex buffer bindings are out of date
     GpDirtyIndexBuffer,         ///< Index buffer binding are out of date
     GpDirtyXfbBuffers,          ///< Transform feedback buffer bindings are out of date
     GpDirtyBlendConstants,      ///< Blend constants have changed
     GpDirtyDepthBias,           ///< Depth bias has changed
     GpDirtyDepthBounds,         ///< Depth bounds have changed
+    GpDirtyDepthClip,           ///< Depth clip state has changed
+    GpDirtyDepthTest,           ///< Depth test state has changed
+    GpDirtyStencilTest,         ///< Stencil test state other than reference has changed
     GpDirtyStencilRef,          ///< Stencil reference has changed
+    GpDirtyMultisampleState,    ///< Multisample state has changed
+    GpDirtyRasterizerState,     ///< Cull mode and front face have changed
+    GpDirtySampleLocations,     ///< Sample locations have changed
     GpDirtyViewport,            ///< Viewport state has changed
+    GpDirtySpecConstants,       ///< Graphics spec constants are out of date
     GpDynamicBlendConstants,    ///< Blend constants are dynamic
     GpDynamicDepthBias,         ///< Depth bias is dynamic
     GpDynamicDepthBounds,       ///< Depth bounds are dynamic
-    GpDynamicStencilRef,        ///< Stencil reference is dynamic
-    
-    CpDirtyPipeline,            ///< Compute pipeline binding are out of date
-    CpDirtyPipelineState,       ///< Compute pipeline needs to be recompiled
-    CpDirtyResources,           ///< Compute pipeline resource bindings are out of date
-    CpDirtyDescriptorBinding,   ///< Compute descriptor set needs to be rebound
-    
+    GpDynamicDepthClip,         ///< Depth clip state is dynamic
+    GpDynamicDepthTest,         ///< Depth test is dynamic
+    GpDynamicStencilTest,       ///< Stencil test state is dynamic
+    GpDynamicMultisampleState,  ///< Multisample state is dynamic
+    GpDynamicRasterizerState,   ///< Cull mode and front face are dynamic
+    GpDynamicSampleLocations,   ///< Sample locations are dynamic
+    GpDynamicVertexStrides,     ///< Vertex buffer strides are dynamic
+    GpDynamicViewport,          ///< Viewport state is dynamic. Disabled for rasterizer discard.
+    GpHasPushConstants,         ///< Graphics pipeline uses push constants
+    GpIndependentSets,          ///< Graphics pipeline layout was created with independent sets
+
+    CpDirtyPipelineState,       ///< Compute pipeline is out of date
+    CpDirtySpecConstants,       ///< Compute spec constants are out of date
+    CpHasPushConstants,         ///< Compute pipeline uses push constants
+
     DirtyDrawBuffer,            ///< Indirect argument buffer is dirty
     DirtyPushConstants,         ///< Push constant data has changed
+
+    ForceWriteAfterWriteSync,   ///< Ignores barrier control flags for write-after-write hazards
+
+    Count
   };
-  
+
+  static_assert(uint32_t(DxvkContextFlag::Count) <= 64u);
+
   using DxvkContextFlags = Flags<DxvkContextFlag>;
 
 
   /**
    * \brief Context feature bits
    */
-  enum class DxvkContextFeature {
-    NullDescriptors,
-    ExtendedDynamicState,
+  enum class DxvkContextFeature : uint32_t {
+    TrackGraphicsPipeline,
+    VariableMultisampleRate,
+    IndexBufferRobustness,
+    DebugUtils,
+    DirectMultiDraw,
+    DescriptorTemplates,
+    FeatureCount
   };
 
   using DxvkContextFeatures = Flags<DxvkContextFeature>;
@@ -72,8 +99,11 @@ namespace dxvk {
    * synchronize implicitly.
    */
   enum class DxvkBarrierControl : uint32_t {
-    IgnoreWriteAfterWrite       = 1,
-    IgnoreGraphicsBarriers      = 2,
+    // Ignores write-after-write hazard
+    ComputeAllowWriteOnlyOverlap  = 0,
+    ComputeAllowReadWriteOverlap  = 1,
+
+    GraphicsAllowReadWriteOverlap = 2,
   };
 
   using DxvkBarrierControlFlags  = Flags<DxvkBarrierControl>;
@@ -91,21 +121,31 @@ namespace dxvk {
     
     std::array<DxvkBufferSlice, DxvkLimits::MaxNumVertexBindings> vertexBuffers = { };
     std::array<uint32_t,        DxvkLimits::MaxNumVertexBindings> vertexStrides = { };
+    std::array<uint32_t,        DxvkLimits::MaxNumVertexBindings> vertexExtents = { };
   };
-  
-  
+
+
+  struct DxvkViewport {
+    VkViewport viewport = { };
+    VkRect2D   scissor  = { };
+  };
+
+
   struct DxvkViewportState {
+    uint32_t viewportCount = 0;
     std::array<VkViewport, DxvkLimits::MaxNumViewports> viewports    = { };
     std::array<VkRect2D,   DxvkLimits::MaxNumViewports> scissorRects = { };
   };
 
 
   struct DxvkOutputMergerState {
-    std::array<VkClearValue, MaxNumRenderTargets + 1> clearValues = { };
-    
+    DxvkRenderingInfo   renderingInfo;
     DxvkRenderTargets   renderTargets;
     DxvkRenderPassOps   renderPassOps;
     DxvkFramebufferInfo framebufferInfo;
+    DxvkAttachmentMask  attachmentMask;
+    VkOffset2D          renderAreaLo = { };
+    VkOffset2D          renderAreaHi = { };
   };
 
 
@@ -117,6 +157,13 @@ namespace dxvk {
   struct DxvkXfbState {
     std::array<DxvkBufferSlice, MaxNumXfbBuffers> buffers;
     std::array<DxvkBufferSlice, MaxNumXfbBuffers> counters;
+    std::array<DxvkBufferSlice, MaxNumXfbBuffers> activeCounters;
+  };
+  
+  
+  struct DxvkSpecConstantState {
+    uint32_t                                  mask = 0;
+    std::array<uint32_t, MaxNumSpecConstants> data = { };
   };
   
   
@@ -125,6 +172,7 @@ namespace dxvk {
     DxvkGraphicsPipelineStateInfo state;
     DxvkGraphicsPipelineFlags     flags;
     DxvkGraphicsPipeline*         pipeline = nullptr;
+    DxvkSpecConstantState         constants;
   };
   
   
@@ -132,14 +180,19 @@ namespace dxvk {
     DxvkComputePipelineShaders    shaders;
     DxvkComputePipelineStateInfo  state;
     DxvkComputePipeline*          pipeline = nullptr;
+    DxvkSpecConstantState         constants;
   };
 
 
   struct DxvkDynamicState {
-    DxvkBlendConstants  blendConstants    = { 0.0f, 0.0f, 0.0f, 0.0f };
-    DxvkDepthBias       depthBias         = { 0.0f, 0.0f, 0.0f };
-    DxvkDepthBounds     depthBounds       = { false, 0.0f, 1.0f };
-    uint32_t            stencilReference  = 0;
+    DxvkBlendConstants          blendConstants          = { 0.0f, 0.0f, 0.0f, 0.0f };
+    DxvkDepthBias               depthBias               = { 0.0f, 0.0f, 0.0f };
+    DxvkDepthBiasRepresentation depthBiasRepresentation = { VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT, false };
+    DxvkDepthBounds             depthBounds             = { 0.0f, 1.0f };
+    DxvkDepthStencilState       depthStencilState       = { };
+    uint32_t                    stencilReference        = 0;
+    VkCullModeFlags             cullMode                = VK_CULL_MODE_BACK_BIT;
+    VkFrontFace                 frontFace               = VK_FRONT_FACE_CLOCKWISE;
   };
 
 
@@ -151,6 +204,14 @@ namespace dxvk {
   };
   
   
+  struct DxvkDeferredResolve {
+    Rc<DxvkImageView> imageView;
+    uint32_t layerMask;
+    VkResolveModeFlagBits depthMode;
+    VkResolveModeFlagBits stencilMode;
+  };
+
+
   /**
    * \brief Pipeline state
    * 
@@ -169,5 +230,16 @@ namespace dxvk {
     DxvkGraphicsPipelineState gp;
     DxvkComputePipelineState  cp;
   };
-  
+
+
+  /**
+   * \brief View pair
+   *
+   * Stores a buffer view and an image view.
+   */
+  struct DxvkViewPair {
+    Rc<DxvkBufferView> bufferView;
+    Rc<DxvkImageView> imageView;
+  };
+
 }

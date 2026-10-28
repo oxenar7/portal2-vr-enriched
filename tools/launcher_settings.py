@@ -109,9 +109,9 @@ _ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS)
 # layers over config.txt. Match VrSettings::Pages() in L4D2VR/vr_settings.h.
 INGAME_SETTINGS = "VR/ingame_settings.txt"
 INGAME_KEYS = frozenset((
-    "SnapTurning", "SnapTurnAngle", "TurnSpeed", "MovementDirection", "LeftHanded", "Haptics",
-    "HapticsIntensity", "ExperimentalWorldAimMarker", "6DOF", "ControllerPitchDegrees",
-    "HeightOffsetMeters", "VRScale", "IPDScale", "HapticsNativeRumble", "HapticsHeldObject",
+    "SnapTurning", "SnapTurnAngle", "TurnSpeed", "MovementDirection", "PhysicalCrouch", "LeftHanded",
+    "Haptics", "HapticsIntensity", "ExperimentalWorldAimMarker", "6DOF", "ControllerPitchDegrees",
+    "HeightOffsetMeters", "PhysicalCrouchDropMeters", "VRScale", "IPDScale", "HapticsNativeRumble", "HapticsHeldObject",
     "HapticsButtons", "ReticleDistanceScaling", "RenderWindow"))
 
 

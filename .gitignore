@@ -26,6 +26,8 @@ x86/
 bld/
 [Oo]bj/
 [Ll]og/
+# DXVK keeps its logger sources in src/util/log
+!dxvk/src/util/log/
 [Ll]ogs/
 
 # Visual Studio 2015/2017 cache/options directory

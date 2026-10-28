@@ -9277,6 +9277,9 @@ namespace dxvk {
   }
 
   void D3D9DeviceEx::ResolveImage(D3D9CommonTexture* commonTex) {
+    if (commonTex == nullptr)
+      return;
+
     const auto& image = commonTex->GetImage();
     if (image == nullptr || image->info().sampleCount == VK_SAMPLE_COUNT_1_BIT)
       return;

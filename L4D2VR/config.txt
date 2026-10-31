@@ -33,8 +33,9 @@ HapticsButtons=true # Pedestal and floor buttons
 HUDDistanceMeters=1.3 # 0.6-3.0; distance of the caption overlay from the HMD
 HUDWidthMeters=1.4 # 0.5-2.5
 HUDVerticalOffsetMeters=-0.15 # -0.6 to 0.6; negative is below eye level
-HUDLazyFollow=true # Captions stay level and turn with the head only past the deadzone; false locks them to the HMD
-HUDFollowDeadzoneDegrees=20 # 0-60; head yaw allowed before the captions recenter
+HUDLazyFollow=true # Captions follow the gaze, left/right and up/down, only past the deadzone; false locks them to the HMD
+HUDFollowDeadzoneDegrees=10 # 0-60; head turn allowed before the captions recenter
+HUDFollowSpeed=8 # 1-20; how fast the captions catch up, higher is quicker
 HUDCaptionOpacityBoost=3 # 1-4; multiplies caption overlay alpha so text stays readable over bright scenes (1 = game's own)
 HeightOffsetMeters=0.0 # Standing only; applied at recenter
 ControllerPitchDegrees=-30.0 # Controller forward correction, degrees

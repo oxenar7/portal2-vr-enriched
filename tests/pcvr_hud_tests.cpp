@@ -1,9 +1,14 @@
 #include "../L4D2VR/config.h"
 #include "../L4D2VR/eye_hud.h"
+#include "../L4D2VR/caption_follow.h"
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
 #include <climits>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <optional>
 
 static void expect(bool value, const char *message) {
     if (!value) { std::cerr << "FAIL: " << message << '\n'; std::exit(EXIT_FAILURE); }
@@ -22,8 +27,62 @@ static void nestedPaint(Canvas &canvas) {
     return; // Early returns also restore the caller's viewport.
 }
 
+// Head at (0, 1.6, 0), looking along yaw/pitch in degrees.
+static void headPose(float (&hmd)[3][4], float yawDegrees, float pitchDegrees) {
+    const float radians = 3.14159265f / 180.0f;
+    const float cy = std::cos(yawDegrees * radians), sy = std::sin(yawDegrees * radians);
+    const float cp = std::cos(pitchDegrees * radians), sp = std::sin(pitchDegrees * radians);
+    const float pose[3][4] = {{cy, sy * sp, sy * cp, 0}, {0, cp, -sp, 1.6f}, {-sy, cy * sp, cy * cp, 0}};
+    std::memcpy(hmd, pose, sizeof(pose));
+}
+static bool near(float a, float b) { return std::fabs(a - b) < 0.01f; }
+
+static void captionFollowTests() {
+    const CaptionFollow::Settings settings{10.0f, 8.0f, 1.25f, -0.15f};
+    const float dt = 1.0f / 120.0f;
+    float hmd[3][4];
+    CaptionFollow follow;
+    headPose(hmd, 0, 0);
+    auto first = follow.Update(hmd, dt, settings);
+    expect(first && near(first->m[0][3], 0) && near(first->m[1][3], 1.45f) && near(first->m[2][3], -1.25f),
+           "first placement is straight ahead, below the eye line");
+
+    headPose(hmd, 8, 8);
+    auto held = follow.Update(hmd, dt, settings);
+    expect(held && near(held->m[0][3], 0) && near(held->m[1][3], 1.45f), "gaze inside the deadzone leaves the panel put");
+
+    headPose(hmd, 0, 30);
+    std::optional<CaptionFollow::Pose> up;
+    for (int frame = 0; frame < 30; ++frame)
+        up = follow.Update(hmd, dt, settings);
+    expect(up && up->m[1][3] > 1.45f + 0.8f * 1.25f * 0.5f, "looking up lifts the panel within a quarter second");
+    for (int frame = 0; frame < 240; ++frame)
+        up = follow.Update(hmd, dt, settings);
+    const float gazeHeight = 1.6f + 1.25f * 0.5f; // sin(30) along the panel distance
+    expect(up && up->m[1][3] < gazeHeight && up->m[1][3] > gazeHeight - 0.2f, "panel settles slightly below the gaze");
+    expect(up && std::fabs(up->m[1][2] + 0.5f) < 0.04f, "panel tilts to face the head, settling within 2 degrees");
+
+    CaptionFollow wrap;
+    headPose(hmd, 175, 0);
+    wrap.Update(hmd, dt, settings);
+    headPose(hmd, -170, 0);
+    std::optional<CaptionFollow::Pose> around;
+    for (int frame = 0; frame < 240; ++frame)
+        around = wrap.Update(hmd, dt, settings);
+    const float sinYaw = std::sin(-170.0f * 3.14159265f / 180.0f);
+    expect(around && std::fabs(around->m[0][3] + 1.25f * sinYaw) < 0.05f, "yaw takes the short way across 180 degrees");
+
+    CaptionFollow vertical;
+    headPose(hmd, 0, 89);
+    expect(!vertical.Update(hmd, dt, settings), "no first placement without a usable heading");
+    headPose(hmd, 0, 0);
+    hmd[0][0] = std::numeric_limits<float>::quiet_NaN();
+    expect(!follow.Update(hmd, dt, settings), "non-finite pose rejected");
+}
+
 int main()
 {
+    captionFollowTests();
     std::istringstream invalid("HUDInEyeScale=nan\nHUDInEyeVerticalOffset=0.5\nShowSourceCrosshair=invalid\n");
     const auto parsed = ParseConfig(invalid, ConfigSnapshot{});
     if (parsed.errors.size() != 3) {

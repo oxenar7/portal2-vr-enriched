@@ -49,7 +49,8 @@ struct ConfigSnapshot {
     float hudWidthMeters = 1.4f;
     float hudVerticalOffsetMeters = -0.15f;
     bool hudLazyFollow = true;
-    float hudFollowDeadzoneDegrees = 20.0f;
+    float hudFollowDeadzoneDegrees = 10.0f;
+    float hudFollowSpeed = 8.0f;
     float hudCaptionOpacityBoost = 3.0f;
     float heightOffsetMeters = 0.0f;
     float controllerPitchDegrees = -30.0f;
@@ -272,6 +273,7 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
     readFloat("HUDVerticalOffsetMeters", result.value.hudVerticalOffsetMeters, -0.6f, 0.6f);
     readBool("HUDLazyFollow", result.value.hudLazyFollow);
     readFloat("HUDFollowDeadzoneDegrees", result.value.hudFollowDeadzoneDegrees, 0.0f, 60.0f);
+    readFloat("HUDFollowSpeed", result.value.hudFollowSpeed, 1.0f, 20.0f);
     readFloat("HUDCaptionOpacityBoost", result.value.hudCaptionOpacityBoost, 1.0f, 4.0f);
     if (entries.find("SeatedMode") != entries.end())
         result.errors.push_back("SeatedMode is unsupported; use TrackingMode");

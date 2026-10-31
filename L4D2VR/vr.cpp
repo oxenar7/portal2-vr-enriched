@@ -1053,7 +1053,7 @@ void VR::SubmitExperimentalHUDOverlay()
         if (m_Overlay->IsOverlayVisible(m_HUDHandle))
             m_Overlay->HideOverlay(m_HUDHandle);
         // Reappear straight ahead after menus and loads.
-        m_HUDFollowValid = false;
+        m_CaptionFollow.Reset();
         return;
     }
     const VRSubmissionScope queue(m_D3DVR);
@@ -1081,53 +1081,20 @@ bool VR::PlaceExperimentalHUDOverlay()
         transform.m[2][3] = -m_Config.hudDistanceMeters;
         m_HUDHeadLocked = m_Overlay->SetOverlayTransformTrackedDeviceRelative(
             m_HUDHandle, vr::k_unTrackedDeviceIndex_Hmd, &transform) == vr::VROverlayError_None;
-        m_HUDFollowValid = false;
+        m_CaptionFollow.Reset();
         return m_HUDHeadLocked;
     }
 
-    // Level panel in tracking space: position eases after the head, yaw only
-    // turns once the head leaves the deadzone, and pitch/roll are ignored so
-    // reading never drags the text around.
     const auto &hmd = m_Poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking.m;
     const auto now = std::chrono::steady_clock::now();
-    const float horizontal = std::sqrt(hmd[0][2] * hmd[0][2] + hmd[2][2] * hmd[2][2]);
-    const float headYaw = std::atan2(hmd[0][2], hmd[2][2]); // OpenVR forward is -Z
-    if (!m_HUDFollowValid) {
-        if (horizontal < 0.2f)
-            return false; // looking straight up or down: wait for a usable heading
-        m_HUDFollowYaw = headYaw;
-        for (int i = 0; i < 3; ++i)
-            m_HUDFollowPos[i] = hmd[i][3];
-        m_HUDRecentering = false;
-        m_HUDFollowValid = true;
-    } else {
-        const float dt = (std::min)(std::chrono::duration<float>(now - m_HUDFollowLast).count(), 0.1f);
-        const float positionBlend = 1.0f - std::exp(-dt * 8.0f);
-        for (int i = 0; i < 3; ++i)
-            m_HUDFollowPos[i] += (hmd[i][3] - m_HUDFollowPos[i]) * positionBlend;
-        if (horizontal >= 0.2f) {
-            constexpr float kPi = 3.14159265f;
-            const float delta = std::remainder(headYaw - m_HUDFollowYaw, 2.0f * kPi);
-            if (std::fabs(delta) > m_Config.hudFollowDeadzoneDegrees * kPi / 180.0f)
-                m_HUDRecentering = true;
-            if (m_HUDRecentering) {
-                m_HUDFollowYaw += delta * (1.0f - std::exp(-dt * 4.0f));
-                if (std::fabs(delta) < 2.0f * kPi / 180.0f)
-                    m_HUDRecentering = false;
-            }
-        }
-    }
+    const float dt = (std::min)(std::chrono::duration<float>(now - m_HUDFollowLast).count(), 0.1f);
     m_HUDFollowLast = now;
-
-    const float c = std::cos(m_HUDFollowYaw), s = std::sin(m_HUDFollowYaw);
-    const float distance = m_Config.hudDistanceMeters;
+    const auto pose = m_CaptionFollow.Update(hmd, dt, {m_Config.hudFollowDeadzoneDegrees,
+        m_Config.hudFollowSpeed, m_Config.hudDistanceMeters, m_Config.hudVerticalOffsetMeters});
+    if (!pose)
+        return false; // no usable heading yet, or a non-finite pose
     vr::HmdMatrix34_t transform{};
-    transform.m[0][0] = c;  transform.m[0][2] = s;
-    transform.m[1][1] = 1.0f;
-    transform.m[2][0] = -s; transform.m[2][2] = c;
-    transform.m[0][3] = m_HUDFollowPos[0] - distance * s;
-    transform.m[1][3] = m_HUDFollowPos[1] + m_Config.hudVerticalOffsetMeters;
-    transform.m[2][3] = m_HUDFollowPos[2] - distance * c;
+    std::memcpy(transform.m, pose->m, sizeof(transform.m));
     const auto error = m_Overlay->SetOverlayTransformAbsolute(
         m_HUDHandle, vr::VRCompositor()->GetTrackingSpace(), &transform);
     if (error != vr::VROverlayError_None) {

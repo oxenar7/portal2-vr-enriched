@@ -15,6 +15,7 @@
 #include "vr_resource_lifecycle.h"
 #include "render_condition_diagnostics.h"
 #include "menu_overlay_placement.h"
+#include "caption_follow.h"
 #include "muzzle_origin.h"
 #include "openvr_session.h"
 #include "vr_options_menu.h"
@@ -227,10 +228,7 @@ public:
 	bool m_RenderedHud = false;
 	// Caption overlay placement in tracking space while HUDLazyFollow is on.
 	bool m_HUDHeadLocked = true;
-	bool m_HUDFollowValid = false;
-	bool m_HUDRecentering = false;
-	float m_HUDFollowYaw = 0.0f;
-	float m_HUDFollowPos[3] = {};
+	CaptionFollow m_CaptionFollow;
 	std::chrono::steady_clock::time_point m_HUDFollowLast;
 	bool m_HUDAlphaBoostLogged = false;
 	bool m_CreatedVRTextures = false;

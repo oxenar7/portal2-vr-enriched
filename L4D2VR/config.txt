@@ -5,7 +5,7 @@ PerfLog=true # Write frame timing summaries to bin/portal2vr_perf.log; no player
 PerfLogIntervalSeconds=5 # 1-60; length of each summary window
 GpuDrainEachFrame=false # true restores the old full GPU wait after every Present (fallback if the eyes flicker or tear)
 ExplicitTiming=true # Start SteamVR's GPU clock at the first eye instead of inside WaitGetPoses; restart required
-PerfAbSeconds=30 # Automatic A/B test: swap the two commands below this often and mark perf log windows ab=0/1; 0 turns it off
+PerfAbSeconds=0 # Automatic A/B test: swap the two commands below this often and mark perf log windows ab=0/1; 0 turns it off
 PerfAbCommandA=cl_threaded_bone_setup 0;r_threaded_shadow_clip 0
 PerfAbCommandB=cl_threaded_bone_setup 1;r_threaded_shadow_clip 1
 TrackingMode=Seated # Standing uses SteamVR floor height; changing this requires a restart

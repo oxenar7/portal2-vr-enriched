@@ -175,6 +175,28 @@ static void TestPerfStats()
                "address space reports used and total MiB");
     expectText(PerfStats::FormatAddressSpace(0, 0), "", "unknown address space prints nothing");
 
+    PerfStats::AbSchedule ab;
+    expect(ab.SideB(), false, "the A/B test starts on side A");
+    expect(ab.Next(2), false, "the side holds for the configured number of windows");
+    expect(ab.Next(2), true, "the side changes after the configured windows");
+    expect(ab.SideB(), true, "the A/B test moves to side B");
+    ab.Next(2);
+    expect(ab.Next(2), true, "the side changes back");
+    expect(ab.SideB(), false, "the A/B test returns to side A");
+    expect(ab.Next(1), true, "one window per side swaps every window");
+
+    expect(ConfigSnapshot{}.explicitTiming, true, "explicit timing is on without any config entry");
+    expectInt(ConfigSnapshot{}.perfAbSeconds, 0, "the A/B test is off without any config entry");
+    std::istringstream abConfig("ExplicitTiming=false\nPerfAbSeconds=30 # swap\n"
+                                "PerfAbCommandA=cl_threaded_bone_setup 0;r_threaded_shadow_clip 0\n"
+                                "PerfAbCommandB=cl_threaded_bone_setup 1 # on\n");
+    const auto parsedAb = ParseConfig(abConfig, ConfigSnapshot{});
+    expect(parsedAb.value.explicitTiming, false, "ExplicitTiming=false restores implicit timing");
+    expectInt(parsedAb.value.perfAbSeconds, 30, "the A/B period is configurable");
+    expectText(parsedAb.value.perfAbCommandA, "cl_threaded_bone_setup 0;r_threaded_shadow_clip 0",
+               "A/B commands keep spaces and separators");
+    expectText(parsedAb.value.perfAbCommandB, "cl_threaded_bone_setup 1", "A/B commands drop trailing comments");
+
     expect(ConfigSnapshot{}.perfLog, true, "perf log is on without any config entry");
     std::istringstream perfConfig("PerfLog=false\nPerfLogIntervalSeconds=10\n");
     const auto parsedPerf = ParseConfig(perfConfig, ConfigSnapshot{});

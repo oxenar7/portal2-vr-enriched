@@ -224,6 +224,27 @@ private:
     std::uint32_t m_BusyFrames = 0;
 };
 
+// Swaps between two settings every few log windows, so a setting can be
+// compared with itself in the same scenes without any input from the player.
+class AbSchedule
+{
+public:
+    // Called once per log window; returns true when the side changes.
+    bool Next(int windowsPerSide)
+    {
+        if (++m_Windows < windowsPerSide) return false;
+        m_Windows = 0;
+        m_SideB = !m_SideB;
+        return true;
+    }
+
+    bool SideB() const { return m_SideB; }
+
+private:
+    int m_Windows = 0;
+    bool m_SideB = false;
+};
+
 // " vm=used vmMax=total" in MiB: the 32-bit game's virtual address space.
 inline std::string FormatAddressSpace(std::uint64_t totalBytes, std::uint64_t availableBytes)
 {

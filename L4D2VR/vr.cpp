@@ -146,6 +146,10 @@ VR::VR(Game *game)
     }
     Logger::Write(std::string("OpenVR tracking space: ") +
                   (trackingOrigin == vr::TrackingUniverseStanding ? "Standing" : "Seated"));
+    m_ExplicitTiming = m_Config.explicitTiming;
+    if (m_ExplicitTiming)
+        vr::VRCompositor()->SetExplicitTimingMode(vr::VRCompositorTimingMode_Explicit_RuntimePerformsPostPresentHandoff);
+    Logger::Write(std::string("OpenVR timing mode: ") + (m_ExplicitTiming ? "explicit" : "implicit"));
     std::error_code configTimeError;
     m_ConfigLastModified = std::filesystem::last_write_time("VR\\config.txt", configTimeError);
     m_SettingsLastModified = std::filesystem::last_write_time(VrSettings::kOverridesPath, configTimeError);
@@ -639,8 +643,9 @@ void VR::PerfFlush(std::chrono::steady_clock::time_point now)
     memory.dwLength = sizeof(memory);
     const std::string addressSpace = GlobalMemoryStatusEx(&memory)
         ? PerfStats::FormatAddressSpace(memory.ullTotalVirtual, memory.ullAvailVirtual) : std::string();
-    Logger::WriteSibling("portal2vr_perf.log", header + m_PerfCompiler.Format(m_PerfLongBusyFrames) + addressSpace +
-                                                   PerfStats::FormatMetrics(m_PerfWindow) +
+    const std::string abSide = m_Config.perfAbSeconds > 0 ? (m_PerfAb.SideB() ? " ab=1" : " ab=0") : "";
+    Logger::WriteSibling("portal2vr_perf.log", header + abSide + m_PerfCompiler.Format(m_PerfLongBusyFrames) +
+                                                   addressSpace + PerfStats::FormatMetrics(m_PerfWindow) +
                                                    PerfStats::FormatBreakdown(m_PerfWorstFrame));
 
     m_PerfWindow.Clear();
@@ -651,6 +656,28 @@ void VR::PerfFlush(std::chrono::steady_clock::time_point now)
     m_PerfCompiler.StartWindow();
     m_PerfCountsStart = countsNow;
     m_PerfHaveCounts = haveCounts;
+    PerfAdvanceAb();
+}
+
+void VR::PerfAdvanceAb()
+{
+    if (m_Config.perfAbSeconds <= 0) return;
+    const int windowsPerSide = (std::max)(1, m_Config.perfAbSeconds / m_Config.perfLogIntervalSeconds);
+    if (!m_PerfAb.Next(windowsPerSide)) return;
+    const std::string &commands = m_PerfAb.SideB() ? m_Config.perfAbCommandB : m_Config.perfAbCommandA;
+    if (!commands.empty()) m_Game->ClientCmd_Unrestricted(commands.c_str());
+}
+
+void VR::SubmitFrameTiming()
+{
+    if (!m_FrameTimingPending) return;
+    m_FrameTimingPending = false;
+    // This performs a vkQueueSubmit, so it needs the queue just like Submit.
+    const VRSubmissionScope queue(m_D3DVR);
+    const auto error = vr::VRCompositor()->SubmitExplicitTimingData();
+    if (error != vr::VRCompositorError_None && error != m_LastFrameTimingError)
+        Logger::Write("SubmitExplicitTimingData failed: " + std::to_string(error));
+    m_LastFrameTimingError = error;
 }
 
 bool VR::DetachBackBufferOverlay(bool hide)
@@ -897,6 +924,8 @@ void VR::CreateVRTextures()
 
 void VR::SubmitVRTextures()
 {
+    // Menu frames have no stereo RenderView to start the GPU clock.
+    SubmitFrameTiming();
     // The bridge pins the image captured before Present rotates backbuffers.
     // Reacquire its descriptor every submission; never reuse a reset-era handle.
     if (!RefreshBackBuffer(m_VKBackBuffer)) {
@@ -1350,6 +1379,7 @@ bool VR::UpdatePosesAndActions()
     } else {
         m_LastPoseError = 0;
         ++m_PoseFetchSequence;
+        m_FrameTimingPending = m_ExplicitTiming;
     }
     const bool useHaptics = (m_Config.experimentalPortalShotHaptics || GameHapticsEnabled()) &&
         m_HapticOutputsAvailable;
@@ -2971,6 +3001,8 @@ void VR::ParseConfigFile()
         " ReticleDistanceScaling=" + std::to_string(m_Config.reticleDistanceScaling) +
         " AntiAliasing=" + std::to_string(m_AntiAliasing) +
         " GpuDrainEachFrame=" + std::to_string(m_Config.gpuDrainEachFrame) +
+        " ExplicitTiming=" + std::to_string(m_Config.explicitTiming) +
+        " PerfAbSeconds=" + std::to_string(m_Config.perfAbSeconds) +
         " ExperimentalHUDOverlay=" + std::to_string(m_Config.experimentalHudOverlay) +
         " ExperimentalViewmodelAlignment=" + std::to_string(m_Config.experimentalViewmodelAlignment) +
         " AimFromViewmodelMuzzle=" + std::to_string(m_Config.aimFromViewmodelMuzzle) +

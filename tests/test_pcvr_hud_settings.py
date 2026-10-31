@@ -91,7 +91,7 @@ class EyeHudSettingsTests(unittest.TestCase):
             preview = core.apply_config_values(template, migrated["values"])
             rendered = dict(line.split("#", 1)[0].strip().split("=", 1) for line in preview.splitlines()
                             if "=" in line.split("#", 1)[0])
-            self.assertEqual(rendered, migrated["values"])
+            self.assertEqual({key: rendered[key] for key in migrated["values"]}, migrated["values"])
             self.assertEqual(json.loads(path.read_text())["game_dir"], old["game_dir"])
             self.assertEqual(json.loads(path.read_text())["steam_exe"], old["steam_exe"])
 

@@ -987,6 +987,7 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 
 	//VPanel* g_pFullscreenRootPanel = *(VPanel**)(m_Game->m_Offsets->g_pFullscreenRootPanel.address);
 
+	m_VR->SubmitFrameTiming();
 	const auto stereoStart = std::chrono::steady_clock::now();
 	IMaterialSystem* matSystem = m_Game->m_MaterialSystem;
 

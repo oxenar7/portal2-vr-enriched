@@ -561,9 +561,14 @@ namespace dxvk {
      * consecutive frames. Water reflections and  *
      * effects seen for the first time compiled   *
      * inline and froze the headset for up to a   *
-     * second; GPL fast-links them instead.       */
+     * second; GPL fast-links them instead.       *
+     * Lifetime tracking would throw every shader *
+     * library away after compiling it and redo   *
+     * it inline at first use (40-80 ms); the     *
+     * game has address space to keep them.       */
     { R"(\\portal2\.exe$)", {{
       { "dxvk.enableGraphicsPipelineLibrary", "Auto" },
+      { "dxvk.trackPipelineLifetime",         "False" },
     }} },
     /* Sonic Adventure 2                          */
     { R"(\\Sonic Adventure 2\\(launcher|sonic2app)\.exe$)", {{

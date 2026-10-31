@@ -19,6 +19,10 @@ struct ConfigSnapshot {
     bool perfLog = true;
     int perfLogIntervalSeconds = 5;
     bool gpuDrainEachFrame = false;
+    bool explicitTiming = true;
+    int perfAbSeconds = 0;
+    std::string perfAbCommandA;
+    std::string perfAbCommandB;
     TrackingSpace::TrackingMode trackingMode = TrackingSpace::TrackingMode::Seated;
     TrackingSpace::MovementDirection movementDirection = TrackingSpace::MovementDirection::Hmd;
     RoomscaleMotion::Mode roomscaleMode = RoomscaleMotion::Mode::Off;
@@ -236,6 +240,14 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
     readBool("PerfLog", result.value.perfLog);
     readInt("PerfLogIntervalSeconds", result.value.perfLogIntervalSeconds, 1, 60);
     readBool("GpuDrainEachFrame", result.value.gpuDrainEachFrame);
+    readBool("ExplicitTiming", result.value.explicitTiming);
+    readInt("PerfAbSeconds", result.value.perfAbSeconds, 0, 600);
+    const auto readText = [&](const std::string &key, std::string &target) {
+        const auto entry = entries.find(key);
+        if (entry != entries.end()) target = entry->second;
+    };
+    readText("PerfAbCommandA", result.value.perfAbCommandA);
+    readText("PerfAbCommandB", result.value.perfAbCommandB);
     readBool("ExperimentalHUDOverlay", result.value.experimentalHudOverlay);
     readBool("HUDInEyeCentered", result.value.hudInEyeCentered);
     readFloat("HUDInEyeScale", result.value.hudInEyeScale, 0.2f, 1.0f);

@@ -30,7 +30,7 @@ DXVK (DXVK-GPLALL with Portal2VR hooks)
     dxvk/src/d3d9/d3d9_vr.cpp       (new)
     dxvk/src/d3d9/d3d9_vr.h         (new)
     dxvk/src/dxvk/dxvk_openvr.cpp
-    dxvk/src/util/config/config.cpp (portal2.exe profile: GPL on)
+    dxvk/src/util/config/config.cpp (portal2.exe profile: GPL on, lifetime tracking off)
 
 MinHook
   Upstream: https://github.com/TsudaKageyu/minhook

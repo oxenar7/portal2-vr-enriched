@@ -339,6 +339,14 @@ public:
 	PerfStats::CompilerActivity m_PerfCompiler;
 	bool m_PerfFrameCompilerBusy = false;
 	std::uint32_t m_PerfLongBusyFrames = 0;
+	PerfStats::AbSchedule m_PerfAb;
+	// Explicit timing: SteamVR's GPU clock for a frame starts at this call,
+	// made just before the frame's first eye. Fixed at startup, as OpenVR wants
+	// the mode set before the first WaitGetPoses.
+	bool m_ExplicitTiming = false;
+	bool m_FrameTimingPending = false;
+	std::uint32_t m_LastFrameTimingError = 0;
+	void SubmitFrameTiming();
 	void PerfRecord(PerfStats::Metric metric, double milliseconds);
 	void PerfNotePresent(double presentMs, double drainMs, bool fastSubmit);
 	// DXVK's compiler counters, read by PresentEx while the perf log is on.
@@ -350,6 +358,7 @@ public:
 	void PerfReadCompositorTiming();
 	bool PerfReadCompositorCounts(PerfStats::CompositorCounts &counts);
 	void PerfFlush(std::chrono::steady_clock::time_point now);
+	void PerfAdvanceAb();
 	void PerfReset();
 
 	VR() {};

@@ -1,8 +1,25 @@
 # Portal 2 VR
 
-An incremental modernization fork of [Gistix/portal2vr](https://github.com/Gistix/portal2vr), for the original Windows version of Portal 2. This remains a 32-bit Source/DX9 runtime-hooking mod, not a replacement engine or a rewrite. SteamVR / OpenVR and the modified DXVK rendering path are retained.
+An incremental modernization fork of [Gistix/portal2vr](https://github.com/Gistix/portal2vr), built on [mmadej20/portal2vr-ultimate](https://github.com/mmadej20/portal2vr-ultimate), for the original Windows version of Portal 2. This remains a 32-bit Source/DX9 runtime-hooking mod, not a replacement engine or a rewrite. SteamVR / OpenVR and the modified DXVK rendering path are retained.
+
+This is an unofficial fan project, not affiliated with or endorsed by Valve. You need your own copy of Portal 2; no game files are included.
+
+**Experimental:** it has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070). Other headsets and machines are untested. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
+
+## What's new in this fork
+
+- **Physical crouch:** duck in real life and you duck in the game. The camera lands on Source's ducked eye height and eases back as you stand.
+- **Held objects stay on the gun:** they move and turn with your wrist, walls still stop them, and lasers leaving a reflector cube steer onto catchers as they do in co-op.
+- **More haptics:** Portal 2's own rumble, plus pickup, drop, holding and button pulses.
+- **VR options inside Portal 2's menus:** Options > VR, drawn in the game's own style and usable with the laser or the stick.
+- **DXVK 2.6.8 (DXVK-GPLALL):** asynchronous pipelines and low-latency pacing, stereo frames no longer wait for the GPU to go idle.
+- **Steadier portal gun:** it pivots at its body, so it no longer shakes with your head.
+- **Readable captions:** an opaque backing, placed just below your gaze and following it.
+- **A small, clean launcher** that only needs the Python standard library when run from source.
 
 ## Getting started
+
+Most players should download a build from the **Releases** page, as described in [RELEASES.md](RELEASES.md). The steps below are for running from source.
 
 Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). It does not install Python, SteamVR or drivers automatically.
 
@@ -62,7 +79,7 @@ Do not delete install state/backups to fix an error. If only user preferences ar
 - VR startup/render-target readiness and menu placement were stabilized across the mod and modified DXVK.
 - Stereo aiming/HUD projection and native reticle clipping were corrected. Gun/effect alignment and animated muzzle sampling serve both beam paths; the world line is the launcher fallback for the still-invisible native particle beam.
 - Subtitle capture/placement, roomscale pause-menu anchoring and menu click releases were improved; local portal-shot haptics were added.
-- DXVK and MinHook are ordinary pinned source files instead of submodules, retaining licenses/provenance in `THIRD_PARTY_SOURCES.txt`. The VR DXVK fork is intentionally retained, not replaced with generic latest DXVK.
+- DXVK and MinHook are ordinary pinned source files instead of submodules, retaining licenses/provenance in `THIRD_PARTY_SOURCES.txt`. DXVK is DXVK-GPLALL 2.6.8-2 carrying the VR hooks, not generic latest DXVK.
 - A user-facing launcher provides validated advanced settings, original backups, transactional staging/restore, config preview and diagnostic shortcuts. Pure-component C++ and offline Python installer/GUI tests cover reproducible behavior without the Source runtime.
 
 ## Known limitations
@@ -94,9 +111,9 @@ Advanced offers these optional legacy HUD controls:
 
 HUD centering changes only a validated eye viewport and restores the previous viewport on scope exit. It does not bind a different depth buffer. Mixed paint passes containing UI/cursor layers retain the original viewport. Incompatible centering settings are rejected by the launcher; the native parser falls back safely. The recommended native reticle/caption profile stays unchanged. Previously saved complete launcher preferences gain the new defaults without resetting existing values or paths; malformed/incomplete preferences remain errors.
 
-Native controller grabbing and hold-distance adjustment are **deferred**. The fork's hand-origin override covers `UpdateObject` but misses directly invoked `UpdateObjectVM`, detects holding without a verified local-player check, and writes ConVar fields through assumed offsets. Its distance mapping can bypass native bounds, and disabling the feature can skip restoration. These fail the safety gate for standard Portal 2.
+The `native-vr` fork's controller grabbing was not adopted: its hand-origin override misses directly invoked `UpdateObjectVM`, detects holding without a verified local-player check, and writes ConVar fields through assumed offsets. Objects are still picked up with the portal gun's beam and `+use`.
 
-A future grab experiment needs exact-build verified coverage of both update paths and their `EyePosition`/`EyeAngles` calls; a local-player, current-controller-pose and confirmed-held-object gate; scoped nested restoration; and a verified `ICvar`/ConVar accessor to snapshot, set and restore all affected values on drop, disable, level change and shutdown. Distance adjustment should use a dedicated input action while holding. No grab settings, memory writes or input changes are shipped here.
+`HeldObjectAnchor` (default on) instead works inside the verified `UpdateObject` scope: the object stays attached to the gun and turns with the wrist, while native code keeps doing portals, traces and collisions. Set it to `false` to restore Portal 2's own hold. Hold-distance adjustment is not implemented.
 
 These changes require a fresh game/headset session. Test startup, repeated menu idling and returns, pause/resume, campaign/workshop map loads, a graphics reset while in a menu and in gameplay, controller loss/recovery, exit, and log recovery after a transient failure. Test optional HUD controls in both eyes with legacy aiming; confirm that the recommended native portal-status reticle, captions, menu pointer and aim line behave as before. A map switch that never exposes a non-game state needs separate observation; scene transitions alone do not prove every Source resource event.
 
@@ -104,7 +121,7 @@ OpenVR Vulkan submissions use the application's queue, so consumer detachment an
 
 ## Building and verification
 
-Use Visual Studio 2022 / Build Tools with the C++ desktop workload, MSVC v143 and a Windows SDK. Build **Release / x86**; the game-facing DLL must remain 32-bit. DXVK, OpenVR and MinHook sources are included; no submodule initialization is required.
+Use Visual Studio 2022 / Build Tools with the C++ desktop workload, MSVC v143 and a Windows SDK. Visual Studio 2026 also works: add `/p:PlatformToolset=v145` to each command. Build **Release / x86**; the game-facing DLL must remain 32-bit. DXVK, OpenVR and MinHook sources are included; no submodule initialization is required.
 
 From a Developer Command Prompt in the repository root:
 
@@ -125,4 +142,16 @@ C++/Python suites validate isolated logic and fixture installations. GUI tests u
 
 ## Credits
 
-Based on Gistix/portal2vr, existing OpenVR bindings and the VR-modified DXVK pipeline. Upstream PRs/community forks were research references, not blindly merged branches. Third-party licenses/source pins are retained.
+This project stands on the work of many people:
+
+- [sd805/l4d2vr](https://github.com/sd805/l4d2vr): the original Left 4 Dead 2 VR mod this code descends from.
+- [Gistix/portal2vr](https://github.com/Gistix/portal2vr): the Portal 2 VR port.
+- [mmadej20/portal2vr-ultimate](https://github.com/mmadej20/portal2vr-ultimate): the fork this one is built on (roomscale, launcher, test suite).
+- [iFeelLikeChicken2Nite/portal2vr-ultimate](https://github.com/iFeelLikeChicken2Nite/portal2vr-ultimate): menu-refresh and HUD ideas, and the viewport centering in `eye_hud.h`.
+- [fholger](https://github.com/fholger): the VR-modified DXVK that all of these use.
+- [keyou91/l4d2vr](https://github.com/keyou91/l4d2vr) and [Hochgeschwindigkeitsrennfahrer/black-mesa-vr](https://github.com/Hochgeschwindigkeitsrennfahrer/black-mesa-vr): design references for frame submission and the DXVK upgrade.
+- [stsichler/portal_reloaded_vr](https://github.com/stsichler/portal_reloaded_vr) and [BurntToast33/portal2vr_dxvk2.7.1](https://github.com/BurntToast33/portal2vr_dxvk2.7.1): references for upgrading DXVK.
+- [DXVK](https://github.com/doitsujin/dxvk), [DXVK-GPLALL](https://github.com/Digger1955/dxvk-gplall), [MinHook](https://github.com/TsudaKageyu/minhook) and [OpenVR](https://github.com/ValveSoftware/openvr). Licenses and source pins are in `THIRD_PARTY_SOURCES.txt`.
+- [CircuitLord](https://github.com/CircuitLord)'s VR Mod Installer inspired the launcher's look.
+
+Portal 2 is a trademark of Valve Corporation.

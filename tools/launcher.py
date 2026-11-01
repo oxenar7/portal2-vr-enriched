@@ -902,7 +902,9 @@ class Launcher:
         self._open(self.install_state_path.parent / ".launcher-backups")
 
     def about(self):
-        messagebox.showinfo("About Portal2VR", "Incremental modernization of Gistix/portal2vr.\n\n"
+        messagebox.showinfo("About Portal2VR", "Unofficial fan project, not affiliated with Valve.\n"
+                            "Incremental modernization of Gistix/portal2vr, "
+                            "built on mmadej20/portal2vr-ultimate.\n\n"
                             "Windows Portal 2, 32-bit runtime, SteamVR / OpenVR, modified DXVK.\n"
                             "Recommended: tested world aim line with original dynamic Portal reticle.\n\n"
                             "Launch applies your settings first; restart the game after changing them.\n\n"

@@ -122,5 +122,18 @@ def write_assets(folder=ASSETS):
     images[-1].save(folder / ICON.name, sizes=[(size, size) for size in ICON_SIZES], append_images=images[:-1])
 
 
+def write_capsule(path=ASSETS.parent.parent / "L4D2VR/portal2vr_capsule_main.png"):
+    """Regenerate the SteamVR library tile from the launcher mark."""
+    from PIL import Image
+
+    width, height = 460, 215
+    image = Image.new("RGBA", (width, height), (12, 17, 24, 255))
+    size = 171
+    mark = _mark(size)
+    image.alpha_composite(mark, ((width - size) // 2, (height - size) // 2))
+    image.convert("RGB").save(path, optimize=True)
+
+
 if __name__ == "__main__":
     write_assets()
+    write_capsule()

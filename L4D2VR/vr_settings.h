@@ -327,7 +327,7 @@ inline std::string OverrideLines(const Overrides &overrides)
 
 inline std::string SerializeOverrides(const Overrides &overrides)
 {
-    return "# Written by the Portal2VR in-game VR options (Options > VR).\n"
+    return "# Written by the Portal 2 VR Enriched in-game VR options (Options > VR).\n"
            "# These values override VR\\config.txt; delete this file or use\n"
            "# \"Use Defaults\" in the game to return to config.txt.\n" + OverrideLines(overrides);
 }

@@ -67,12 +67,12 @@ class GhClient:
 
     def create_draft(self, repo, tag, commit):
         notes = (f"Windows x86 package for commit {commit}.\n\n"
-                 "Extract the ZIP and run Portal2VR Launcher.exe. "
+                 "Extract the ZIP and run Portal 2 VR Enriched Launcher.exe. "
                  "See README.txt inside the ZIP and RELEASES.md in the repository.")
         created = json.loads(self._run(
             "api", f"repos/{repo}/releases", "--method", "POST",
             "-f", f"tag_name={tag}", "-f", f"target_commitish={commit}",
-            "-F", "draft=true", "-f", f"name=Portal2VR {tag}", "-f", f"body={notes}"))
+            "-F", "draft=true", "-f", f"name=Portal 2 VR Enriched {tag}", "-f", f"body={notes}"))
         if (not isinstance(created, dict) or type(created.get("id")) is not int or
                 created["id"] <= 0 or created.get("tag_name") != tag or
                 created.get("target_commitish") != commit or created.get("draft") is not True or
@@ -103,7 +103,7 @@ def verify_snapshot(snapshot, checksum, commit, output):
     snapshot, checksum, output = Path(snapshot), Path(checksum), Path(output)
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Expected exact lowercase commit SHA")
-    if snapshot.name != "Portal2VR-v0.0.0-win32.zip" or checksum.name != "SHA256SUMS.txt":
+    if snapshot.name != "Portal2VR-Enriched-v0.0.0-win32.zip" or checksum.name != "SHA256SUMS.txt":
         raise ValueError("Unexpected CI snapshot asset names")
     for path in (snapshot, checksum):
         if path.is_symlink() or not path.is_file():
@@ -173,7 +173,7 @@ def _check_local(tag, commit, archive, checksum):
         raise ValueError("Expected a stable vMAJOR.MINOR.PATCH tag")
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Expected exact lowercase commit SHA")
-    if archive.name != f"Portal2VR-{tag}-win32.zip" or checksum.name != "SHA256SUMS.txt":
+    if archive.name != f"Portal2VR-Enriched-{tag}-win32.zip" or checksum.name != "SHA256SUMS.txt":
         raise ValueError("Release asset names differ from the version")
     for path in (archive, checksum):
         if path.is_symlink() or not path.is_file():

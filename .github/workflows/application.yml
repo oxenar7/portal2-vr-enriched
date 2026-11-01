@@ -1,4 +1,4 @@
-name: Portal2VR Windows application
+name: Portal 2 VR Enriched Windows application
 
 on:
   push:
@@ -62,16 +62,16 @@ jobs:
         run: |
           python -m pip install -r tools/requirements-package.txt
           if ($LASTEXITCODE -ne 0) { throw 'PyInstaller installation failed' }
-          python -m PyInstaller --noconfirm --onefile --windowed --name 'Portal2VR Launcher' --paths . --icon "$PWD/tools/assets/launcher.ico" --add-data "$PWD/tools/assets;tools/assets" --distpath dist/launcher --workpath build/launcher --specpath build/spec tools/launcher_entry.py
+          python -m PyInstaller --noconfirm --onefile --windowed --name 'Portal 2 VR Enriched Launcher' --paths . --icon "$PWD/tools/assets/launcher.ico" --add-data "$PWD/tools/assets;tools/assets" --distpath dist/launcher --workpath build/launcher --specpath build/spec tools/launcher_entry.py
           if ($LASTEXITCODE -ne 0) { throw 'Launcher freeze failed' }
-          if (-not (Test-Path -LiteralPath 'dist/launcher/Portal2VR Launcher.exe')) { throw 'Frozen launcher is missing' }
+          if (-not (Test-Path -LiteralPath 'dist/launcher/Portal 2 VR Enriched Launcher.exe')) { throw 'Frozen launcher is missing' }
       - name: Assemble and checksum CI snapshot
         shell: pwsh
         run: |
-          python -m tools.build_release_package --repo . --launcher-exe 'dist/launcher/Portal2VR Launcher.exe' --output dist/package --version v0.0.0 --commit $env:GITHUB_SHA
+          python -m tools.build_release_package --repo . --launcher-exe 'dist/launcher/Portal 2 VR Enriched Launcher.exe' --output dist/package --version v0.0.0 --commit $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'CI snapshot assembly failed' }
           $archive = @(Get-ChildItem -LiteralPath dist/package -Filter '*.zip' -File)
-          if ($archive.Count -ne 1 -or $archive[0].Name -ne 'Portal2VR-v0.0.0-win32.zip') { throw 'Expected one CI snapshot ZIP' }
+          if ($archive.Count -ne 1 -or $archive[0].Name -ne 'Portal2VR-Enriched-v0.0.0-win32.zip') { throw 'Expected one CI snapshot ZIP' }
           $digest = (Get-FileHash -LiteralPath $archive[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           [System.IO.File]::WriteAllText((Join-Path $PWD 'dist/package/SHA256SUMS.txt'), "$digest  $($archive[0].Name)`n", [System.Text.Encoding]::ASCII)
           [System.IO.File]::WriteAllText((Join-Path $PWD 'dist/package/version.txt'), "v0.0.0`n", [System.Text.Encoding]::ASCII)
@@ -80,7 +80,7 @@ jobs:
         run: |
           $archive = @(Get-ChildItem -LiteralPath dist/package -Filter '*.zip' -File)
           Expand-Archive -LiteralPath $archive[0].FullName -DestinationPath dist/extracted
-          $exe = (Resolve-Path -LiteralPath 'dist/extracted/Portal2VR Launcher.exe').Path
+          $exe = (Resolve-Path -LiteralPath 'dist/extracted/Portal 2 VR Enriched Launcher.exe').Path
           $report = Join-Path (Resolve-Path -LiteralPath dist/package).Path 'smoke-report.json'
           $process = Start-Process -FilePath $exe -ArgumentList "--self-test `"$report`"" -WindowStyle Hidden -PassThru
           if (-not $process.WaitForExit(60000)) {
@@ -140,7 +140,7 @@ jobs:
           import sys
           from tools.publish_release import verify_snapshot
 
-          verify_snapshot(Path('dist/snapshot/Portal2VR-v0.0.0-win32.zip'),
+          verify_snapshot(Path('dist/snapshot/Portal2VR-Enriched-v0.0.0-win32.zip'),
                           Path('dist/snapshot/SHA256SUMS.txt'), sys.argv[1],
                           Path('dist/extracted'))
           PY
@@ -154,14 +154,14 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate --slurp > dist/releases.json
           version="$(python -m tools.release_version --releases dist/releases.json --commit "$GITHUB_SHA")"
           python -m tools.build_release_package \
-            --repo dist/extracted --launcher-exe 'dist/extracted/Portal2VR Launcher.exe' \
+            --repo dist/extracted --launcher-exe 'dist/extracted/Portal 2 VR Enriched Launcher.exe' \
             --output dist/release --version "$version" --commit "$GITHUB_SHA"
           python - "$version" <<'PY'
           import hashlib
           from pathlib import Path
           import sys
 
-          archive = Path('dist/release') / f'Portal2VR-{sys.argv[1]}-win32.zip'
+          archive = Path('dist/release') / f'Portal2VR-Enriched-{sys.argv[1]}-win32.zip'
           digest = hashlib.sha256(archive.read_bytes()).hexdigest()
           (archive.parent / 'SHA256SUMS.txt').write_bytes(
               f'{digest}  {archive.name}\n'.encode('ascii'))
@@ -176,5 +176,5 @@ jobs:
           version='${{ steps.release.outputs.value }}'
           python -m tools.publish_release \
             --repo "$GITHUB_REPOSITORY" --tag "$version" --commit "$GITHUB_SHA" \
-            --zip "dist/release/Portal2VR-${version}-win32.zip" \
+            --zip "dist/release/Portal2VR-Enriched-${version}-win32.zip" \
             --checksum dist/release/SHA256SUMS.txt

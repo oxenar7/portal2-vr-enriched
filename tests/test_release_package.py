@@ -17,7 +17,7 @@ from tools.build_release_package import assemble_release
 
 COMMIT = "a" * 40
 PACKAGE_FILES = {
-    "Portal2VR Launcher.exe",
+    "Portal 2 VR Enriched Launcher.exe",
     "Release/d3d9.dll",
     "thirdparty/openvr/bin/win32/openvr_api.dll",
     "L4D2VR/config.txt",
@@ -48,9 +48,9 @@ def pe(machine: int) -> bytes:
 
 def fixture(root: Path) -> tuple[Path, Path, Path]:
     repo = root / "repo"
-    exe = root / "compiled" / "Portal2VR Launcher.exe"
+    exe = root / "compiled" / "Portal 2 VR Enriched Launcher.exe"
     files = {name: b"fixture payload" for name in PACKAGE_FILES -
-             {"Portal2VR Launcher.exe", "README.txt", "manifest.json"}}
+             {"Portal 2 VR Enriched Launcher.exe", "README.txt", "manifest.json"}}
     files["Release/d3d9.dll"] = pe(0x14c)
     files["thirdparty/openvr/bin/win32/openvr_api.dll"] = pe(0x14c)
     files["L4D2VR/config.txt"] = TEMPLATE.encode("utf-8")
@@ -77,7 +77,7 @@ class ReleasePackageTests(unittest.TestCase):
             root = Path(temporary)
             repo, exe, output = fixture(root)
             archive = assemble_release(repo, exe, output, "v0.1.0", COMMIT)
-            self.assertEqual(archive.name, "Portal2VR-v0.1.0-win32.zip")
+            self.assertEqual(archive.name, "Portal2VR-Enriched-v0.1.0-win32.zip")
             with zipfile.ZipFile(archive) as package:
                 self.assertEqual(set(package.namelist()), PACKAGE_FILES)
                 manifest = json.loads(package.read("manifest.json"))
@@ -136,7 +136,7 @@ class ReleasePackageTests(unittest.TestCase):
             root = Path(temporary)
             repo, exe, output = fixture(root)
             output.mkdir()
-            archive = output / "Portal2VR-v0.1.0-win32.zip"
+            archive = output / "Portal2VR-Enriched-v0.1.0-win32.zip"
             archive.write_bytes(b"unrelated artifact")
             with self.assertRaises(FileExistsError):
                 assemble_release(repo, exe, output, "v0.1.0", COMMIT)
@@ -170,7 +170,7 @@ class ReleasePackageTests(unittest.TestCase):
                  "--version", "v0.1.0", "--commit", COMMIT],
                 cwd=Path(__file__).resolve().parents[1], capture_output=True,
                 text=True, check=True)
-            archive = output / "Portal2VR-v0.1.0-win32.zip"
+            archive = output / "Portal2VR-Enriched-v0.1.0-win32.zip"
             self.assertEqual(result.stdout.strip(), str(archive))
             self.assertTrue(archive.is_file())
 

@@ -7,9 +7,9 @@ if not errorlevel 1 (
     if errorlevel 1 goto missing_python
     where pyw >nul 2>nul
     if not errorlevel 1 (
-        start "" pyw -3 "%~dp0Portal2VR Launcher.pyw"
+        start "" pyw -3 "%~dp0Portal 2 VR Enriched Launcher.pyw"
     ) else (
-        py -3 "%~dp0Portal2VR Launcher.pyw"
+        py -3 "%~dp0Portal 2 VR Enriched Launcher.pyw"
     )
     exit /b
 )
@@ -19,9 +19,9 @@ if not errorlevel 1 (
     if errorlevel 1 goto missing_python
     where pythonw >nul 2>nul
     if not errorlevel 1 (
-        start "" pythonw "%~dp0Portal2VR Launcher.pyw"
+        start "" pythonw "%~dp0Portal 2 VR Enriched Launcher.pyw"
     ) else (
-        python "%~dp0Portal2VR Launcher.pyw"
+        python "%~dp0Portal 2 VR Enriched Launcher.pyw"
     )
     exit /b
 )

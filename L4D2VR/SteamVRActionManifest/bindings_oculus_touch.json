@@ -213,7 +213,7 @@
    "category" : "steamvr_input",
    "controller_type" : "oculus_touch",
    "description" : "",
-   "name" : "Portal 2 VR bindings for Oculus Touch",
+   "name" : "Portal 2 VR Enriched bindings for Oculus Touch",
    "options" : {},
    "simulated_actions" : []
 }

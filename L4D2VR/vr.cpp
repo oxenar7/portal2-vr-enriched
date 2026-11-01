@@ -248,7 +248,7 @@ VR::~VR()
 
 void VR::CreateExperimentalHUDOverlay()
 {
-    const auto created = m_Overlay->CreateOverlay("Portal2VR.HUD.Experimental", "Portal2VR HUD",
+    const auto created = m_Overlay->CreateOverlay("Portal2VR.HUD.Experimental", "Portal 2 VR Enriched HUD",
                                                    &m_HUDHandle);
     if (created != vr::VROverlayError_None) {
         Logger::Write(std::string("Experimental HUD overlay unavailable: ") +

@@ -18,7 +18,7 @@ else:
     from . import launcher_art as art
     from .launcher_paths import application_root
 
-SHORTCUT_NAME = "Portal2VR Launcher.lnk"
+SHORTCUT_NAME = "Portal 2 VR Enriched Launcher.lnk"
 
 
 class GUID(Structure):
@@ -65,7 +65,7 @@ def create_shortcut(path: Path, target: Path, script: Path, icon: Path) -> None:
     _call(link, 11, (c_wchar_p,), f'"{script}"')
     _call(link, 9, (c_wchar_p,), str(script.parent))
     _call(link, 17, (c_wchar_p, c_ulong), str(icon), 0)
-    _call(link, 7, (c_wchar_p,), "Portal 2 VR Launcher")
+    _call(link, 7, (c_wchar_p,), "Portal 2 VR Enriched Launcher")
     store = _query(link, IID_PROPERTY_STORE)
     key = PROPERTYKEY(GUID(PKEY_APP_USER_MODEL_ID[0]), PKEY_APP_USER_MODEL_ID[1])
     value = PROPVARIANT(vt=VT_LPWSTR, value=art.APP_ID)
@@ -86,7 +86,7 @@ def main() -> int:
     root = application_root()
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     for folder in (root, desktop_folder()):
-        create_shortcut(folder / SHORTCUT_NAME, pythonw, root / "Portal2VR Launcher.pyw", art.ICON)
+        create_shortcut(folder / SHORTCUT_NAME, pythonw, root / "Portal 2 VR Enriched Launcher.pyw", art.ICON)
         print(folder / SHORTCUT_NAME)
     return 0
 

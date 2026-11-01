@@ -16,7 +16,7 @@ from tools.publish_release import GhClient, publish_release, verify_snapshot
 COMMIT = "a" * 40
 OTHER = "b" * 40
 TAG = "v0.1.0"
-ZIP_NAME = "Portal2VR-v0.1.0-win32.zip"
+ZIP_NAME = "Portal2VR-Enriched-v0.1.0-win32.zip"
 
 
 class FakeGitHub:
@@ -168,11 +168,11 @@ class PublishReleaseTests(unittest.TestCase):
                                   f"  {snapshot.name}\n").encode("ascii"))
             extracted = root / "extracted"
             verify_snapshot(snapshot, checksum, COMMIT, extracted)
-            self.assertEqual((extracted / "Portal2VR Launcher.exe").read_bytes(),
+            self.assertEqual((extracted / "Portal 2 VR Enriched Launcher.exe").read_bytes(),
                              exe.read_bytes())
             self.assertEqual((extracted / "Release/d3d9.dll").read_bytes(),
                              (repo / "Release/d3d9.dll").read_bytes())
-            stable = assemble_release(extracted, extracted / "Portal2VR Launcher.exe",
+            stable = assemble_release(extracted, extracted / "Portal 2 VR Enriched Launcher.exe",
                                       root / "release", TAG, COMMIT)
             with zipfile.ZipFile(snapshot) as source, zipfile.ZipFile(stable) as repackaged:
                 self.assertEqual(json.loads(repackaged.read("manifest.json"))["version"], TAG)

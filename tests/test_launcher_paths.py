@@ -34,7 +34,7 @@ assert buffer.value == ''
 
     def test_frozen_uses_executable_directory_not_temporary_bundle(self):
         with patch.object(launcher_paths.sys, "frozen", True, create=True), \
-             patch.object(launcher_paths.sys, "executable", str(Path("package") / "Portal2VR Launcher.exe")), \
+             patch.object(launcher_paths.sys, "executable", str(Path("package") / "Portal 2 VR Enriched Launcher.exe")), \
              patch.object(launcher_paths.sys, "_MEIPASS", str(Path("temporary-bundle")), create=True):
             root = launcher_paths.application_root()
             self.assertEqual(root, Path("package").resolve())

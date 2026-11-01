@@ -18,7 +18,7 @@ public:
             if (slash != std::string::npos)
                 Path() = path.substr(0, slash + 1) + "portal2vr.log";
         }
-        Write("Portal2VR M1 build " __DATE__ " " __TIME__ "; process architecture: x86");
+        Write("Portal 2 VR Enriched build " __DATE__ " " __TIME__ "; process architecture: x86");
     }
 
     static void Write(const std::string &message)
@@ -30,7 +30,7 @@ public:
         std::ofstream stream(Path(), std::ios::app);
         if (stream)
             stream << std::put_time(&local, "%Y-%m-%d %H:%M:%S") << " " << message << '\n';
-        OutputDebugStringA(("Portal2VR: " + message + "\n").c_str());
+        OutputDebugStringA(("Portal 2 VR Enriched: " + message + "\n").c_str());
     }
 
     // A file next to portal2vr.log (the d3d9.dll directory).

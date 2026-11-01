@@ -13,7 +13,7 @@ ASSETS = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) 
 ICON = ASSETS / "launcher.ico"
 LOGO_SIZES = (44, 55, 66, 88)
 ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
-APP_ID = "Portal2VR.Launcher"
+APP_ID = "Portal2VR.Enriched.Launcher"
 PORTAL_BLUE, PORTAL_ORANGE = (74, 168, 238), (255, 154, 60)
 SAMPLES = tuple((i + .5) / 4 for i in range(4))
 
@@ -124,13 +124,18 @@ def write_assets(folder=ASSETS):
 
 def write_capsule(path=ASSETS.parent.parent / "L4D2VR/portal2vr_capsule_main.png"):
     """Regenerate the SteamVR library tile from the launcher mark."""
-    from PIL import Image
+    from PIL import Image, ImageDraw, ImageFont
 
     width, height = 460, 215
     image = Image.new("RGBA", (width, height), (12, 17, 24, 255))
-    size = 171
-    mark = _mark(size)
-    image.alpha_composite(mark, ((width - size) // 2, (height - size) // 2))
+    size = 132
+    image.alpha_composite(_mark(size), (24, (height - size) // 2))
+    draw = ImageDraw.Draw(image)
+    fonts = "C:/Windows/Fonts/"
+    draw.text((176, 104), "Portal 2 VR", font=ImageFont.truetype(fonts + "segoeuib.ttf", 42),
+              fill=(238, 243, 248, 255), anchor="ls")
+    draw.text((177, 144), "Enriched", font=ImageFont.truetype(fonts + "segoeui.ttf", 34),
+              fill=PORTAL_ORANGE + (255,), anchor="ls")
     image.convert("RGB").save(path, optimize=True)
 
 

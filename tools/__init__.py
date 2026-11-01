@@ -1,1 +1,1 @@
-"""Local development tools for Portal2VR."""
+"""Local development tools for Portal 2 VR Enriched."""

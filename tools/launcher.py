@@ -1,4 +1,4 @@
-"""User-facing Portal2VR launcher; deployment uses the shared backup installer."""
+"""User-facing Portal 2 VR Enriched launcher; deployment uses the shared backup installer."""
 
 from pathlib import Path
 import os
@@ -307,7 +307,7 @@ class Launcher:
             "Save is local; Apply and Launch update the game with backups.")
         self.status_error = self._next_error = False
         self.dirty, self.invalid = False, False
-        self.root.title("Portal 2 VR Launcher")
+        self.root.title("Portal 2 VR Enriched Launcher")
         self.scale = max(1.0, root.winfo_fpixels("1i") / 96)
         # Fixed size: nothing here needs to grow, and small screens get a smaller
         # window whose pages scroll.
@@ -456,7 +456,7 @@ class Launcher:
         self.close_button.draw(width - self.close_button.width(), px(2))
         self.minimize_button.draw(width - 2 * self.close_button.width(), px(2))
         c.create_image(margin + px(22), px(64), image=self.logo, tags=drag)
-        c.create_text(margin + px(56), px(41), text="Portal 2 VR", anchor="nw", font=self.fonts["title"], fill=TEXT,
+        c.create_text(margin + px(56), px(41), text="Portal 2 VR Enriched", anchor="nw", font=self.fonts["title"], fill=TEXT,
                       tags=drag)
         self.subtitle = c.create_text(margin + px(56), px(68), anchor="nw", font=self.fonts["subtitle"], tags=drag)
         x = width - margin - self.launch_button.width() - px(8)
@@ -648,7 +648,7 @@ class Launcher:
         y = self._setup_card(c, y, width, "ok" if steam_found else "warn", "Steam",
                              str(Path(self.steam_var.get())) if steam_found else
                              "Choose steam.exe from your Steam folder.", self.steam_actions, path=steam_found)
-        y = self._setup_card(c, y, width, "ok" if self.installed else "idle", "Portal 2 VR mod",
+        y = self._setup_card(c, y, width, "ok" if self.installed else "idle", "Portal 2 VR Enriched mod",
                              "Your original files are backed up." if self.installed else
                              "Launch or Apply installs it and backs up your original files first.",
                              (self.restore_button,) if self.installed else (),
@@ -744,7 +744,7 @@ class Launcher:
     def _error(self, error):
         self._next_error = True
         self.status_var.set(str(error))
-        messagebox.showerror("Portal2VR", str(error), parent=self.root)
+        messagebox.showerror("Portal 2 VR Enriched", str(error), parent=self.root)
 
     def save(self):
         try:
@@ -797,7 +797,7 @@ class Launcher:
         core.recover_pending_transaction(self.install_state_path)
         state = core.load_state(self.install_state_path)
         if not state["managed_files"] and not messagebox.askyesno(
-                "Install Portal2VR", f"Install the mod in:\n{game}\n\n"
+                "Install Portal 2 VR Enriched", f"Install the mod in:\n{game}\n\n"
                 "Existing files will be backed up first. You can restore them from this launcher.", parent=self.root):
             return None
         return prefs
@@ -902,7 +902,7 @@ class Launcher:
         self._open(self.install_state_path.parent / ".launcher-backups")
 
     def about(self):
-        messagebox.showinfo("About Portal2VR", "Unofficial fan project, not affiliated with Valve.\n"
+        messagebox.showinfo("About Portal 2 VR Enriched", "Unofficial fan project, not affiliated with Valve.\n"
                             "Incremental modernization of Gistix/portal2vr, "
                             "built on mmadej20/portal2vr-ultimate.\n\n"
                             "Windows Portal 2, 32-bit runtime, SteamVR / OpenVR, modified DXVK.\n"
@@ -987,7 +987,7 @@ def main():
         Launcher(root)
         borderless_window(root)
     except (OSError, ValueError, RuntimeError) as error:
-        messagebox.showerror("Portal2VR startup", f"{error}\n\nNo game files were changed. "
+        messagebox.showerror("Portal 2 VR Enriched startup", f"{error}\n\nNo game files were changed. "
                              "Keep the state and backup files; do not delete them to repair an installation.", parent=root)
         root.destroy()
         return 1

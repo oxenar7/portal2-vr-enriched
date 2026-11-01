@@ -1,7 +1,7 @@
 Vendored third-party sources
 ============================
 
-DXVK (DXVK-GPLALL with Portal2VR hooks)
+DXVK (DXVK-GPLALL with Portal 2 VR Enriched hooks)
   Upstream: https://github.com/Digger1955/dxvk-gplall
   Base tag: DXVK-GPLALL-2.6.8-2 (6a0ea561f9add008899680e6c313aa21c151e03e)
   License: dxvk/LICENSE (zlib/libpng)
@@ -20,7 +20,7 @@ DXVK (DXVK-GPLALL with Portal2VR hooks)
 
   This is an altered source snapshot, not an unmodified upstream release.
   The VR hooks follow the earlier fork (sd805/fholger dxvk_l4d2vr, msaa
-  branch, 75167aa2) and Portal2VR's own changes. Portal2VR changes:
+  branch, 75167aa2) and Portal 2 VR Enriched's own changes. Portal 2 VR Enriched changes:
     dxvk/include/version.h          (v2.6.8-2+portal2vr)
     dxvk/src/d3d9/d3d9_common_texture.cpp
     dxvk/src/d3d9/d3d9_common_texture.h
@@ -39,4 +39,4 @@ MinHook
   The vendored snapshot is unmodified relative to this commit.
 
 The source snapshots are committed as ordinary files in this repository.
-Neither library requires Git submodule initialization to build Portal2VR.
+Neither library requires Git submodule initialization to build Portal 2 VR Enriched.

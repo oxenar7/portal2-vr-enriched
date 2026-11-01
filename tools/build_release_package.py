@@ -1,4 +1,4 @@
-"""Assemble the exact runnable Portal2VR release tree as a verified ZIP."""
+"""Assemble the exact runnable Portal 2 VR Enriched release tree as a verified ZIP."""
 
 import argparse
 import hashlib
@@ -13,7 +13,7 @@ import zipfile
 from .test_launcher_core import SOURCE_TO_TARGET
 
 
-LAUNCHER_NAME = "Portal2VR Launcher.exe"
+LAUNCHER_NAME = "Portal 2 VR Enriched Launcher.exe"
 LICENSES = (
     "THIRD_PARTY_SOURCES.txt",
     "dxvk/LICENSE",
@@ -21,15 +21,15 @@ LICENSES = (
     "thirdparty/minhook/LICENSE.txt",
     "L4D2VR/sdk/LICENSE.txt",
 )
-README = ("Portal2VR for Windows\n"
-          "=====================\n\n"
+README = ("Portal 2 VR Enriched for Windows\n"
+          "================================\n\n"
           "Requirements: 64-bit Windows, installed Portal 2, Steam and SteamVR,\n"
           "a Vulkan-capable graphics driver, and Microsoft Visual C++ v14\n"
           "Redistributable (x86), at least as recent as the MSVC build tools.\n"
           "Latest supported x86 runtime: https://aka.ms/vc14/vc_redist.x86.exe\n"
           "Python and build tools are not required.\n\n"
           "1. Extract this entire ZIP to a writable folder. Keep its folders together.\n"
-          "2. Close Portal 2, then double-click Portal2VR Launcher.exe.\n"
+          "2. Close Portal 2, then double-click Portal 2 VR Enriched Launcher.exe.\n"
           "3. Select your Portal 2 and Steam paths. Choose Apply or Launch.\n"
           "4. Use Restore original game files in the launcher when finished.\n\n"
           "Keep the launcher-created tools folder and .launcher-backups with this package\n"
@@ -105,10 +105,10 @@ def assemble_release(repo: Path, launcher_exe: Path, output: Path,
     if output.is_symlink():
         raise ValueError(f"Release output must not be a symlink: {output}")
     output.mkdir(parents=True, exist_ok=True)
-    destination = output / f"Portal2VR-{version}-win32.zip"
+    destination = output / f"Portal2VR-Enriched-{version}-win32.zip"
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(f"Release archive already exists: {destination}")
-    with tempfile.NamedTemporaryFile(prefix="Portal2VR-", suffix=".zip.tmp",
+    with tempfile.NamedTemporaryFile(prefix="Portal2VR-Enriched-", suffix=".zip.tmp",
                                      dir=output, delete=False) as stream:
         temporary = Path(stream.name)
     try:

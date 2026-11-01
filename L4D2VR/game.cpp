@@ -110,7 +110,7 @@ bool Game::Initialize()
     }
 
     m_Initialized = true;
-    Logger::Write("Portal2VR initialization complete.");
+    Logger::Write("Portal 2 VR Enriched initialization complete.");
     return true;
 }
 
@@ -133,7 +133,7 @@ void *Game::GetInterface(const char *dllname, const char *interfacename)
 void Game::errorMsg(const char *msg)
 {
     Logger::Write(std::string("Initialization error: ") + msg);
-    MessageBox(0, msg, "Portal2VR", MB_ICONERROR | MB_OK);
+    MessageBox(0, msg, "Portal 2 VR Enriched", MB_ICONERROR | MB_OK);
 }
 
 CBaseEntity *Game::GetClientEntity(int entityIndex)

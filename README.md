@@ -1,6 +1,8 @@
-# Portal 2 VR
+# Portal 2 VR Enriched
 
 An incremental modernization fork of [Gistix/portal2vr](https://github.com/Gistix/portal2vr), built on [mmadej20/portal2vr-ultimate](https://github.com/mmadej20/portal2vr-ultimate), for the original Windows version of Portal 2. This remains a 32-bit Source/DX9 runtime-hooking mod, not a replacement engine or a rewrite. SteamVR / OpenVR and the modified DXVK rendering path are retained.
+
+The name nods to the Aperture Science Enrichment Center and to what this fork adds to the VR experience.
 
 This is an unofficial fan project, not affiliated with or endorsed by Valve. You need your own copy of Portal 2; no game files are included.
 
@@ -24,7 +26,7 @@ Most players should download a build from the **Releases** page, as described in
 Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). It does not install Python, SteamVR or drivers automatically.
 
 1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
-2. Double-click **`Portal2VR Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal2VR Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
+2. Double-click **`Portal 2 VR Enriched Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal 2 VR Enriched Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
 3. Select the folder containing `portal2.exe` and your `steam.exe`. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
 4. Start SteamVR and connect the headset/controllers, then click **Launch in VR**. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
 5. Enable subtitles in Portal 2's own options if you want captions.

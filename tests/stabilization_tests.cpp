@@ -8,6 +8,7 @@
 #include "../L4D2VR/portal_orientation.h"
 #include "../L4D2VR/ui_input.h"
 #include "../L4D2VR/haptics.h"
+#include "../L4D2VR/held_object.h"
 #include "../L4D2VR/physical_crouch.h"
 #include "../L4D2VR/viewport_readiness.h"
 #include "../L4D2VR/render_target_readiness.h"
@@ -27,6 +28,7 @@
 #include "../L4D2VR/portal2_vgui.h"
 #include "../L4D2VR/portal2_transition.h"
 #include "../L4D2VR/perf_stats.h"
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -1831,6 +1833,15 @@ int main()
            gameHaptics.value.hapticsHeldObject || gameHaptics.value.hapticsButtons, false,
            "game haptic toggles parse");
     expectNear(gameHaptics.value.hapticsIntensity, 0.5f, "game haptic intensity parsed");
+    expect(m2Defaults.heldObjectLog && m2Defaults.laserCubeAimAssist && m2Defaults.heldObjectAnchor &&
+           !m2Defaults.heldObjectColumn, true, "held object option defaults");
+    std::istringstream heldOptions("HeldObjectLog=false\nLaserCubeAimAssist=false\n"
+                                   "HeldObjectAnchor=false\nHeldObjectColumn=true\n");
+    const auto heldConfig = ParseConfig(heldOptions, m2Defaults);
+    expect(heldConfig.errors.empty(), true, "held object settings parse");
+    expect(heldConfig.value.heldObjectLog || heldConfig.value.laserCubeAimAssist ||
+           heldConfig.value.heldObjectAnchor || !heldConfig.value.heldObjectColumn, false,
+           "held object toggles parse");
     std::istringstream gameHapticBad("Haptics=on\nHapticsIntensity=1.5\n");
     const auto gameHapticFallback = ParseConfig(gameHapticBad, gameHaptics.value);
     expect(gameHapticFallback.errors.size() == 2, true, "invalid game haptic fields diagnosed");
@@ -1900,6 +1911,182 @@ int main()
            "missing grab updates report one drop");
     expect(hold.Poll(shotStart + std::chrono::seconds(7)) == Haptics::HoldTracker::Change::None, true,
            "drop is reported once");
+
+    HeldObject::Trace heldTrace;
+    expect(heldTrace.Released(shotStart, true), false, "no release without a hold");
+    heldTrace.Begin(shotStart);
+    expect(heldTrace.Tick(shotStart + std::chrono::milliseconds(100), 2.0f, false), false,
+           "no hold sample before the interval");
+    expect(heldTrace.Tick(shotStart + std::chrono::milliseconds(260), 4.0f, true), true,
+           "hold sample due after the interval");
+    expect(heldTrace.Tick(shotStart + std::chrono::milliseconds(300), 3.0f, false), false,
+           "hold sample interval restarts");
+    expect(heldTrace.Released(shotStart + std::chrono::seconds(5), false), false,
+           "paused game ticks do not end a hold");
+    expect(heldTrace.Released(shotStart + std::chrono::milliseconds(5100), true), false,
+           "a short gap after a pause does not end a hold");
+    expect(heldTrace.Released(shotStart + std::chrono::milliseconds(5300), true), true,
+           "missing ticks end a hold");
+    const auto heldSummary = heldTrace.End();
+    expect(heldTrace.Active(), false, "ending a hold clears the trace");
+    expectInt(heldSummary.ticks, 2, "physics path ticks counted");
+    expectInt(heldSummary.vmTicks, 1, "view-model path ticks counted");
+    expect(heldSummary.maxError == 4.0f && heldSummary.meanError == 3.0f && heldSummary.lastError == 3.0f,
+           true, "hold error statistics");
+    expect(HeldObject::FormatDrop(HeldObject::DropReason::Released, heldSummary) ==
+           "drop reason=released seconds=5.00 ticks=2 vmTicks=1 meanError=3.00 maxError=4.00 lastError=3.00",
+           true, "drop line format");
+
+    std::array<std::uint8_t, 0x2100> grabBytes{};
+    const float heldDistance = 12.5f, heldPitch = 30.0f;
+    const std::uint32_t heldHandle = (7u << 16) | 2u;
+    std::memcpy(grabBytes.data() + HeldObject::kDistanceOffset, &heldDistance, sizeof(heldDistance));
+    std::memcpy(grabBytes.data() + HeldObject::kAttachedAngles, &heldPitch, sizeof(heldPitch));
+    std::memcpy(grabBytes.data() + HeldObject::kAttachedEntity, &heldHandle, sizeof(heldHandle));
+    grabBytes[HeldObject::kIgnoreRelativePitch] = 1;
+    const auto grabState = HeldObject::ReadGrabState(grabBytes.data());
+    expect(grabState.distanceOffset == heldDistance && grabState.attachedAngles.x == heldPitch &&
+           grabState.attachedHandle == heldHandle && grabState.ignoreRelativePitch &&
+           !grabState.hasPreferredAngles, true, "grab state reads the controller fields");
+    const auto pickupLine = HeldObject::FormatPickup("prop_weighted_cube", "models/cube.mdl", 12.0f,
+                                                     grabState, 31.5f, false, true, true);
+    expect(pickupLine.rfind("pickup class=prop_weighted_cube model=models/cube.mdl maxError=12.0 ignorePitch=1", 0) == 0 &&
+           pickupLine.find("radius=31.5 column=0 aimAssist=1 anchor=1") != std::string::npos,
+           true, "pickup line format");
+
+    const auto nearAngle = [](float a, float b) { return std::fabs(a - b) < 0.01f; };
+    const auto sameRotation = [](const HeldObject::Mat3 &a, const HeldObject::Mat3 &b) {
+        for (int row = 0; row < 3; ++row)
+            for (int column = 0; column < 3; ++column)
+                if (std::fabs(a.m[row][column] - b.m[row][column]) > 0.001f) return false;
+        return true;
+    };
+    const HeldObject::Vec3 tiltedAngles{25.0f, -130.0f, 40.0f};
+    const auto angleRoundTrip = HeldObject::MatrixToAngles(HeldObject::AnglesToMatrix(tiltedAngles));
+    expect(nearAngle(angleRoundTrip.x, 25.0f) && nearAngle(angleRoundTrip.y, -130.0f) &&
+           nearAngle(angleRoundTrip.z, 40.0f), true, "angles survive a matrix round trip");
+    const auto straightUp = HeldObject::MatrixToAngles(HeldObject::AnglesToMatrix({-90.0f, 30.0f, 0.0f}));
+    expect(nearAngle(straightUp.x, -90.0f) && nearAngle(straightUp.y, 30.0f), true,
+           "a vertical matrix keeps its yaw");
+
+    expect(HeldObject::SoftenTilt(0.0f) == 0.0f && std::fabs(HeldObject::SoftenTilt(4.0f)) < 1.0f &&
+           std::fabs(HeldObject::SoftenTilt(-4.0f)) < 1.0f, true, "a nearly level gun stays nearly level");
+    expect(HeldObject::SoftenTilt(60.0f) > 60.0f - HeldObject::kLevelSoftness &&
+           HeldObject::SoftenTilt(-60.0f) == -HeldObject::SoftenTilt(60.0f), true, "a real tilt follows the wrist");
+    expect(nearAngle(HeldObject::SoftenTilt(355.0f), HeldObject::SoftenTilt(-5.0f)) &&
+           nearAngle(HeldObject::SoftenTilt(300.0f), HeldObject::SoftenTilt(-60.0f)), true, "tilt angles wrap");
+    bool tiltNeverOutrunsWrist = true;
+    for (float tilt = 0.0f; tilt < 120.0f; tilt += 0.25f) {
+        const float step = HeldObject::SoftenTilt(tilt + 0.25f) - HeldObject::SoftenTilt(tilt);
+        tiltNeverOutrunsWrist = tiltNeverOutrunsWrist && step >= 0.0f && step <= 0.2501f;
+    }
+    expect(tiltNeverOutrunsWrist, true, "softened tilt never outruns the wrist or turns back");
+
+    const HeldObject::Vec3 carryPose{-37.0f, 90.0f, 0.0f};
+    const auto levelPose = HeldObject::AnchoredAttachedAngles(carryPose, 0.0f, 0.0f);
+    expect(nearAngle(levelPose.x, carryPose.x) && nearAngle(levelPose.y, carryPose.y) &&
+           nearAngle(levelPose.z, carryPose.z), true, "a level gun gives the native carry pose");
+    // UpdateObject applies the eye yaw alone on top of the attached angles.
+    const HeldObject::Vec3 gunAngles{35.0f, 70.0f, -25.0f};
+    const auto rigidPose = HeldObject::AnchoredAttachedAngles(carryPose, gunAngles.x, gunAngles.z);
+    const HeldObject::Vec3 softGun{HeldObject::SoftenTilt(gunAngles.x), gunAngles.y, HeldObject::SoftenTilt(gunAngles.z)};
+    const auto nativeResult = HeldObject::Multiply(HeldObject::AnglesToMatrix({0.0f, gunAngles.y, 0.0f}),
+                                                   HeldObject::AnglesToMatrix(rigidPose));
+    expect(sameRotation(nativeResult, HeldObject::Multiply(HeldObject::AnglesToMatrix(softGun),
+                                                           HeldObject::AnglesToMatrix(carryPose))),
+           true, "a tilted gun turns the object rigidly");
+
+    const auto gunFrame = HeldObject::MakeRotationFrame(gunAngles);
+    const auto gunRotation = HeldObject::AnglesToMatrix(gunAngles);
+    bool frameMatches = true;
+    for (int row = 0; row < 3; ++row) {
+        frameMatches = frameMatches && gunFrame.m[row][3] == 0.0f;
+        for (int column = 0; column < 3; ++column)
+            frameMatches = frameMatches && gunFrame.m[row][column] == gunRotation.m[row][column];
+    }
+    expect(frameMatches, true, "carry frame holds the rotation alone");
+
+    std::array<std::uint8_t, 0x2100> anchorBytes{};
+    void *anchorController = anchorBytes.data();
+    const std::uint32_t anchorHandle = (3u << 16) | 9u;
+    const HeldObject::Vec3 pickupAngles{0.0f, 90.0f, 0.0f};
+    HeldObject::Store(anchorController, HeldObject::kAttachedEntity, anchorHandle);
+    HeldObject::Store(anchorController, HeldObject::kAttachedAngles, pickupAngles);
+    HeldObject::Anchor anchor;
+    anchor.Apply(anchorController, 40.0f, 0.0f);
+    expect(anchor.Applied() && anchor.BaseAngles().y == 90.0f, true, "first anchored tick keeps the native angles");
+    expectNear(HeldObject::Field<float>(anchorController, HeldObject::kDistanceOffset),
+               -HeldObject::kNativeHoldDistance, "anchor removes the extra hold distance");
+    expect(HeldObject::Field<std::uint8_t>(anchorController, HeldObject::kAllowOverhead) == 1, true,
+           "anchor turns off the player box clamp");
+    const auto tiltedAttached = HeldObject::Field<HeldObject::Vec3>(anchorController, HeldObject::kAttachedAngles);
+    expect(sameRotation(HeldObject::AnglesToMatrix(tiltedAttached),
+                        HeldObject::AnglesToMatrix(HeldObject::AnchoredAttachedAngles(pickupAngles, 40.0f, 0.0f))),
+           true, "anchor writes the tilted attached angles");
+    anchor.Apply(anchorController, -40.0f, 0.0f);
+    expect(anchor.BaseAngles().y == 90.0f, true, "its own writes are not a new hold");
+    expectNear(HeldObject::Field<float>(anchorController, HeldObject::kDistanceOffset),
+               -HeldObject::kNativeHoldDistance, "distance offset does not accumulate");
+    const auto nativePickup = [&](float yaw, float distanceOffset) {
+        HeldObject::Store(anchorController, HeldObject::kAttachedAngles, HeldObject::Vec3{0.0f, yaw, 0.0f});
+        HeldObject::Store(anchorController, HeldObject::kDistanceOffset, distanceOffset);
+    };
+    nativePickup(180.0f, 0.0f);
+    anchor.Apply(anchorController, 0.0f, 0.0f);
+    expect(anchor.BaseAngles().y == 180.0f, true, "native pickup angles start a new hold");
+    expectNear(HeldObject::Field<float>(anchorController, HeldObject::kDistanceOffset),
+               -HeldObject::kNativeHoldDistance, "a second hold starts from its own distance offset");
+    anchor.Apply(anchorController, 30.0f, 0.0f);
+    anchor.Release(anchorController);
+    expect(!anchor.Applied() &&
+           HeldObject::Field<HeldObject::Vec3>(anchorController, HeldObject::kAttachedAngles).y == 180.0f &&
+           HeldObject::Field<std::uint8_t>(anchorController, HeldObject::kAllowOverhead) == 0 &&
+           HeldObject::Field<float>(anchorController, HeldObject::kDistanceOffset) == 0.0f, true,
+           "release restores what the hold started from");
+    anchor.Apply(anchorController, 30.0f, 0.0f);
+    nativePickup(45.0f, 5.0f);
+    anchor.Release(anchorController);
+    expect(HeldObject::Field<HeldObject::Vec3>(anchorController, HeldObject::kAttachedAngles).y == 45.0f &&
+           HeldObject::Field<float>(anchorController, HeldObject::kDistanceOffset) == 5.0f &&
+           HeldObject::Field<std::uint8_t>(anchorController, HeldObject::kAllowOverhead) == 0, true,
+           "release after a new pickup leaves that hold alone");
+    std::array<std::uint8_t, 0x2100> otherControllerBytes{};
+    anchor.Apply(anchorController, 0.0f, 0.0f);
+    anchor.Release(otherControllerBytes.data());
+    expect(!anchor.Applied() && otherControllerBytes[HeldObject::kAllowOverhead] == 0, true,
+           "another controller is never written");
+
+    std::array<std::uint8_t, HeldObject::kEntitySlotBase + 3 * HeldObject::kEntitySlotSize> entitySlots{};
+    int entityStub = 0;
+    const void *entityPointer = &entityStub;
+    const std::uint32_t entitySerial = 7;
+    const auto entitySlot = HeldObject::kEntitySlotBase + 2 * HeldObject::kEntitySlotSize;
+    std::memcpy(entitySlots.data() + entitySlot, &entityPointer, sizeof(entityPointer));
+    std::memcpy(entitySlots.data() + entitySlot + 4, &entitySerial, sizeof(entitySerial));
+    const auto entitySlotsAddress = reinterpret_cast<std::uintptr_t>(entitySlots.data());
+    expect(HeldObject::EntityFromHandle(entitySlotsAddress, heldHandle) == &entityStub, true,
+           "entity handle resolves through its slot");
+    expect(HeldObject::EntityFromHandle(entitySlotsAddress, (8u << 16) | 2u) == nullptr, true,
+           "stale entity serial resolves to nothing");
+    expect(HeldObject::EntityFromHandle(entitySlotsAddress, 0xFFFFFFFFu) == nullptr, true,
+           "invalid entity handle resolves to nothing");
+    expect(HeldObject::EntityFromHandle(0, heldHandle) == nullptr, true,
+           "missing entity list resolves to nothing");
+
+    std::array<std::uint8_t, 0x40> conVarBytes{}, conVarParentBytes{};
+    const char *conVarName = "sv_laser_cube_autoaim";
+    auto *conVarParent = reinterpret_cast<char *>(conVarParentBytes.data());
+    std::memcpy(conVarBytes.data() + HeldObject::kConVarName, &conVarName, sizeof(conVarName));
+    std::memcpy(conVarBytes.data() + HeldObject::kConVarParent, &conVarParent, sizeof(conVarParent));
+    const auto conVarAddress = reinterpret_cast<std::uintptr_t>(conVarBytes.data());
+    expect(HeldObject::SetConVarInt(conVarAddress, "player_hold_object_in_column", 1), false,
+           "a different cvar name is never written");
+    expect(HeldObject::SetConVarInt(0, conVarName, 1), false, "missing cvar is not written");
+    expect(HeldObject::SetConVarInt(conVarAddress, conVarName, 1), true, "cvar change is reported");
+    expectInt(HeldObject::Field<int>(conVarParent, HeldObject::kConVarInt), 1, "cvar int written on the parent");
+    expect(HeldObject::Field<float>(conVarParent, HeldObject::kConVarFloat) == 1.0f, true,
+           "cvar float written on the parent");
+    expect(HeldObject::SetConVarInt(conVarAddress, conVarName, 1), false, "unchanged cvar is left alone");
 
     float poseMatrix[3][4] = {{1,0,0,0}, {0,1,0,0}, {0,0,1,0}};
     float poseVelocity[3] = {0,0,0};
@@ -2104,46 +2291,98 @@ int main()
     expectInt(sessionInitializations, 2, "fresh lifecycle initializes once after previous shutdown");
     sharedSession.Release(stopSession);
 
+    const float crouchFrame = 0.016f;
     PhysicalCrouch::State crouch;
-    expect(crouch.UpdateIntent(true, 0.34f, 0.35f), false, "head above crouch threshold stays standing");
-    expect(crouch.UpdateIntent(true, 0.35f, 0.35f), true, "head at crouch threshold ducks");
-    expect(crouch.UpdateIntent(true, 0.31f, 0.35f), true, "crouch hysteresis keeps ducking just above threshold");
-    expect(crouch.UpdateIntent(true, 0.29f, 0.35f), false, "head more than 5 cm above threshold stands up");
-    expect(crouch.UpdateIntent(true, 0.50f, 0.35f), true, "deep crouch ducks again");
-    expect(crouch.UpdateIntent(false, 0.50f, 0.35f), false, "menu or cursor releases physical crouch");
-    expect(crouch.UpdateIntent(true, std::numeric_limits<float>::quiet_NaN(), 0.35f), false,
+    expect(crouch.UpdateIntent(true, 0.24f, 0.25f, crouchFrame), false, "head above crouch threshold stays standing");
+    expect(crouch.UpdateIntent(true, 0.25f, 0.25f, crouchFrame), true, "head at crouch threshold ducks");
+    expect(crouch.UpdateIntent(true, 0.21f, 0.25f, crouchFrame), true, "crouch hysteresis keeps ducking just above threshold");
+    expect(crouch.UpdateIntent(true, 0.19f, 0.25f, crouchFrame), true, "quick dip holds duck so Source can finish it");
+    expect(crouch.UpdateIntent(true, 0.19f, 0.25f, 0.6f), false, "head more than 5 cm above threshold stands up");
+    expect(crouch.UpdateIntent(true, 0.50f, 0.25f, crouchFrame), true, "deep crouch ducks again");
+    expect(crouch.UpdateIntent(false, 0.50f, 0.25f, crouchFrame), false, "menu or cursor releases physical crouch");
+    expect(crouch.UpdateIntent(true, std::numeric_limits<float>::quiet_NaN(), 0.25f, crouchFrame), false,
            "invalid head height never ducks");
 
+    PhysicalCrouch::State head;
+    expectNear(head.UpdateHeadDrop(1.2f, crouchFrame), 0.0f, "first head sample is the standing height");
+    expectNear(head.UpdateHeadDrop(1.6f, 1.0f), -0.3f, "standing height rises slowly toward a taller head");
+    expectNear(head.UpdateHeadDrop(1.6f, 10.0f), 0.0f, "standing up after a low recenter reaches the real height");
+    expectNear(head.UpdateHeadDrop(1.3f, crouchFrame), 0.3f, "crouch is measured from the real standing height");
+    head.Recalibrate();
+    expectNear(head.UpdateHeadDrop(1.0f, crouchFrame), 0.0f, "recenter restarts the standing height");
+    head.UpdateHeadDrop(1.5f, 0.5f);
+    expectNear(head.UpdateHeadDrop(1.0f, crouchFrame), 0.05f, "headset lifted briefly barely moves the standing height");
+
+    const float crouchThresholdUnits = 10.0f;
     PhysicalCrouch::State camera;
-    expectNear(camera.UpdateCompensation(64.0f, true, 0.016f), 0.0f, "standing view needs no compensation");
-    camera.UpdateIntent(true, 0.4f, 0.35f);
-    expectNear(camera.UpdateCompensation(60.0f, true, 0.05f), 4.0f,
-               "compensation follows Source's duck transition exactly");
-    expectNear(camera.UpdateCompensation(28.0f, true, 0.2f), 36.0f, "fully ducked eye is raised back to the real head");
-    expectNear(camera.UpdateCompensation(28.0f, false, 0.1f), 36.0f, "airborne frames hold the compensation");
-    camera.UpdateIntent(true, 0.1f, 0.35f);
-    expectNear(camera.UpdateCompensation(46.0f, true, 0.2f), 18.0f, "standing up releases with Source's unduck");
-    expectNear(camera.UpdateCompensation(64.0f, true, 0.1f), 0.0f, "unducked eye needs no compensation");
-    expectNear(camera.UpdateCompensation(28.0f, true, 0.1f), 0.0f,
+    expectNear(camera.UpdateCompensation(64.0f, -4.0f, crouchThresholdUnits, true, crouchFrame), 0.0f,
+               "standing view follows the head 1:1");
+    camera.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    expectNear(camera.UpdateCompensation(46.0f, -12.0f, crouchThresholdUnits, true, 0.05f), 5.0f,
+               "compensation follows Source's duck transition");
+    expectNear(camera.UpdateCompensation(28.0f, -10.0f, crouchThresholdUnits, true, 0.05f), 10.0f,
+               "head at threshold puts the camera exactly on Source's ducked eye");
+    expectNear(camera.UpdateCompensation(28.0f, -20.0f, crouchThresholdUnits, true, 0.05f), 10.0f,
+               "below the threshold the camera follows the head 1:1");
+    expectNear(camera.UpdateCompensation(28.0f, -36.0f, crouchThresholdUnits, true, 0.1f), 22.0f,
+               "deep squat stops the camera above the floor");
+    expectNear(camera.UpdateCompensation(28.0f, -36.0f, crouchThresholdUnits, false, 0.1f), 22.0f,
+               "airborne frames hold the compensation");
+
+    PhysicalCrouch::State rise;
+    rise.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    rise.UpdateCompensation(28.0f, -10.0f, crouchThresholdUnits, true, 0.05f);
+    rise.UpdateIntent(true, 0.1f, 0.25f, 1.0f);
+    expect(rise.CameraSettling(), true, "camera is settling once the physical crouch is released");
+    expectNear(rise.UpdateCompensation(64.0f, -8.0f, crouchThresholdUnits, true, 0.225f), -14.0f,
+               "camera rises at half its travel after half the ease, whatever Source's unduck did");
+    expectNear(rise.UpdateCompensation(64.0f, -8.0f, crouchThresholdUnits, true, 0.1125f), -4.375f,
+               "camera rise follows the ease curve");
+    expectNear(rise.UpdateCompensation(64.0f, -8.0f, crouchThresholdUnits, true, 0.1125f), 0.0f,
+               "a head that stopped midway still gets the camera back within the slowest rise");
+    expect(rise.CameraSettling(), false, "finished rise stops settling");
+    expectNear(rise.UpdateCompensation(28.0f, -4.0f, crouchThresholdUnits, true, 0.1f), 0.0f,
                "crouch-button duck while physically standing is not compensated");
 
+    PhysicalCrouch::State fastRise;
+    fastRise.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    fastRise.UpdateCompensation(28.0f, -10.0f, crouchThresholdUnits, true, 0.05f);
+    fastRise.UpdateIntent(true, 0.1f, 0.25f, 1.0f);
+    expectNear(fastRise.UpdateCompensation(64.0f, 0.0f, crouchThresholdUnits, true, 0.1f), -23.328f,
+               "a head that stands up fast pulls the camera up at the fastest rise");
+    expectNear(fastRise.UpdateCompensation(64.0f, 0.0f, crouchThresholdUnits, true, 0.15f), 0.0f,
+               "a fast rise ends with the fastest rise time");
+
+    PhysicalCrouch::State again;
+    again.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    again.UpdateCompensation(28.0f, -10.0f, crouchThresholdUnits, true, 0.05f);
+    again.UpdateIntent(true, 0.1f, 0.25f, 1.0f);
+    again.UpdateCompensation(64.0f, -8.0f, crouchThresholdUnits, true, 0.225f);
+    again.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    expectNear(again.UpdateCompensation(60.0f, -12.0f, crouchThresholdUnits, true, crouchFrame), -9.0f,
+               "crouching again mid-rise holds the camera until Source catches up");
+
+    PhysicalCrouch::State tall;
+    tall.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    expectNear(tall.UpdateCompensation(28.0f, 6.0f, crouchThresholdUnits, true, 0.05f), -6.0f,
+               "head above its calibrated height still fits the ducked hull");
+
     PhysicalCrouch::State blocked;
-    blocked.UpdateCompensation(64.0f, true, 0.016f);
-    blocked.UpdateIntent(true, 0.4f, 0.35f);
-    blocked.UpdateCompensation(28.0f, true, 0.5f);
-    blocked.UpdateIntent(true, 0.0f, 0.35f);
-    expectNear(blocked.UpdateCompensation(28.0f, true, 1.0f), 36.0f,
-               "blocked stand keeps the real-head camera briefly");
-    expectNear(blocked.UpdateCompensation(28.0f, true, 0.6f), 0.0f,
-               "blocked stand falls back to Source's ducked eye after the hold");
-    expectNear(blocked.UpdateCompensation(-1.0f, true, 0.016f), 0.0f, "invalid view offset resets compensation");
+    blocked.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    blocked.UpdateCompensation(28.0f, -17.0f, crouchThresholdUnits, true, 0.5f);
+    blocked.UpdateIntent(true, 0.0f, 0.25f, 1.0f);
+    expectNear(blocked.UpdateCompensation(28.0f, -5.0f, crouchThresholdUnits, true, 0.1f), 5.0f,
+               "blocked stand keeps the camera on Source's ducked eye as the head rises");
+    expectNear(blocked.UpdateCompensation(28.0f, 0.0f, crouchThresholdUnits, true, 0.1f), 0.0f,
+               "blocked stand needs no compensation with the head fully up");
+    expectNear(blocked.UpdateCompensation(-1.0f, 0.0f, crouchThresholdUnits, true, crouchFrame), 0.0f,
+               "invalid view offset resets compensation");
 
     PhysicalCrouch::State airborne;
-    airborne.UpdateCompensation(64.0f, true, 0.016f);
-    airborne.UpdateIntent(true, 0.4f, 0.35f);
-    expectNear(airborne.UpdateCompensation(28.0f, false, 0.1f), 0.0f,
+    airborne.UpdateIntent(true, 0.4f, 0.25f, crouchFrame);
+    expectNear(airborne.UpdateCompensation(28.0f, -17.0f, crouchThresholdUnits, false, 0.1f), 0.0f,
                "airborne duck raises the origin, so the eye is not compensated");
-    expectNear(airborne.UpdateCompensation(28.0f, true, 0.1f), 20.0f,
+    expectNear(airborne.UpdateCompensation(28.0f, -17.0f, crouchThresholdUnits, true, 0.025f), 5.0f,
                "landing ducked eases compensation in at the speed limit");
 
     if (failures) return 1;

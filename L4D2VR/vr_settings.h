@@ -179,6 +179,10 @@ inline const std::vector<Page> &Pages()
                    [](const ConfigSnapshot &c) { return Bool(c.hapticsButtons); }, hapticsOn),
             Toggle("ReticleDistanceScaling", "Reticle Distance Scaling",
                    [](const ConfigSnapshot &c) { return Bool(c.reticleDistanceScaling); }),
+            Toggle("LaserCubeAimAssist", "Laser Cube Aim Assist",
+                   [](const ConfigSnapshot &c) { return Bool(c.laserCubeAimAssist); }),
+            Toggle("HeldObjectAnchor", "Attach Objects To Gun",
+                   [](const ConfigSnapshot &c) { return Bool(c.heldObjectAnchor); }),
             mirror,
         }, {{"Back", FooterAction::Back}, {"Recenter", FooterAction::Recenter}}};
 

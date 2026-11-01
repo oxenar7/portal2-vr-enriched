@@ -141,6 +141,7 @@ typedef Vector* (__thiscall* tWeapon_ShootPosition)(void* thisptr, Vector* shoot
 typedef double(__thiscall* tComputeError)(void* thisptr);
 typedef bool(__thiscall* tUpdateObject)(void* thisptr, void* pPlayer, float flError, bool bIsTeleport);
 typedef bool(__thiscall* tUpdateObjectVM)(void* thisptr, void* pPlayer, float flError);
+typedef bool(__cdecl* tGetPreferredCarryAngles)(void* pObject, void* pPlayer, const void* localToWorld, void* outAngles);
 typedef void(__thiscall* tRotateObject)(void* thisptr, void* pPlayer, float fRotAboutUp, float fRotAboutRight, bool bUseWorldUpInsteadOfPlayerUp);
 typedef QAngle&(__thiscall* tEyeAngles)(void* thisptr);
 
@@ -261,6 +262,7 @@ public:
 	static inline Hook<tComputeError> hkComputeError;
 	static inline Hook<tUpdateObject> hkUpdateObject;
 	static inline Hook<tUpdateObjectVM> hkUpdateObjectVM;
+	static inline Hook<tGetPreferredCarryAngles> hkGetPreferredCarryAngles;
 	static inline Hook<tRotateObject> hkRotateObject;
 	static inline Hook<tEyeAngles> hkEyeAngles;
 
@@ -359,6 +361,7 @@ public:
 	static double __fastcall dComputeError(void* ecx, void* edx);
 	static bool __fastcall dUpdateObject(void* ecx, void* edx, void* pPlayer, float flError, bool bIsTeleport = false);
 	static bool __fastcall dUpdateObjectVM(void* ecx, void* edx, void* pPlayer, float flError);
+	static bool __cdecl dGetPreferredCarryAngles(void* pObject, void* pPlayer, const void* localToWorld, void* outAngles);
 	static void __fastcall dRotateObject(void* ecx, void* edx, void* pPlayer, float fRotAboutUp, float fRotAboutRight, bool bUseWorldUpInsteadOfPlayerUp);
 	static QAngle& __fastcall dEyeAngles(void* ecx, void* edx);
 

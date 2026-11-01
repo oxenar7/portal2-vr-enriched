@@ -9,6 +9,7 @@
 #include "roomscale_motor.h"
 #include "ui_input.h"
 #include "haptics.h"
+#include "held_object.h"
 #include "physical_crouch.h"
 #include "render_diagnostics.h"
 #include "render_target_readiness.h"
@@ -83,6 +84,9 @@ public:
 	Haptics::ShotGate m_PortalShotHapticGate;
 	Haptics::EventQueue m_GameHapticQueue;
 	Haptics::HoldTracker m_HoldTracker;
+	std::mutex m_HeldTraceMutex;
+	HeldObject::Trace m_HeldTrace;
+	HeldObject::Anchor m_HeldAnchor;
 	std::chrono::steady_clock::time_point m_NextHoldPulse{};
 	std::chrono::steady_clock::time_point m_RumbleLogWindow{};
 	int m_RumbleLogLines = 0;
@@ -171,6 +175,15 @@ public:
 	float m_LastEyeHeightUnits = 0.0f;
 	PhysicalCrouch::State m_PhysicalCrouch;
 	std::chrono::steady_clock::time_point m_PhysicalCrouchLastUpdate{};
+	std::chrono::steady_clock::time_point m_PhysicalCrouchDuckTime{};
+	std::chrono::steady_clock::time_point m_PhysicalCrouchCameraUpdate{};
+	std::chrono::steady_clock::time_point m_PhysicalCrouchSettleTime{};
+	float m_PhysicalCrouchHeadOffset = 0.0f;
+	float m_PhysicalCrouchLastEye = 0.0f;
+	float m_PhysicalCrouchMaxEyeStep = 0.0f;
+	float m_PhysicalCrouchPeakDrop = 0.0f;
+	bool m_PhysicalCrouchDuckedThisDip = false;
+	bool m_PhysicalCrouchSourceDucked = false;
 
 	float m_HeightOffset = 0.0;
 
@@ -288,6 +301,9 @@ public:
 	QAngle m_PortalRotationOffset = {0, 0, 0};
 	QAngle m_RotationOffset = { 0, 0, 0 };
 	bool m_OverrideEyeAngles = false;
+	bool m_HeldAnchorActive = false;
+	QAngle m_HeldAnchorEye = { 0, 0, 0 };
+	Vector m_HeldAnchorStart = { 0, 0, 0 };
 	std::chrono::steady_clock::time_point m_PrevFrameTime;
 
 	float m_TurnSpeed = 0.15f;
@@ -388,6 +404,11 @@ public:
 	void QueueNativeRumble(int slot, int index, int data, int flags);
 	void QueueHapticEvent(Haptics::Event event);
 	void NoteHeldObjectUpdate();
+	bool BeginHeldAnchor(void *controller);
+	void EndHeldAnchor();
+	void NoteGrabController(const void *controller, float maxError, bool kept, bool viewModel);
+	void ApplyHeldObjectTuning();
+	void PollHeldTrace(std::chrono::steady_clock::time_point now);
 	void DispatchGameHaptics(bool actionsReady);
 	void TriggerHapticPulse(const Haptics::Pulse &pulse);
 	void ProcessViewActions();
@@ -407,6 +428,7 @@ public:
 	void UpdateHMDAngles();
 	void UpdateTracking();
 	float UpdatePhysicalCrouch(C_BasePlayer *player);
+	void UpdatePhysicalCrouchCamera();
 	bool ExperimentalPortalOrientation() const;
 	void QueuePortalTraversal(std::uintptr_t playerKey, std::uintptr_t portalKey,
 	                          const std::optional<PortalOrientation::Rotation> &rotation);

@@ -45,6 +45,10 @@ struct ConfigSnapshot {
     bool hapticsNativeRumble = true;
     bool hapticsHeldObject = true;
     bool hapticsButtons = true;
+    bool heldObjectLog = true;
+    bool laserCubeAimAssist = true;
+    bool heldObjectColumn = false;
+    bool heldObjectAnchor = true;
     float hudDistanceMeters = 1.3f;
     float hudWidthMeters = 1.4f;
     float hudVerticalOffsetMeters = -0.15f;
@@ -58,7 +62,7 @@ struct ConfigSnapshot {
     bool snapTurning = false;
     float snapTurnAngle = 45.0f;
     bool physicalCrouch = true;
-    float physicalCrouchDropMeters = 0.35f;
+    float physicalCrouchDropMeters = 0.25f;
     bool leftHanded = false;
     float vrScale = 43.2f;
     float ipdScale = 1.0f;
@@ -268,6 +272,10 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
     readBool("HapticsNativeRumble", result.value.hapticsNativeRumble);
     readBool("HapticsHeldObject", result.value.hapticsHeldObject);
     readBool("HapticsButtons", result.value.hapticsButtons);
+    readBool("HeldObjectLog", result.value.heldObjectLog);
+    readBool("LaserCubeAimAssist", result.value.laserCubeAimAssist);
+    readBool("HeldObjectColumn", result.value.heldObjectColumn);
+    readBool("HeldObjectAnchor", result.value.heldObjectAnchor);
     readFloat("HUDDistanceMeters", result.value.hudDistanceMeters, 0.6f, 3.0f);
     readFloat("HUDWidthMeters", result.value.hudWidthMeters, 0.5f, 2.5f);
     readFloat("HUDVerticalOffsetMeters", result.value.hudVerticalOffsetMeters, -0.6f, 0.6f);

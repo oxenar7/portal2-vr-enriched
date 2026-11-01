@@ -33,8 +33,8 @@ SETTINGS = (
     Setting("SnapTurnAngle", "Snap angle (degrees)", "Movement", "45", bounds=(1, 180)),
     Setting("TurnSpeed", "Smooth turn speed", "Movement", "0.15", bounds=(.01, 2)),
     Setting("PhysicalCrouch", "Physical crouch", "Movement", "true", ("false", "true"),
-            help="Duck when your real head drops below the recentered height. Requires 6DOF."),
-    Setting("PhysicalCrouchDropMeters", "Crouch head drop (m)", "Movement", "0.35", bounds=(.15, .8),
+            help="Duck when your real head drops below your standing height. Requires 6DOF."),
+    Setting("PhysicalCrouchDropMeters", "Crouch head drop (m)", "Movement", "0.25", bounds=(.15, .8),
             help="How far the head must drop to duck; you stand up 5 cm earlier."),
     Setting("RenderWindow", "Extra desktop render", "Rendering", "0", ("0", "1"),
             help="1 renders a third view for the monitor; may cost performance. 0 is recommended."),
@@ -59,6 +59,12 @@ SETTINGS = (
             help="Leave off for the original Portal HUD artwork and dynamic status. On uses the old experimental renderer."),
     Setting("ReticleDistanceScaling", "Gentle reticle distance scaling", "Aiming", "true", ("false", "true"),
             help="100% at 1m to 80% at 10m. Dedicated readability comparison remains to be tested."),
+    Setting("LaserCubeAimAssist", "Laser cube aim assist", "Aiming", "true", ("false", "true"),
+            help="Steers a laser leaving a reflector cube onto a catcher, as in co-op."),
+    Setting("HeldObjectAnchor", "Attach held objects to the gun", "Aiming", "true", ("false", "true"),
+            help="Held objects move with the gun and turn with the wrist. Walls still stop them."),
+    Setting("HeldObjectColumn", "Held object vertical plane", "Aiming", "false", ("false", "true"),
+            help="Only with the gun attachment off. On is Portal 2's default."),
     Setting("ExperimentalViewmodelAlignment", "Controller-locked gun and effects", "Gun calibration", "false", ("false", "true")),
     Setting("AimFromViewmodelMuzzle", "Start aim line at animated gun muzzle", "Gun calibration", "false", ("false", "true"),
             help="Requires controller-locked gun alignment. If the muzzle sample is unavailable, the beam is suppressed."),
@@ -108,8 +114,10 @@ BASIC_KEYS = frozenset(("TrackingMode", "MovementDirection", "RoomscaleMode", "S
 _EYE_HUD_KEYS = frozenset(("HUDInEyeCentered", "HUDInEyeScale", "HUDInEyeVerticalOffset", "ShowSourceCrosshair"))
 _HAPTICS_KEYS = frozenset(("Haptics", "HapticsIntensity", "HapticsNativeRumble", "HapticsHeldObject", "HapticsButtons"))
 _CROUCH_KEYS = frozenset(("PhysicalCrouch", "PhysicalCrouchDropMeters"))
+_HELD_KEYS = frozenset(("LaserCubeAimAssist", "HeldObjectColumn"))
+_HELD_ANCHOR_KEYS = frozenset(("HeldObjectAnchor",))
 # Key groups added after the first complete schema. A saved schema missing whole groups gains their defaults.
-_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS)
+_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS, _HELD_KEYS, _HELD_ANCHOR_KEYS)
 
 
 # Options > VR in the game writes these keys to VR/ingame_settings.txt, which the mod
@@ -119,7 +127,7 @@ INGAME_KEYS = frozenset((
     "SnapTurning", "SnapTurnAngle", "TurnSpeed", "MovementDirection", "PhysicalCrouch", "LeftHanded",
     "Haptics", "HapticsIntensity", "ExperimentalWorldAimMarker", "6DOF", "ControllerPitchDegrees",
     "HeightOffsetMeters", "PhysicalCrouchDropMeters", "VRScale", "IPDScale", "HapticsNativeRumble", "HapticsHeldObject",
-    "HapticsButtons", "ReticleDistanceScaling", "RenderWindow"))
+    "HapticsButtons", "ReticleDistanceScaling", "LaserCubeAimAssist", "HeldObjectAnchor", "RenderWindow"))
 
 
 def read_ingame_settings(game: Path) -> dict[str, str]:

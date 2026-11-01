@@ -30,6 +30,17 @@ struct PlayerFields {
     std::uint32_t flags = 0;       // int m_fFlags
 };
 
+// Addresses behind the held-object log and options; all zero unless server.dll and client.dll
+// are both the verified build.
+struct HeldObjectLayout {
+    std::uintptr_t entityList = 0;           // global pointer to the entity slots
+    std::uintptr_t laserAutoaimCvar = 0;     // server sv_laser_cube_autoaim
+    std::uintptr_t holdColumnCvar = 0;       // server player_hold_object_in_column
+    std::uintptr_t clientHoldColumnCvar = 0; // client copy; its grab code reads it as well
+    std::uintptr_t holdShootCaller = 0;      // return address of UpdateObject's ray origin call
+    std::uintptr_t preferredCarryAngles = 0; // Pickup_GetPreferredCarryAngles
+};
+
 namespace Detail {
 
 struct Build {
@@ -210,6 +221,75 @@ inline bool PlayerFieldWitness(const Image &image)
         image.Word(0x92CAA, image.At(0x742218), true);
 }
 
+inline bool HeldObjectWitness(const Image &image)
+{
+    constexpr char laserName[] = "sv_laser_cube_autoaim";
+    constexpr char columnName[] = "player_hold_object_in_column";
+    constexpr char modelName[] = "m_ModelName";
+    // CGrabController datamap: field index relative to m_flDistanceOffset, then its offset.
+    constexpr struct { int index; std::uint32_t offset; } grabFields[] = {
+        {-14, 0x4}, {-11, 0x203C}, {-7, 0x204C}, {-5, 0x2049}, {-4, 0x2054}, {-3, 0x2044},
+        {-2, 0x2058}, {-1, 0x2064}, {0, 0x2068}, {1, 0x206C}, {3, 0x2088}};
+    for (const auto &field : grabFields)
+        if (!image.Word(static_cast<std::uint32_t>(0x7965CC + field.index * 0x3C), field.offset))
+            return false;
+    return image.Span(0x67F0A8, sizeof(laserName)) &&
+        std::memcmp(image.bytes + 0x67F0A8, laserName, sizeof(laserName)) == 0 &&
+        image.Span(0x689EC8, sizeof(columnName)) &&
+        std::memcmp(image.bytes + 0x689EC8, columnName, sizeof(columnName)) == 0 &&
+        image.Span(0x5BB468, sizeof(modelName)) &&
+        std::memcmp(image.bytes + 0x5BB468, modelName, sizeof(modelName)) == 0 &&
+        // ConVar constructors tie each name to its object.
+        image.Word(0x572EBB, image.At(0x67F0A8), true) &&
+        image.Match(0x572EBF, {0xB9}) &&
+        image.Word(0x572EC0, image.At(0x8562D0), true) &&
+        image.Word(0x574000, image.At(0x689EC8), true) &&
+        image.Match(0x574004, {0xB9}) &&
+        image.Word(0x574005, image.At(0x858ED8), true) &&
+        // Game readers: parent pointer at +0x1C, int value at +0x30.
+        image.Match(0x3B1EEF, {0xA1}) &&
+        image.Word(0x3B1EF0, image.At(0x8562EC), true) &&
+        image.Match(0x3B1EF4, {0x83,0x78,0x30,0}) &&
+        image.Match(0x3CAA34, {0x8B,0x15}) &&
+        image.Word(0x3CAA36, image.At(0x858EF4), true) &&
+        image.Match(0x3CAA3D, {0x83,0x7A,0x30,0}) &&
+        // UpdateObject resolving m_attachedEntity through the entity list.
+        image.Match(0x3CA207, {0x8B,0x15}) &&
+        image.Word(0x3CA209, image.At(0x7339F8), true) &&
+        image.Match(0x3CA20D, {0x8B,0xC8,0x81,0xE1,0xFF,0xFF,0,0,0x8D,0x0C,0x49,
+            0x8D,0x4C,0xCA,0x04,0xC1,0xE8,0x10,0x39,0x41,0x04}) &&
+        // UpdateObject's ray origin: virtual Weapon_ShootPosition on the player.
+        image.Match(0x3CA5D4, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x83,0xC4,0x10,
+            0x8D,0x45,0xB4,0x50,0x8B,0xCE,0xFF,0xD2}) &&
+        // Pickup_GetPreferredCarryAngles, UpdateObject's call and its PreferredCarryAngles slot.
+        image.Match(0x3C4BA0, {0x55,0x8B,0xEC,0x8B,0x45,0x08,0x83,0xEC,0x18,0x56,0x6A,0x00}) &&
+        image.Match(0x3C4BD8, {0x8B,0x45,0x10,0x8B,0x16,0x8B,0x52,0x14,0x50}) &&
+        image.Match(0x3CB332, {0xE8,0x69,0x98,0xFF,0xFF}) &&
+        // The only two readers of m_bAllowObjectOverhead: pitch clamp and player box clamp.
+        image.Match(0x3CA57B, {0x80,0xBF,0x88,0x20,0,0,0}) &&
+        image.Match(0x3CB0FC, {0x80,0xBF,0x88,0x20,0,0,0}) &&
+        // CBaseEntity: m_iClassname, m_ModelName, collision radius, abs origin and angles.
+        image.Match(0x3B1EA2, {0x81,0x7E,0x60}) &&
+        image.Word(0xF038F, image.At(0x5BB468), true) &&
+        image.Word(0xF0399, 0xAC, true) &&
+        image.Match(0x3CA91D, {0x8B,0x45,0xDC,0xD9,0x80,0x0C,0x01,0,0}) &&
+        image.Match(0x3CA404, {0x8D,0x86,0xCC,1,0,0}) &&
+        image.Match(0x311B5, {0x8D,0x86,0xD8,1,0,0});
+}
+
+inline bool ClientHeldColumnWitness(const Image &image)
+{
+    constexpr char name[] = "player_hold_object_in_column";
+    return image.Span(0x81A3F0, sizeof(name)) &&
+        std::memcmp(image.bytes + 0x81A3F0, name, sizeof(name)) == 0 &&
+        image.Word(0x704EF0, image.At(0x81A3F0), true) &&
+        image.Match(0x704EF4, {0xB9}) &&
+        image.Word(0x704EF5, image.At(0xA228D0), true) &&
+        image.Match(0x3B9B85, {0x8B,0x15}) &&
+        image.Word(0x3B9B87, image.At(0xA228EC), true) &&
+        image.Match(0x3B9B8B, {0x83,0x7A,0x30,0});
+}
+
 } // namespace Detail
 
 inline bool HashFileSha256(const wchar_t *path, char (&hex)[65])
@@ -281,6 +361,20 @@ inline PlayerFields ResolvePlayerFieldsImage(const std::uint8_t *source, std::si
     return {0x104, 0xF8};
 }
 
+inline HeldObjectLayout ResolveHeldObjectLayoutImage(
+    const std::uint8_t *server, std::size_t serverSize, std::string_view serverSha256,
+    const std::uint8_t *client, std::size_t clientSize, std::string_view clientSha256)
+{
+    if (serverSha256 != Detail::server.sha256 || clientSha256 != Detail::client.sha256) return {};
+    Detail::Image serverImage, clientImage;
+    if (!serverImage.Open(server, serverSize, Detail::server) ||
+        !clientImage.Open(client, clientSize, Detail::client) ||
+        !Detail::HeldObjectWitness(serverImage) || !Detail::ClientHeldColumnWitness(clientImage))
+        return {};
+    return {serverImage.At(0x7339F8), serverImage.At(0x8562D0), serverImage.At(0x858ED8),
+        clientImage.At(0xA228D0), serverImage.At(0x3CA5E7), serverImage.At(0x3C4BA0)};
+}
+
 namespace Detail {
 
 // The loaded module's image and the SHA-256 of the file it was loaded from.
@@ -325,6 +419,17 @@ inline PlayerFields ResolveLoadedPlayerFields()
     char digest[65]{};
     if (!Detail::LoadedImage(Detail::client, bytes, size, digest)) return {};
     return ResolvePlayerFieldsImage(bytes, size, digest);
+}
+
+inline HeldObjectLayout ResolveLoadedHeldObjectLayout()
+{
+    const std::uint8_t *server = nullptr, *client = nullptr;
+    std::size_t serverSize = 0, clientSize = 0;
+    char serverDigest[65]{}, clientDigest[65]{};
+    if (!Detail::LoadedImage(Detail::server, server, serverSize, serverDigest) ||
+        !Detail::LoadedImage(Detail::client, client, clientSize, clientDigest)) return {};
+    return ResolveHeldObjectLayoutImage(server, serverSize, serverDigest,
+                                        client, clientSize, clientDigest);
 }
 
 } // namespace VerifiedPortalSymbols

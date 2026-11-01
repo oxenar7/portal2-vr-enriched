@@ -883,6 +883,8 @@ int Hooks::initSourceHooks()
 	REQUIRE_HOOK(hkUpdateObject, m_Game->m_Offsets->UpdateObject.address, dUpdateObject);
 	REQUIRE_HOOK(hkUpdateObjectVM, m_Game->m_Offsets->UpdateObjectVM.address, dUpdateObjectVM);
 	REQUIRE_HOOK(hkEyeAngles, m_Game->m_Offsets->EyeAngles.address, dEyeAngles);
+	REGISTER_IF_RESOLVED(hkGetPreferredCarryAngles, m_Game->m_Offsets->m_HeldObjectLayout.preferredCarryAngles,
+		dGetPreferredCarryAngles);
 
 	// Haptics: optional, each one only disables its own vibration source.
 	REGISTER_IF_RESOLVED(hkRumbleEffect, m_Game->m_Offsets->RumbleEffect.address, dRumbleEffect);
@@ -1019,6 +1021,7 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 	}
 
 	m_VR->m_SetupOrigin = position;
+	m_VR->UpdatePhysicalCrouchCamera();
 	m_VR->UpdateRoomscaleRenderAnchor(position);
 
 	Vector hmdAngle = m_VR->GetViewAngle();
@@ -1588,7 +1591,13 @@ Vector* __fastcall Hooks::dWeapon_ShootPosition(void* ecx, void* edx, Vector* ey
 	// FirePortal call is allowed to replace its hidden Vector return value.
 	const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
 	Vector* result = hkWeapon_ShootPosition.fOriginal(ecx, eyePos);
-	if (!RuntimePublished() || !result || !CompatibilityHooks::IsVerifiedShootCaller(
+	if (!RuntimePublished() || !result) return result;
+	if (m_VR->m_HeldAnchorActive && CompatibilityHooks::IsVerifiedShootCaller(
+		caller, m_Game->m_Offsets->m_HeldObjectLayout.holdShootCaller)) {
+		*result = m_VR->m_HeldAnchorStart;
+		return result;
+	}
+	if (!CompatibilityHooks::IsVerifiedShootCaller(
 		caller, m_Game->m_Offsets->Weapon_ShootPosition.shootCaller)) return result;
 
 	int localIndex = m_Game->m_EngineClient->GetLocalPlayer();
@@ -2013,15 +2022,37 @@ bool __fastcall Hooks::dUpdateObject(void* ecx, void* edx, void* pPlayer, float 
 
 	m_VR->m_OverrideEyeAngles = true;
 
+	const bool localPlayer = IsLocalPlayerEntity(pPlayer);
+	const bool anchored = localPlayer && m_VR->BeginHeldAnchor(ecx);
+	if (anchored)
+		flError *= HeldObject::kAnchorErrorScale;
+
 	bool value = hkUpdateObject.fOriginal(ecx, pPlayer, flError, bIsTeleport);
+
+	if (anchored)
+		m_VR->EndHeldAnchor();
 
 	if (!wasTrue)
 		m_VR->m_OverrideEyeAngles = false;
 
-	if (value && IsLocalPlayerEntity(pPlayer))
-		m_VR->NoteHeldObjectUpdate();
+	if (localPlayer) {
+		if (value)
+			m_VR->NoteHeldObjectUpdate();
+		m_VR->NoteGrabController(ecx, flError, value, false);
+	}
 
 	return value;
+}
+
+// Laser cubes and turrets take their carry rotation from the player's transform, which follows
+// the head. A laser cube subtracts the eye pitch, so a gun eye with a head transform tilts it.
+bool __cdecl Hooks::dGetPreferredCarryAngles(void* pObject, void* pPlayer, const void* localToWorld, void* outAngles) {
+	if (!RuntimePublished() || !m_VR->m_HeldAnchorActive)
+		return hkGetPreferredCarryAngles.fOriginal(pObject, pPlayer, localToWorld, outAngles);
+
+	const QAngle& eye = m_VR->m_HeldAnchorEye;
+	const HeldObject::RotationFrame gunFrame = HeldObject::MakeRotationFrame({ eye.x, eye.y, eye.z });
+	return hkGetPreferredCarryAngles.fOriginal(pObject, pPlayer, &gunFrame, outAngles);
 }
 
 bool __fastcall Hooks::dUpdateObjectVM(void* ecx, void* edx, void* pPlayer, float flError) {
@@ -2035,8 +2066,11 @@ bool __fastcall Hooks::dUpdateObjectVM(void* ecx, void* edx, void* pPlayer, floa
 	if (!wasTrue)
 		m_VR->m_OverrideEyeAngles = false;
 
-	if (value && IsLocalPlayerEntity(pPlayer))
-		m_VR->NoteHeldObjectUpdate();
+	if (IsLocalPlayerEntity(pPlayer)) {
+		if (value)
+			m_VR->NoteHeldObjectUpdate();
+		m_VR->NoteGrabController(ecx, flError, value, true);
+	}
 
 	return value;
 }
@@ -2110,7 +2144,7 @@ QAngle& __fastcall Hooks::dEyeAngles(void* ecx, void* edx) {
 		auto& vrPlayer = m_Game->m_PlayersVRInfo[index];
 
 		if (m_VR->m_IsVREnabled && m_VR->m_TrackingOutputValid && m_VR->m_RightControllerPose.valid && localIndex == index) {
-			return m_VR->GetRightControllerAbsAngleConst();
+			return m_VR->m_HeldAnchorActive ? m_VR->m_HeldAnchorEye : m_VR->GetRightControllerAbsAngleConst();
 		}
 		else if (vrPlayer.isUsingVR)
 		{

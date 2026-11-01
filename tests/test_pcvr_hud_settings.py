@@ -11,7 +11,9 @@ NEW_DEFAULTS = {"HUDInEyeCentered": "false", "HUDInEyeScale": "0.45",
                 "HUDInEyeVerticalOffset": "0.05", "ShowSourceCrosshair": "true"}
 HAPTICS_DEFAULTS = {"Haptics": "true", "HapticsIntensity": "1", "HapticsNativeRumble": "true",
                     "HapticsHeldObject": "true", "HapticsButtons": "true"}
-CROUCH_DEFAULTS = {"PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.35"}
+CROUCH_DEFAULTS = {"PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.25"}
+HELD_DEFAULTS = {"LaserCubeAimAssist": "true", "HeldObjectColumn": "false"}
+ANCHOR_DEFAULTS = {"HeldObjectAnchor": "true"}
 
 
 class EyeHudSettingsTests(unittest.TestCase):
@@ -124,6 +126,28 @@ class EyeHudSettingsTests(unittest.TestCase):
             path.write_bytes(original)
             migrated = settings.load_preferences(path, {})
             self.assertEqual(migrated["values"], {**pre_crouch, "SnapTurning": "true", **CROUCH_DEFAULTS})
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_pre_held_preferences_gain_held_defaults(self):
+        pre_held = {k: v for k, v in settings.recommended_settings().items() if k not in HELD_DEFAULTS}
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original = json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                   "values": dict(pre_held, SnapTurning="true")}).encode()
+            path.write_bytes(original)
+            migrated = settings.load_preferences(path, {})
+            self.assertEqual(migrated["values"], {**pre_held, "SnapTurning": "true", **HELD_DEFAULTS})
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_pre_anchor_preferences_keep_their_held_values(self):
+        pre_anchor = {k: v for k, v in settings.recommended_settings().items() if k not in ANCHOR_DEFAULTS}
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original = json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                   "values": dict(pre_anchor, HeldObjectColumn="true")}).encode()
+            path.write_bytes(original)
+            migrated = settings.load_preferences(path, {})
+            self.assertEqual(migrated["values"], {**pre_anchor, "HeldObjectColumn": "true", **ANCHOR_DEFAULTS})
             self.assertEqual(path.read_bytes(), original)
 
     def test_old_complete_schema_still_rejects_invalid_old_value(self):

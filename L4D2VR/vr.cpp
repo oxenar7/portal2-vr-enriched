@@ -422,8 +422,10 @@ void VR::Update()
             m_SettingsLastModified = settingsModified;
             ParseConfigFile();
         }
+        ApplyHeldObjectTuning();
     }
     PerfBeginFrame(now);
+    PollHeldTrace(now);
 
     if (now >= m_NextRoomscaleSummary) {
         m_NextRoomscaleSummary = now + std::chrono::seconds(30);
@@ -1452,6 +1454,117 @@ void VR::NoteHeldObjectUpdate()
     m_HoldTracker.Update(std::chrono::steady_clock::now());
 }
 
+// Pooled entity strings; "?" keeps a log line readable if one is ever missing.
+static std::string HeldEntityText(const void *entity, std::size_t offset)
+{
+    constexpr std::size_t kMaxLength = 96;
+    const char *text = entity ? HeldObject::Field<const char *>(entity, offset) : nullptr;
+    if (!VerifiedPortalSymbols::Detail::Readable(text, kMaxLength, false)) return "?";
+    return std::string(text, strnlen(text, kMaxLength));
+}
+
+bool VR::BeginHeldAnchor(void *controller)
+{
+    const auto *offsets = m_Game->m_Offsets;
+    const auto &layout = offsets->m_HeldObjectLayout;
+    const void *entity = !layout.entityList ? nullptr : HeldObject::EntityFromHandle(
+        HeldObject::Field<std::uintptr_t>(reinterpret_cast<const void *>(layout.entityList), 0),
+        HeldObject::Field<std::uint32_t>(controller, HeldObject::kAttachedEntity));
+    if (!entity || !offsets->Weapon_ShootPosition.address || !m_Config.heldObjectAnchor ||
+        !m_IsVREnabled || !m_TrackingOutputValid || !m_RightControllerPose.valid ||
+        !HeldObject::Field<std::uint8_t>(controller, HeldObject::kIgnoreRelativePitch)) {
+        m_HeldAnchor.Release(controller);
+        return false;
+    }
+
+    const QAngle gun = GetRightControllerAbsAngle();
+    m_HeldAnchor.Apply(controller, gun.x, gun.z);
+
+    // UpdateObject reads a roll it never saw on a flat screen as a player lying on one side,
+    // and lowers the ray. The roll reaches the object through the attached angles instead.
+    const float pitch = std::remainder(gun.x, 360.0f);
+    m_HeldAnchorEye.x = std::clamp(pitch, -HeldObject::kAnchorEyePitch, HeldObject::kAnchorEyePitch);
+    m_HeldAnchorEye.y = gun.y;
+    m_HeldAnchorEye.z = 0;
+    m_HeldAnchorStart = GetRightControllerAbsPos();
+    m_HeldAnchorActive = true;
+    return true;
+}
+
+void VR::EndHeldAnchor()
+{
+    m_HeldAnchorActive = false;
+}
+
+void VR::NoteGrabController(const void *controller, float maxError, bool kept, bool viewModel)
+{
+    const auto &layout = m_Game->m_Offsets->m_HeldObjectLayout;
+    if (!m_Config.heldObjectLog || !layout.entityList || !controller) return;
+
+    const auto now = std::chrono::steady_clock::now();
+    std::string line, sample;
+    {
+        std::lock_guard<std::mutex> lock(m_HeldTraceMutex);
+        // A forced drop in UpdateObjectVM returns through UpdateObject as well.
+        if (!kept && !m_HeldTrace.Active()) return;
+        auto state = HeldObject::ReadGrabState(controller);
+        const bool anchored = !viewModel && m_HeldAnchor.Applied();
+        if (anchored) state.attachedAngles = m_HeldAnchor.BaseAngles();
+        const void *entity = HeldObject::EntityFromHandle(
+            HeldObject::Field<std::uintptr_t>(reinterpret_cast<const void *>(layout.entityList), 0),
+            state.attachedHandle);
+        if (!m_HeldTrace.Active()) {
+            m_HeldTrace.Begin(now);
+            line = HeldObject::FormatPickup(HeldEntityText(entity, HeldObject::kClassName),
+                HeldEntityText(entity, HeldObject::kModelName), maxError, state,
+                entity ? HeldObject::Field<float>(entity, HeldObject::kCollisionRadius) : 0.0f,
+                m_Config.heldObjectColumn && !anchored, m_Config.laserCubeAimAssist, anchored);
+        }
+        const bool sampleDue = m_HeldTrace.Tick(now, state.error, viewModel);
+        if (!kept) {
+            sample = HeldObject::FormatDrop(HeldObject::DropReason::Forced, m_HeldTrace.End());
+        } else if (sampleDue) {
+            const Vector hand = GetRightControllerAbsPos();
+            const QAngle handAngles = GetRightControllerAbsAngle();
+            sample = HeldObject::FormatSample(m_HeldTrace.Elapsed(now), {hand.x, hand.y, hand.z},
+                {handAngles.x, handAngles.y, handAngles.z},
+                {m_HmdAngAbs.x, m_HmdAngAbs.y, m_HmdAngAbs.z},
+                entity ? HeldObject::Field<HeldObject::Vec3>(entity, HeldObject::kAbsOrigin) : HeldObject::Vec3{},
+                entity ? HeldObject::Field<HeldObject::Vec3>(entity, HeldObject::kAbsAngles) : HeldObject::Vec3{},
+                state);
+        }
+    }
+    if (!line.empty()) Logger::WriteSibling(HeldObject::kLogFile, line);
+    if (!sample.empty()) Logger::WriteSibling(HeldObject::kLogFile, sample);
+}
+
+void VR::PollHeldTrace(std::chrono::steady_clock::time_point now)
+{
+    const bool ticking = m_Game->m_EngineClient->IsInGame() && !m_Game->m_VguiSurface->IsCursorVisible();
+    std::string line;
+    {
+        std::lock_guard<std::mutex> lock(m_HeldTraceMutex);
+        if (m_HeldTrace.Released(now, ticking))
+            line = HeldObject::FormatDrop(HeldObject::DropReason::Released, m_HeldTrace.End());
+    }
+    if (!line.empty()) Logger::WriteSibling(HeldObject::kLogFile, line);
+}
+
+void VR::ApplyHeldObjectTuning()
+{
+    const auto &layout = m_Game->m_Offsets->m_HeldObjectLayout;
+    const auto apply = [this](std::uintptr_t conVar, const char *name, bool enabled) {
+        if (HeldObject::SetConVarInt(conVar, name, enabled ? 1 : 0) && m_Config.heldObjectLog)
+            Logger::WriteSibling(HeldObject::kLogFile,
+                std::string("tuning ") + name + "=" + (enabled ? "1" : "0"));
+    };
+    apply(layout.laserAutoaimCvar, "sv_laser_cube_autoaim", m_Config.laserCubeAimAssist);
+    // The vertical plane would pull an anchored object off the gun's axis.
+    const bool column = m_Config.heldObjectColumn && !m_Config.heldObjectAnchor;
+    apply(layout.holdColumnCvar, "player_hold_object_in_column", column);
+    apply(layout.clientHoldColumnCvar, "player_hold_object_in_column", column);
+}
+
 void VR::DispatchGameHaptics(bool actionsReady)
 {
     const auto now = std::chrono::steady_clock::now();
@@ -2002,6 +2115,7 @@ void VR::ResetPosition()
             Logger::Write("Applied staged VRScale/HeightOffsetMeters at recenter");
         }
         m_Playspace.Recenter(m_HmdPose.TrackedDevicePos);
+        m_PhysicalCrouch.Recalibrate();
         m_Center = m_HmdPose.TrackedDevicePos;
         if (m_Playspace.mode == TrackingSpace::TrackingMode::Standing && m_6DOF) {
             if (const auto anchor = TrackingSpace::StandingEyeAnchorUnits(
@@ -2025,7 +2139,10 @@ void VR::ResetPosition()
 
 float VR::UpdatePhysicalCrouch(C_BasePlayer *player)
 {
-    constexpr int kOnGround = 1 << 0; // FL_ONGROUND
+    constexpr int kDucking = 1 << 1;  // FL_DUCKING
+    // A dip deeper than the first value that ended above the second one is logged as a near miss.
+    constexpr float kNearMissDropMeters = 0.12f;
+    constexpr float kDipEndedDropMeters = 0.08f;
     const auto now = std::chrono::steady_clock::now();
     const float deltaSeconds = m_PhysicalCrouchLastUpdate == std::chrono::steady_clock::time_point{} ? 0.0f :
         std::min(std::chrono::duration<float>(now - m_PhysicalCrouchLastUpdate).count(), 0.1f);
@@ -2038,16 +2155,87 @@ float VR::UpdatePhysicalCrouch(C_BasePlayer *player)
     }
     const bool eligible = m_Game->m_EngineClient->IsInGame() && !m_Game->m_VguiSurface->IsCursorVisible();
     const bool wasDucking = m_PhysicalCrouch.Ducking();
-    // Before compensation, the view height offset is how far the head sits above its calibrated height.
-    const bool ducking = m_PhysicalCrouch.UpdateIntent(eligible, -m_HmdPosRelative.z / m_VRScale,
-        m_Config.physicalCrouchDropMeters);
-    if (ducking != wasDucking)
-        Logger::Write(ducking ? "Physical crouch: ducking" : "Physical crouch: standing");
+    const float headMeters = m_HmdPose.TrackedDevicePos.z;
+    const float headDrop = eligible ? m_PhysicalCrouch.UpdateHeadDrop(headMeters, deltaSeconds) : 0.0f;
+    const bool ducking = m_PhysicalCrouch.UpdateIntent(eligible, headDrop,
+        m_Config.physicalCrouchDropMeters, deltaSeconds);
 
     const auto *bytes = reinterpret_cast<const std::uint8_t *>(player);
     const float viewOffsetZ = *reinterpret_cast<const float *>(bytes + fields.viewOffsetZ);
     const int flags = *reinterpret_cast<const int *>(bytes + fields.flags);
-    return m_PhysicalCrouch.UpdateCompensation(viewOffsetZ, (flags & kOnGround) != 0, deltaSeconds);
+
+    if (std::isfinite(headDrop))
+        m_PhysicalCrouchPeakDrop = std::max(m_PhysicalCrouchPeakDrop, headDrop);
+    if (ducking != wasDucking) {
+        if (ducking) {
+            m_PhysicalCrouchDuckTime = now;
+            m_PhysicalCrouchDuckedThisDip = true;
+        } else {
+            m_PhysicalCrouchSettleTime = now;
+            m_PhysicalCrouchMaxEyeStep = 0.0f;
+        }
+        Logger::Write(std::string(ducking ? "Physical crouch: ducking" : "Physical crouch: standing") +
+            " head=" + std::to_string(headMeters) + " standing=" + std::to_string(m_PhysicalCrouch.StandingHead()) +
+            " drop=" + std::to_string(headDrop) + " peakDrop=" + std::to_string(m_PhysicalCrouchPeakDrop) +
+            " threshold=" + std::to_string(m_Config.physicalCrouchDropMeters) +
+            " eyeZ=" + std::to_string(viewOffsetZ) + " flags=" + std::to_string(flags));
+    }
+    const bool sourceDucked = (flags & kDucking) != 0;
+    if (sourceDucked != m_PhysicalCrouchSourceDucked) {
+        m_PhysicalCrouchSourceDucked = sourceDucked;
+        Logger::Write(std::string("Physical crouch: Source ") + (sourceDucked ? "ducked" : "unducked") +
+            " " + std::to_string(std::chrono::duration<float>(now - m_PhysicalCrouchDuckTime).count()) +
+            "s after intent; holding=" + std::to_string(ducking) + " eyeZ=" + std::to_string(viewOffsetZ));
+    }
+    if (eligible && headDrop < kDipEndedDropMeters) {
+        if (!m_PhysicalCrouchDuckedThisDip && m_PhysicalCrouchPeakDrop >= kNearMissDropMeters)
+            Logger::Write("Physical crouch: near miss peakDrop=" + std::to_string(m_PhysicalCrouchPeakDrop) +
+                " threshold=" + std::to_string(m_Config.physicalCrouchDropMeters) +
+                " standing=" + std::to_string(m_PhysicalCrouch.StandingHead()));
+        m_PhysicalCrouchPeakDrop = 0.0f;
+        m_PhysicalCrouchDuckedThisDip = false;
+    }
+
+    m_PhysicalCrouchHeadOffset = m_HmdPosRelative.z;
+    return m_PhysicalCrouch.Compensation();
+}
+
+// Called from RenderView, not UpdateTracking: VR::Update runs after the previous frame, and
+// the compensation has to match the interpolated view offset this frame renders with.
+void VR::UpdatePhysicalCrouchCamera()
+{
+    constexpr int kOnGround = 1 << 0; // FL_ONGROUND
+    const auto now = std::chrono::steady_clock::now();
+    const float deltaSeconds = m_PhysicalCrouchCameraUpdate == std::chrono::steady_clock::time_point{} ? 0.0f :
+        std::min(std::chrono::duration<float>(now - m_PhysicalCrouchCameraUpdate).count(), 0.1f);
+    m_PhysicalCrouchCameraUpdate = now;
+
+    const auto &fields = m_Game->m_Offsets->m_PlayerFields;
+    const int index = m_Game->m_EngineClient->GetLocalPlayer();
+    auto *player = index > 0 ? (C_BasePlayer*)m_Game->GetClientEntity(index) : nullptr;
+    if (!m_Config.physicalCrouch || !m_6DOF || !m_TrackingOutputValid || !fields.viewOffsetZ ||
+        !fields.flags || !player || player != m_EyeHeightPlayerEntity)
+        return;
+
+    const auto *bytes = reinterpret_cast<const std::uint8_t *>(player);
+    const float viewOffsetZ = *reinterpret_cast<const float *>(bytes + fields.viewOffsetZ);
+    const int flags = *reinterpret_cast<const int *>(bytes + fields.flags);
+    const bool wasSettling = m_PhysicalCrouch.CameraSettling();
+    const float previous = m_PhysicalCrouch.Compensation();
+    const float compensation = m_PhysicalCrouch.UpdateCompensation(viewOffsetZ, m_PhysicalCrouchHeadOffset,
+        m_Config.physicalCrouchDropMeters * m_VRScale, (flags & kOnGround) != 0, deltaSeconds);
+    m_HmdPosRelative.z += compensation - previous;
+
+    const float cameraEye = viewOffsetZ + compensation;
+    if (m_PhysicalCrouch.CameraSettling()) {
+        m_PhysicalCrouchMaxEyeStep = std::max(m_PhysicalCrouchMaxEyeStep,
+            std::fabs(cameraEye - m_PhysicalCrouchLastEye));
+    } else if (wasSettling) {
+        Logger::Write("Physical crouch: camera settled in " +
+            std::to_string(std::chrono::duration<float>(now - m_PhysicalCrouchSettleTime).count()) +
+            "s maxFrameStep=" + std::to_string(m_PhysicalCrouchMaxEyeStep) + " units");
+    }
+    m_PhysicalCrouchLastEye = cameraEye;
 }
 
 Vector VR::GetMovementForward()
@@ -2980,6 +3168,10 @@ void VR::ParseConfigFile()
         " HapticsNativeRumble=" + std::to_string(m_Config.hapticsNativeRumble) +
         " HapticsHeldObject=" + std::to_string(m_Config.hapticsHeldObject) +
         " HapticsButtons=" + std::to_string(m_Config.hapticsButtons) +
+        " HeldObjectLog=" + std::to_string(m_Config.heldObjectLog) +
+        " LaserCubeAimAssist=" + std::to_string(m_Config.laserCubeAimAssist) +
+        " HeldObjectColumn=" + std::to_string(m_Config.heldObjectColumn) +
+        " HeldObjectAnchor=" + std::to_string(m_Config.heldObjectAnchor) +
         " ViewmodelPosCustomOffset=" +
         std::to_string(m_ViewmodelPosCustomOffset.x) + "," +
         std::to_string(m_ViewmodelPosCustomOffset.y) + "," +

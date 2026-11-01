@@ -40,9 +40,6 @@
          "sources" : [
             {
                "inputs" : {
-                  "click" : {
-                     "output" : "/actions/main/in/ResetPosition"
-                  },
                   "position" : {
                      "output" : "/actions/main/in/Walk"
                   }
@@ -55,9 +52,6 @@
             },
             {
                "inputs" : {
-                  "click" : {
-                     "output" : "/actions/main/in/Flashlight"
-                  },
                   "position" : {
                      "output" : "/actions/main/in/Turn"
                   }

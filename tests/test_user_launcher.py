@@ -1,6 +1,7 @@
 """Offline user settings and launcher tests. Only temporary game files are used."""
 
 import json
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -48,7 +49,7 @@ class SettingsTests(unittest.TestCase):
                 "VerboseDiagnostics": "false", "RenderWindow": "0",
                 "Haptics": "true", "HapticsNativeRumble": "true",
                 "HapticsHeldObject": "true", "HapticsButtons": "true",
-                "PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.35",
+                "PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.25",
             }.items():
                 self.assertEqual(result[key], want, key)
             for key, want in {"HUDDistanceMeters": 1.25, "HUDWidthMeters": 1.65,
@@ -267,22 +268,26 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse((self.game / "VR").exists())
         self.assertEqual(self.state_path.read_bytes(), self.original_state)
 
-    def test_small_window_keeps_play_recovery_actions_accessible(self):
-        self.root.geometry("860x680")
+    def test_small_window_keeps_setup_recovery_actions_accessible(self):
+        core.stage_install(self.repo, self.game, self.state_path, "baseline")
+        self.app._refresh_install()
+        width, height = self.app.px(640), self.app.px(520)
+        self.root.geometry(f"{width}x{height}")
         self.root.deiconify()
         self.root.update()
-        page = self.app.pages["Play"]
-        button = next(button for button in self.app.buttons if button.text == "Open backups")
+        page = self.app.pages["Setup"]
+        button = next(button for button in self.app.buttons if button.text == "Restore original game files")
         page.scroll("moveto", 1)
         self.root.update()
         top = page.canvas.canvasy(0)
         self.assertGreaterEqual(button.box[1], top)
         self.assertLessEqual(button.box[3], top + page.canvas.winfo_height())
+        link = next(button for button in self.app.buttons if button.text == "Open backups")
+        self.assertLessEqual(link.box[3], self.root.winfo_height())
 
     def test_wheel_over_a_choice_scrolls_the_page_without_changing_it(self):
         from tkinter import ttk
 
-        self.root.geometry("960x640")
         self.root.deiconify()
         self.app.show_page("Settings")
         self.root.update()
@@ -294,18 +299,66 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(choice.get(), before)
         self.assertGreater(page.canvas.canvasy(0), 0)
 
-    def test_flat_theme_without_pillow_builds_every_page(self):
+    def test_rounded_box_blends_its_corners_into_the_background(self):
         from tools import launcher_art
 
-        with patch.object(launcher_art, "Image", None):
-            other = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path)
-        self.assertIsNone(other.art)
-        for name in other.pages:
-            other.show_page(name)
+        image = launcher_art.rounded_box(self.root, (40, 30), 8, "#102030", "#405060", "#ff0000")
+        self.assertEqual(image.get(0, 0), (255, 0, 0))
+        self.assertEqual(image.get(20, 0), (64, 80, 96))
+        self.assertEqual(image.get(20, 15), (16, 32, 48))
+
+    def test_window_has_its_own_caption_and_moves_from_the_header(self):
+        from types import SimpleNamespace
+
+        self.root.geometry("+100+120")
+        self.root.deiconify()
+        self.root.update()
+        self.assertEqual(self.app.canvas.type("drag"), "rectangle")
+        left, top = self.root.winfo_x(), self.root.winfo_y()
+        self.app._drag_start(SimpleNamespace(x_root=left + 50, y_root=top + 20))
+        self.app._drag(SimpleNamespace(x_root=left + 80, y_root=top + 60))
+        self.root.update()
+        self.assertEqual((self.root.winfo_x(), self.root.winfo_y()), (left + 30, top + 40))
+        self.assertEqual(self.app.close_button.box[2], self.root.winfo_width())
+        self.assertEqual(self.app.minimize_button.box[2], self.app.close_button.box[0])
+        self.assertLess(self.app.apply_button.box[2], self.app.launch_button.box[0])
+        with patch.object(self.app, "close") as close:
+            self.app.close_button.command = close
+            self.app.close_button.invoke()
+        close.assert_called_once()
+
+    def test_shortcut_carries_the_icon_and_taskbar_identity(self):
+        from tools import launcher_art, launcher_shortcut
+
+        path = self.folder / "launcher.lnk"
+        launcher_shortcut.create_shortcut(path, Path(sys.executable), self.repo / "launcher.pyw", launcher_art.ICON)
+        data = path.read_bytes()
+        self.assertIn(str(launcher_art.ICON).encode("utf-16-le"), data)
+        self.assertIn(launcher_art.APP_ID.encode("utf-16-le"), data)
+
+    def test_icon_has_every_taskbar_size(self):
+        from tools import launcher_art
+
+        data = launcher_art.ICON.read_bytes()
+        count = int.from_bytes(data[4:6], "little")
+        sizes = {data[6 + 16 * index] or 256 for index in range(count)}
+        self.assertEqual(sizes, set(launcher_art.ICON_SIZES))
+
+    def test_setup_card_follows_the_install_on_every_page(self):
+        self.assertFalse(self.app.installed)
+        for name in self.app.pages:
+            self.app.show_page(name)
         self.root.update_idletasks()
-        self.assertIsNotNone(other.launch_button.box)
-        other.save_button.invoke()
-        self.assertTrue(self.prefs_path.exists())
+        self.app.apply()
+        self.assertTrue(self.app.installed)
+        subtitle = lambda: self.app.canvas.itemcget(self.app.subtitle, "text")
+        self.assertEqual(subtitle(), "Ready to play")
+        self.app.game_var.set(str(self.folder / "missing"))
+        self.assertEqual(subtitle(), "Needs attention")
+        self.app.game_var.set(str(self.game))
+        self.app.restore()
+        self.assertFalse(self.app.installed)
+        self.assertEqual(subtitle(), "Not installed yet")
 
     def test_process_query_has_bounded_wait_and_hidden_console(self):
         import subprocess

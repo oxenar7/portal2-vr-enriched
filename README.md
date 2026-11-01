@@ -4,15 +4,15 @@ An incremental modernization fork of [Gistix/portal2vr](https://github.com/Gisti
 
 ## Getting started
 
-Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). Its background artwork also needs Pillow (`py -m pip install pillow`); without it the launcher runs with a plain dark theme. The packaged launcher bundles Pillow. It does not install Python, SteamVR or drivers automatically.
+Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). It does not install Python, SteamVR or drivers automatically.
 
 1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
-2. Double-click **`Portal2VR Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal2VR Launcher.pyw`.
+2. Double-click **`Portal2VR Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal2VR Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
 3. Select the folder containing `portal2.exe` and your `steam.exe`. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
-4. Start SteamVR and connect the headset/controllers, then click **Launch Portal 2 in VR**. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
+4. Start SteamVR and connect the headset/controllers, then click **Launch in VR**. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
 5. Enable subtitles in Portal 2's own options if you want captions.
 
-The launcher starts with the **recommended setup**. Settings survive restarts. `Save settings` changes only local preferences; `Apply without launching` installs the mod/config without starting the game. Apply changes with the game closed; restart to use the new settings.
+The launcher starts with the **recommended setup**. Settings survive restarts. `Save settings` changes only local preferences; `Apply` installs the mod/config without starting the game. Apply changes with the game closed; restart to use the new settings.
 
 ### Recommended setup
 

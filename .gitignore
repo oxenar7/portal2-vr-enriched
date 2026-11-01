@@ -416,6 +416,7 @@ FodyWeavers.xsd
 /tools/.user-launcher-settings.json
 /tools/.user-launcher-settings.json.lock
 /tools/.user-launcher-settings.json.*.tmp
+/Portal2VR Launcher.lnk
 /docs/user-launcher-*.png
 STABILIZATION_REPORT.md
 # Project notes are maintained locally, not published to origin.

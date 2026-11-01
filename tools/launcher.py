@@ -21,31 +21,51 @@ else:
 REPO = application_root()
 PREFERENCES_PATH = REPO / "tools/.user-launcher-settings.json"
 INSTALL_STATE_PATH = REPO / "tools/.launcher-state.json"
-BG, PANEL, TEXT, MUTED, ACCENT = "#0a121b", "#0d1925", "#e9f1f8", "#9fb3c6", "#4fc3ff"
-ACCENT_DEEP, ORANGE, FIELD, FIELD_BORDER, LINE = "#1d7fd0", "#ff9d42", "#08121c", "#33506b", "#1c2d3e"
+BG, CARD, FIELD, LINE, EDGE = "#14181f", "#1b2029", "#10141a", "#2b323d", "#3a4250"
+TEXT, MUTED, BLUE, ORANGE, TINT = "#f1f3f6", "#8d96a5", "#4aa8ee", "#ff9a3c", "#17324a"
 # Layout in 96-DPI pixels; Launcher.px scales them to the monitor.
-NAV_WIDTH, PANEL_TOP, FOOTER, MIN_SIZE = 276, 150, 64, (960, 640)
-PAGES = (("Play", ""), ("Settings", ""), ("Advanced", ""))
-PLAY, HEADSET, SYNC, RESTORE, LOG, FOLDER, INFO, SAVE, UNDO, PREVIEW, WARNING = (
-    "", "", "", "", "", "", "", "", "", "", "")
+WINDOW, MIN_SIZE, MARGIN, PAGES_TOP, FOOTER = (700, 624), (640, 544), 24, 150, 92
+PAGES = ("Setup", "Settings", "Advanced")
+BUTTON_STYLES = {
+    "outline": {"normal": (BG, EDGE, TEXT), "hover": ("#252c37", "#4b5565", "#ffffff"),
+                "pressed": ("#1c222b", "#4b5565", TEXT)},
+    "primary": {"normal": (BLUE, BLUE, "#08131d"), "hover": ("#6fbdf6", "#6fbdf6", "#08131d"),
+                "pressed": ("#3a90d3", "#3a90d3", "#08131d")},
+    "link": {"normal": (None, None, MUTED), "hover": (None, None, TEXT), "pressed": (None, None, TEXT)},
+}
 
 
-def tracked(text, spaces=1):
-    """Letter-spaced capitals. Tk has no tracking, so thin spaces stand in for it;
-    words keep a plain space so wrapped lines start flush."""
-    gap = " " * spaces
-    return (gap + " ").join(gap.join(word) for word in text.upper().split(" "))
+def borderless_window(window):
+    """Frameless window that keeps its taskbar button, minimizing and rounded corners.
+
+    A native caption always draws maximize, greyed out, next to minimize; the only way
+    to show just minimize and close is to draw them ourselves.
+    """
+    window.overrideredirect(True)
+    if sys.platform != "win32":
+        return
+    import ctypes
+    window.update_idletasks()
+    hwnd, user32 = int(window.wm_frame(), 16), ctypes.windll.user32
+    user32.SetWindowLongW(hwnd, -20, user32.GetWindowLongW(hwnd, -20) & ~0x80 | 0x40000)  # App window, not tool window.
+    user32.SetWindowLongW(hwnd, -16, user32.GetWindowLongW(hwnd, -16) | 0x80000 | 0x20000)  # System menu, minimize box.
+    try:
+        for attribute, value in ((33, 2), (34, 0x0050423A)):  # Round corners, EDGE border.
+            data = ctypes.c_int(value)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(data), ctypes.sizeof(data))
+    except (AttributeError, OSError):
+        pass
 
 
 def dark_title_bar(window):
-    """Windows 11 dark caption matching the launcher; older systems keep the default."""
+    """Windows 11 caption in the window colour; older systems keep the default."""
     if sys.platform != "win32":
         return
     try:
         import ctypes
         window.update_idletasks()  # The frame handle changes once Tk creates the wrapper.
         hwnd = int(window.wm_frame(), 16)
-        for attribute, value in ((20, 1), (35, 0x001B120A), (36, 0x00F8F1E9)):
+        for attribute, value in ((20, 1), (35, 0x001F1814), (36, 0x00F6F3F1)):
             data = ctypes.c_int(value)
             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(data), ctypes.sizeof(data))
     except (AttributeError, OSError, ValueError, tk.TclError):
@@ -53,12 +73,12 @@ def dark_title_bar(window):
 
 
 class CanvasButton:
-    """Button drawn on a canvas, so it sits on the artwork without a widget box."""
+    """Button drawn on a canvas; its rounded face blends into the surface behind it."""
 
-    def __init__(self, app, canvas, text, command, icon="", style="outline"):
-        self.app, self.canvas, self.text, self.command, self.icon, self.style = app, canvas, text, command, icon, style
-        self.tag, self.box, self.state, self.emphasis = f"button{id(self)}", None, "normal", False
-        self.images, self.image_size, self.labels = {}, None, []
+    def __init__(self, app, canvas, text, command, style="outline", surface=BG, group=None):
+        self.app, self.canvas, self.text, self.command = app, canvas, text, command
+        self.style, self.surface, self.group = style, surface, group
+        self.tag, self.box, self.state, self.face = f"button{id(self)}", None, "normal", None
         app.buttons.append(self)
         canvas.tag_bind(self.tag, "<Enter>", lambda _: self._set("hover"))
         canvas.tag_bind(self.tag, "<Leave>", lambda _: self._set("normal"))
@@ -67,62 +87,38 @@ class CanvasButton:
 
     @property
     def height(self):
-        return self.app.px(56 if self.style == "launch" else 36)
+        return self.app.px(34)
 
     def width(self):
-        fonts, icon = self.app.fonts, 0
-        if self.icon and self.app.icons:
-            icon = fonts["icon"].measure(self.icon) + self.app.px(12)
-        return self.app.px(40) + icon + fonts["button"].measure(tracked(self.text))
+        text = self.app.fonts["link" if self.style == "link" else "button"].measure(self.text)
+        return text + (0 if self.style == "link" else self.app.px(28))
 
     def draw(self, x, y, width=None):
-        c, px, fonts = self.canvas, self.app.px, self.app.fonts
+        c = self.canvas
         c.delete(self.tag)
         w, h = width or self.width(), self.height
-        self.box, tags = (x, y, x + w, y + h), (self.tag, "layout")
-        if self.style == "launch":
-            if self.app.art:
-                if self.image_size != (w, h):
-                    self.image_size = (w, h)
-                    self.images = {state: art.photo(art.launch_button((w, h), self.app.scale, state))
-                                   for state in ("normal", "hover", "pressed")}
-                self.face = c.create_image(x, y, anchor="nw", image=self.images[self.state], tags=tags)
-            else:
-                self.face = c.create_rectangle(x, y, x + w - 1, y + h - 1, tags=tags)
-            left, right, cy = x + px(92), x + w - px(84), y + h // 2
-            self.labels = [c.create_text((left + right) // 2, cy, text=tracked(self.text), font=fonts["launch"],
-                                         fill="#ffffff", tags=tags)]
-            if self.app.icons:
-                self.labels += [c.create_text(x + px(46), cy, text=self.icon, font=fonts["launch_icon"],
-                                              fill="#ffffff", tags=tags),
-                                c.create_text(x + w - px(42), cy, text=HEADSET, font=fonts["launch_icon"],
-                                              fill="#ffffff", tags=tags)]
+        self.box = (x, y, x + w, y + h)
+        tags = (self.tag, "layout", self.group) if self.group else (self.tag, "layout")
+        if self.style == "link":
+            # Canvas text only reacts on its glyphs, so links get an invisible hit area.
+            self.face = None
+            c.create_rectangle(*self.box, fill=self.surface, outline="", tags=tags)
         else:
-            self.face = c.create_rectangle(x, y, x + w - 1, y + h - 1, tags=tags)
-            label, content = tracked(self.text), self.width() - px(40)
-            cursor, cy, self.labels = x + (w - content) // 2, y + h // 2, []
-            if self.icon and self.app.icons:
-                self.labels.append(c.create_text(cursor, cy, text=self.icon, anchor="w", font=fonts["icon"], tags=tags))
-                cursor += fonts["icon"].measure(self.icon) + px(12)
-            self.labels.append(c.create_text(cursor, cy, text=label, anchor="w", font=fonts["button"], tags=tags))
+            self.face = c.create_image(x, y, anchor="nw", tags=tags)
+        self.label = c.create_text(x + w // 2, y + h // 2, text=self.text, tags=tags)
         self.paint()
 
     def paint(self):
         if not self.box:
             return
-        c, state = self.canvas, self.state
-        if self.style == "launch":
-            if self.app.art:
-                c.itemconfigure(self.face, image=self.images[state])
-            else:
-                c.itemconfigure(self.face, outline=ACCENT,
-                                fill={"normal": ACCENT_DEEP, "hover": "#2a95e4", "pressed": "#176bb0"}[state])
-            return
-        c.itemconfigure(self.face, fill={"normal": "#0b1621", "hover": "#12304a", "pressed": "#0a2338"}[state],
-                        outline=ACCENT if self.emphasis or state != "normal" else "#71879c")
-        color = "#ffffff" if state != "normal" else ACCENT if self.emphasis else "#dce6ef"
-        for item in self.labels:
-            c.itemconfigure(item, fill=color)
+        c, app = self.canvas, self.app
+        fill, outline, text = BUTTON_STYLES[self.style][self.state]
+        if self.face:
+            size = (self.box[2] - self.box[0], self.box[3] - self.box[1])
+            c.itemconfigure(self.face, image=app.box(size, app.px(8), fill, outline, self.surface))
+        font = "link_hover" if self.style == "link" and self.state != "normal" else \
+            "link" if self.style == "link" else "button"
+        c.itemconfigure(self.label, fill=text, font=app.fonts[font])
 
     def _set(self, state):
         self.state = state
@@ -140,41 +136,66 @@ class CanvasButton:
         self.command()
 
 
+class CaptionButton(CanvasButton):
+    """Minimize or close glyph in the corner of the borderless window."""
+
+    def __init__(self, app, glyph, command, hover):
+        super().__init__(app, app.canvas, glyph, command)
+        self.hover = hover
+
+    @property
+    def height(self):
+        return self.app.px(30)
+
+    def width(self):
+        return self.app.px(46)
+
+    def draw(self, x, y, width=None):
+        c, tags = self.canvas, (self.tag, "layout")
+        c.delete(self.tag)
+        self.box = (x, y, x + self.width(), y + self.height)
+        self.face = c.create_rectangle(*self.box, outline="", tags=tags)
+        self.label = c.create_text(x + self.width() // 2, y + self.height // 2, text=self.text,
+                                   font=self.app.fonts["caption"], tags=tags)
+        self.paint()
+
+    def paint(self):
+        if self.box:
+            active = self.state != "normal"
+            self.canvas.itemconfigure(self.face, fill=self.hover if active else BG)
+            self.canvas.itemconfigure(self.label, fill="#ffffff" if active else MUTED)
+
+
 class Toggle:
-    """Square on/off switch for a "true"/"false" setting."""
+    """Pill switch for a "true"/"false" setting."""
 
     def __init__(self, app, canvas, var):
         self.app, self.canvas, self.var = app, canvas, var
         self.tag, self.items, self.hover = f"toggle{id(self)}", None, False
-        self.width, self.height = app.px(44), app.px(22)
+        self.width, self.height = app.px(40), app.px(22)
         canvas.tag_bind(self.tag, "<ButtonRelease-1>", lambda _: var.set("false" if var.get() == "true" else "true"))
         canvas.tag_bind(self.tag, "<Enter>", lambda _: self._hover(True))
         canvas.tag_bind(self.tag, "<Leave>", lambda _: self._hover(False))
         var.trace_add("write", lambda *_: self.paint())
 
     def draw(self, x, y):
-        c, px, tags = self.canvas, self.app.px, (self.tag, "layout")
+        c, tags = self.canvas, (self.tag, "layout")
         c.delete(self.tag)
         self.origin = (x, y)
-        state = c.create_text(x - px(10), y + self.height // 2, anchor="e", font=self.app.fonts["muted"], tags=tags)
-        track = c.create_rectangle(x, y, x + self.width - 1, y + self.height - 1, tags=tags)
-        knob = c.create_rectangle(0, 0, 0, 0, outline="", tags=tags)
-        self.items = (state, track, knob)
+        self.items = (c.create_image(x, y, anchor="nw", tags=tags), c.create_image(x, y, anchor="nw", tags=tags))
         self.paint()
 
     def paint(self):
         if not self.items or not self.canvas.winfo_exists():
             return
-        c, px, on = self.canvas, self.app.px, self.var.get() == "true"
-        state, track, knob = self.items
+        c, app, on = self.canvas, self.app, self.var.get() == "true"
+        track, knob = self.items
         x, y = self.origin
-        size = self.height - px(8)
-        left = x + self.width - px(4) - size if on else x + px(4)
-        c.itemconfigure(state, text="On" if on else "Off", fill=TEXT if on else MUTED)
-        c.itemconfigure(track, fill=ACCENT_DEEP if on else FIELD,
-                        outline=ACCENT if on or self.hover else FIELD_BORDER)
-        c.itemconfigure(knob, fill="#ffffff" if on else "#7f95aa")
-        c.coords(knob, left, y + px(4), left + size, y + px(4) + size)
+        inset, size = app.px(3), self.height - 2 * app.px(3)
+        fill = BLUE if on else "#39414e" if self.hover else "#2c333e"
+        c.itemconfigure(track, image=app.box((self.width, self.height), self.height // 2, fill, fill, CARD))
+        c.itemconfigure(knob, image=app.box((size, size), size // 2, "#ffffff", "#ffffff", fill))
+        c.coords(knob, x + (self.width - inset - size if on else inset), y + inset)
 
     def _hover(self, hover):
         self.hover = hover
@@ -182,14 +203,37 @@ class Toggle:
         self.paint()
 
 
+class Field:
+    """Borderless entry or combobox sitting inside a rounded box that shows its focus."""
+
+    def __init__(self, app, canvas, widget):
+        self.app, self.canvas, self.widget, self.size = app, canvas, widget, None
+        self.face = canvas.create_image(0, 0, anchor="nw", tags="field")
+        self.window = canvas.create_window(0, 0, anchor="nw", window=widget)
+        widget.bind("<FocusIn>", lambda _: self.paint(True), add="+")
+        widget.bind("<FocusOut>", lambda _: self.paint(False), add="+")
+
+    def draw(self, x, y, width, height):
+        c, inset = self.canvas, self.app.px(6)
+        self.size = (width, height)
+        c.coords(self.face, x, y)
+        c.coords(self.window, x + inset, y + self.app.px(3))
+        c.itemconfigure(self.window, width=width - 2 * inset, height=height - 2 * self.app.px(3))
+        self.paint(False)
+
+    def paint(self, focused):
+        if self.size:
+            self.canvas.itemconfigure(self.face, image=self.app.box(
+                self.size, self.app.px(7), FIELD, BLUE if focused else EDGE, CARD))
+
+
 class Page:
-    """Scrolling panel body. The frosted backdrop crop stays fixed behind the content."""
+    """Scrolling page body below the tabs."""
 
     def __init__(self, app):
         self.app, self.layout, self.box, self.visible = app, None, None, False
         self.width = self.height = self.content = 0
-        self.canvas = tk.Canvas(app.canvas, bg=PANEL, bd=0, highlightthickness=0, yscrollincrement=app.px(24))
-        self.backdrop = self.canvas.create_image(0, 0, anchor="nw")
+        self.canvas = tk.Canvas(app.canvas, bg=BG, bd=0, highlightthickness=0, yscrollincrement=app.px(24))
         self.scrollbar = ttk.Scrollbar(app.canvas, orient="vertical", command=self.scroll,
                                        style="Launcher.Vertical.TScrollbar")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
@@ -206,15 +250,14 @@ class Page:
 
     def scroll(self, *args):
         self.canvas.yview(*args)
-        self.canvas.coords(self.backdrop, 0, self.canvas.canvasy(0))
 
     def place(self, box, visible):
         self.box = box
         width = box[2] - box[0]
+        self.height = box[3] - box[1]
         if width != self.width:
             self.width = width
             self.content = self.layout(self, width)
-        self.height = box[3] - box[1]
         self.show(visible)
 
     def relayout(self):
@@ -233,11 +276,11 @@ class Page:
         else:
             self.canvas.place_forget()
         if visible and self.content > self.height:
-            self.scrollbar.place(x=x1 - px(12), y=y0 + px(6), width=px(8), height=self.height - px(12))
+            self.scrollbar.place(x=x1 + px(8), y=y0, width=px(7), height=self.height)
             self.scrollbar.lift()
         else:
             self.scrollbar.place_forget()
-        self.scroll("moveto", self.canvas.yview()[0])
+        self.canvas.yview_moveto(self.canvas.yview()[0])
 
 
 class Launcher:
@@ -249,6 +292,7 @@ class Launcher:
         legacy = core.load_state(install_state_path)
         prefs = settings.load_preferences(preferences_path, legacy)
         self.saved = prefs
+        self.installed = bool(legacy["managed_files"])
         self.game_var = tk.StringVar(root, prefs["game_dir"])
         self.steam_var = tk.StringVar(root, prefs["steam_exe"])
         # Options > VR changes made in the game show up here as unsaved edits.
@@ -260,15 +304,16 @@ class Launcher:
         self.status_var = tk.StringVar(root, (
             f"Loaded {changed} setting(s) changed in game under Options > VR. "
             "Save, Apply or Launch to keep them here.") if changed else
-            "Ready. Save is local; Apply and Launch update the game with backups.")
+            "Save is local; Apply and Launch update the game with backups.")
         self.status_error = self._next_error = False
+        self.dirty, self.invalid = False, False
         self.root.title("Portal 2 VR Launcher")
         self.scale = max(1.0, root.winfo_fpixels("1i") / 96)
-        # Fixed size, so the artwork is composed once instead of on every resize step.
-        # Small screens get a smaller window; pages scroll when their content does not fit.
+        # Fixed size: nothing here needs to grow, and small screens get a smaller
+        # window whose pages scroll.
         screen_width, screen_height = root.winfo_screenwidth(), root.winfo_screenheight()
-        width = self.px(max(MIN_SIZE[0], min(1280, round(screen_width / self.scale) - 80)))
-        height = self.px(max(MIN_SIZE[1], min(820, round(screen_height / self.scale) - 120)))
+        width = self.px(max(MIN_SIZE[0], min(WINDOW[0], round(screen_width / self.scale) - 80)))
+        height = self.px(max(MIN_SIZE[1], min(WINDOW[1], round(screen_height / self.scale) - 120)))
         self.root.geometry(f"{width}x{height}+{max(0, (screen_width - width) // 2)}"
                            f"+{max(0, (screen_height - height) // 2 - self.px(20))}")
         self.root.resizable(False, False)
@@ -278,7 +323,6 @@ class Launcher:
                 self.root.iconbitmap(default=str(art.ICON))
             except tk.TclError:
                 pass
-        dark_title_bar(self.root)
         self._fonts()
         self._theme()
         self._build(width, height)
@@ -291,85 +335,89 @@ class Launcher:
     def px(self, value):
         return round(value * self.scale)
 
+    def box(self, size, radius, fill, outline=None, background=BG):
+        key = (size, radius, fill, outline, background)
+        if key not in self.boxes:
+            self.boxes[key] = art.rounded_box(self.root, size, radius, fill, outline or fill, background, self.px(1))
+        return self.boxes[key]
+
     def _fonts(self):
-        families = set(tkfont.families(self.root))
-        def pick(*names):
-            return next((name for name in names if name in families), "Segoe UI")
-        display = pick("Bahnschrift")
-        semibold, light = pick("Bahnschrift SemiBold", "Segoe UI Semibold"), pick("Bahnschrift Light", "Segoe UI Light")
-        self.icons = next((name for name in ("Segoe Fluent Icons", "Segoe MDL2 Assets") if name in families), None)
-        icons = self.icons or "Segoe UI"
-        spec = {"kicker": (semibold, 13), "title": (light, 27), "section": (semibold, 15), "nav": (semibold, 19),
-                "launch": (semibold, 26), "button": (display, 14), "body": ("Segoe UI", 15),
-                "muted": ("Segoe UI", 14), "small": ("Segoe UI", 13), "entry": ("Segoe UI", 14),
-                "mono": ("Consolas", 12), "logo": (display, 56, "bold"), "logo_vr": (light, 40),
-                "icon": (icons, 16), "nav_icon": (icons, 22), "launch_icon": (icons, 26)}
-        self.fonts = {name: tkfont.Font(self.root, family=family, size=-self.px(size), weight=weight[0] if weight else "normal")
-                      for name, (family, size, *weight) in spec.items()}
+        body, strong = "Segoe UI", "Segoe UI Semibold"
+        spec = {"title": (strong, 20), "subtitle": (body, 13), "tab": (strong, 14), "card": (strong, 15),
+                "detail": (body, 13), "button": (strong, 13), "link": (body, 13), "group": (strong, 13),
+                "row": (body, 14), "help": (body, 12), "entry": (body, 13), "status": (body, 12),
+                "mono": ("Consolas", 11), "check": ("Segoe UI Symbol", 15), "caption": ("Segoe MDL2 Assets", 10)}
+        self.fonts = {name: tkfont.Font(self.root, family=family, size=-self.px(size))
+                      for name, (family, size) in spec.items()}
+        self.fonts["link_hover"] = tkfont.Font(self.root, family=body, size=-self.px(13), underline=True)
 
     def _theme(self):
         px = self.px
         style = ttk.Style(self.root)
         style.theme_use("clam")
         style.configure(".", background=BG, foreground=TEXT, font=("Segoe UI", 10))
-        field = dict(fieldbackground=FIELD, foreground=TEXT, insertcolor=TEXT, bordercolor=FIELD_BORDER,
-                     lightcolor=FIELD, darkcolor=FIELD, padding=(px(8), px(3)))
+        field = dict(fieldbackground=FIELD, background=FIELD, foreground=TEXT, insertcolor=TEXT, bordercolor=FIELD,
+                     lightcolor=FIELD, darkcolor=FIELD, padding=(px(2), px(1)))
         style.configure("Launcher.TEntry", **field)
-        style.map("Launcher.TEntry", bordercolor=[("focus", ACCENT), ("hover", "#4d6d8c")])
-        style.configure("Launcher.TCombobox", **field, background=FIELD, arrowcolor=MUTED, arrowsize=px(11),
+        style.configure("Launcher.TCombobox", **field, arrowcolor=MUTED, arrowsize=px(11),
                         selectbackground=FIELD, selectforeground=TEXT)
         style.map("Launcher.TCombobox", fieldbackground=[("readonly", FIELD)], foreground=[("readonly", TEXT)],
-                  background=[("active", "#132a40"), ("readonly", FIELD)], arrowcolor=[("hover", TEXT)],
-                  bordercolor=[("focus", ACCENT), ("hover", "#4d6d8c")],
+                  background=[("readonly", FIELD)], arrowcolor=[("active", TEXT)],
+                  bordercolor=[("focus", FIELD)], lightcolor=[("focus", FIELD)], darkcolor=[("focus", FIELD)],
                   selectbackground=[("readonly", FIELD)], selectforeground=[("readonly", TEXT)])
+        style.map("Launcher.TEntry", bordercolor=[("focus", FIELD)], lightcolor=[("focus", FIELD)],
+                  darkcolor=[("focus", FIELD)])
         style.layout("Launcher.Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
             ("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]})])
-        style.configure("Launcher.Vertical.TScrollbar", troughcolor=PANEL, background="#34536f", bordercolor=PANEL,
-                        lightcolor="#34536f", darkcolor="#34536f", gripcount=0)
-        style.map("Launcher.Vertical.TScrollbar", background=[("active", "#3d6286")])
-        for option, value in (("background", FIELD), ("foreground", TEXT), ("selectBackground", ACCENT_DEEP),
-                              ("selectForeground", "#ffffff"), ("font", self.fonts["entry"])):
+        style.configure("Launcher.Vertical.TScrollbar", troughcolor=BG, background=EDGE, bordercolor=BG,
+                        lightcolor=EDGE, darkcolor=EDGE, gripcount=0)
+        style.map("Launcher.Vertical.TScrollbar", background=[("active", "#4b5565")])
+        style.configure("ComboboxPopdownFrame", background=FIELD, bordercolor=EDGE, lightcolor=FIELD, darkcolor=FIELD,
+                        relief="solid", borderwidth=1)
+        for option, value in (("background", FIELD), ("foreground", TEXT), ("selectBackground", "#24557d"),
+                              ("selectForeground", "#ffffff"), ("font", self.fonts["entry"]), ("borderWidth", 0)):
             self.root.option_add(f"*TCombobox*Listbox.{option}", value)
 
     def _build(self, width, height):
-        self.art = art.Backdrop() if art.enabled() else None
-        self.buttons, self.images, self.backdrop_image = [], {}, None
-        self.size, self.current, self.nav_hover = None, "Play", None
+        self.boxes, self.buttons, self.size, self.current, self.tab_hover = {}, [], None, PAGES[0], None
+        logo = min(art.LOGO_SIZES, key=lambda size: abs(size - self.px(44)))
+        self.logo = tk.PhotoImage(master=self.root, file=str(art.ASSETS / f"launcher_logo_{logo}.png"))
         self.canvas = tk.Canvas(self.root, bg=BG, bd=0, highlightthickness=0, width=width, height=height)
         self.canvas.pack(fill="both", expand=True)
-        self.backdrop = self.canvas.create_image(0, 0, anchor="nw")
-        for name, _ in PAGES:
-            tag = f"nav:{name}"
-            self.canvas.tag_bind(tag, "<Enter>", lambda _, name=name: self._hover_nav(name))
-            self.canvas.tag_bind(tag, "<Leave>", lambda _: self._hover_nav(None))
+        for name in PAGES:
+            tag = f"tab:{name}"
+            self.canvas.tag_bind(tag, "<Enter>", lambda _, name=name: self._hover_tab(name))
+            self.canvas.tag_bind(tag, "<Leave>", lambda _: self._hover_tab(None))
             self.canvas.tag_bind(tag, "<ButtonRelease-1>", lambda _, name=name: self.show_page(name))
-        self.pages = {name: Page(self) for name, _ in PAGES}
-        self._build_play(self.pages["Play"])
+        self.pages = {name: Page(self) for name in PAGES}
+        self._build_setup(self.pages["Setup"])
         self._build_settings(self.pages["Settings"], advanced=False)
         self._build_settings(self.pages["Advanced"], advanced=True)
-        self.save_button = CanvasButton(self, self.canvas, "Save settings", self.save, SAVE)
-        self.footer_buttons = (self.save_button,
-                               CanvasButton(self, self.canvas, "Restore recommended", self.reset_recommended, UNDO),
-                               CanvasButton(self, self.canvas, "Preview config", self.show_preview, PREVIEW))
+        self.canvas.tag_bind("drag", "<ButtonPress-1>", self._drag_start)
+        self.canvas.tag_bind("drag", "<B1-Motion>", self._drag)
+        self.minimize_button = CaptionButton(self, "\ue921", self.minimize, "#252c37")
+        self.close_button = CaptionButton(self, "\ue8bb", self.close, "#c42b1c")
+        self.launch_button = CanvasButton(self, self.canvas, "Launch in VR", self.launch, "primary")
+        self.apply_button = CanvasButton(self, self.canvas, "Apply", self.apply)
+        self.links = tuple(CanvasButton(self, self.canvas, text, command, "link", group="footer:Setup")
+                           for text, command in (("Open mod log", self.open_log), ("Open backups", self.open_backups),
+                                                 ("About / limitations", self.about)))
+        self.save_button = CanvasButton(self, self.canvas, "Save settings", self.save, group="footer:Settings")
+        self.form_actions = (CanvasButton(self, self.canvas, "Restore recommended", self.reset_recommended,
+                                          group="footer:Settings"),
+                             CanvasButton(self, self.canvas, "Preview config", self.show_preview,
+                                          group="footer:Settings"))
         self.canvas.bind("<Configure>", lambda event: self._relayout(event.width, event.height))
         self._relayout(width, height)
 
-    def _build_play(self, page):
+    def _build_setup(self, page):
         c = page.canvas
-        self.launch_button = CanvasButton(self, c, "Launch Portal 2 in VR", self.launch, PLAY, "launch")
-        self.path_rows = []
-        for label, var, browse in (("Portal 2 folder", self.game_var, self.browse_game),
-                                   ("Steam executable", self.steam_var, self.browse_steam)):
-            entry = ttk.Entry(c, textvariable=var, style="Launcher.TEntry", font=self.fonts["entry"])
-            page.bind_wheel(entry)
-            self.path_rows.append((label, c.create_window(0, 0, window=entry, anchor="nw"),
-                                   CanvasButton(self, c, "Browse…", browse)))
-        self.game_actions = (CanvasButton(self, c, "Apply without launching", self.apply, SYNC),
-                             CanvasButton(self, c, "Restore original game files", self.restore, RESTORE))
-        self.diagnostics = (CanvasButton(self, c, "Open mod log", self.open_log, LOG),
-                            CanvasButton(self, c, "Open backups", self.open_backups, FOLDER),
-                            CanvasButton(self, c, "About / limitations", self.about, INFO))
-        page.layout = self._layout_play
+        self.game_actions = (CanvasButton(self, c, "Open", self.open_game, surface=CARD),
+                             CanvasButton(self, c, "Change", self.browse_game, surface=CARD))
+        self.steam_actions = (CanvasButton(self, c, "Change", self.browse_steam, surface=CARD),)
+        self.restore_button = CanvasButton(self, c, "Restore original game files", self.restore, "link", CARD)
+        self.customize_button = CanvasButton(self, c, "Customize", lambda: self.show_page("Settings"), surface=CARD)
+        page.layout = self._layout_setup
 
     def _build_settings(self, page, advanced):
         c, group, page.rows = page.canvas, None, []
@@ -391,7 +439,7 @@ class Launcher:
                     widget = ttk.Entry(c, textvariable=var, style="Launcher.TEntry", font=self.fonts["entry"],
                                        justify="right")
                 page.bind_wheel(widget)
-                control = c.create_window(0, 0, window=widget, anchor="nw")
+                control = Field(self, c, widget)
             page.rows.append((None, item, control))
         page.layout = lambda page, width: self._layout_settings(page, width, advanced)
 
@@ -400,105 +448,102 @@ class Launcher:
         if (width, height) == self.size or width < px(200) or height < px(200):
             return
         self.size = (width, height)
-        c = self.canvas
+        c, margin, drag = self.canvas, px(MARGIN), ("layout", "drag")
         c.delete("layout")
-        x0, y0 = px(NAV_WIDTH), px(PANEL_TOP)
-        self.panel = (x0, y0, max(x0 + px(400), width - px(56 if width >= px(1120) else 28)),
-                      max(y0 + px(200), height - px(FOOTER + 10)))
-        self.footer_top = height - px(FOOTER)
-        self.nav = {name: (px(16), y0 + px(28 + 66 * i), x0, y0 + px(84 + 66 * i)) for i, (name, _) in enumerate(PAGES)}
-        self.separators = [(px(40), x0, y0 + px(89 + 66 * i)) for i in range(len(PAGES) - 1)]
-        if not self.art:
-            c.create_rectangle(0, self.footer_top, width, height, fill="#070d14", outline="", tags="layout")
-            c.create_line(0, self.footer_top, width, self.footer_top, fill=LINE, tags="layout")
-            c.create_rectangle(*self.panel, fill=PANEL, outline="#2d4a66", tags="layout")
-            for sx0, sx1, sy in self.separators:
-                c.create_line(sx0, sy, sx1, sy, fill=LINE, tags="layout")
-        if not (self.art and self.art.wordmark):
-            c.create_text(px(36), px(24), text="PORTAL 2", anchor="nw", font=self.fonts["logo"], fill=TEXT,
-                          tags="layout")
-            c.create_text(px(38), px(92), text=tracked("VR", 2), anchor="nw", font=self.fonts["logo_vr"],
-                          fill="#d6e2ee", tags="layout")
-        self._draw_nav()
+        c.create_rectangle(0, 0, width, px(96), fill=BG, outline="", tags=drag)
+        self.strip = art.accent_strip(self.root, width, px(2), BG)
+        c.create_image(0, 0, anchor="nw", image=self.strip, tags=drag)
+        self.close_button.draw(width - self.close_button.width(), px(2))
+        self.minimize_button.draw(width - 2 * self.close_button.width(), px(2))
+        c.create_image(margin + px(22), px(64), image=self.logo, tags=drag)
+        c.create_text(margin + px(56), px(41), text="Portal 2 VR", anchor="nw", font=self.fonts["title"], fill=TEXT,
+                      tags=drag)
+        self.subtitle = c.create_text(margin + px(56), px(68), anchor="nw", font=self.fonts["subtitle"], tags=drag)
+        x = width - margin - self.launch_button.width() - px(8)
+        self.launch_button.draw(x, px(47), self.launch_button.width() + px(8))
+        x -= self.apply_button.width() + px(10)
+        self.apply_button.draw(x, px(47))
+        self._draw_tabs(margin, px(100))
         self._draw_footer()
-        x0, y0, x1, y1 = self.panel
         for name, page in self.pages.items():
-            page.place((x0 + 1, y0 + 1, x1 - 1, y1 - 1), name == self.current)
-        if self.art:
-            self._render_backdrop()
+            page.place((margin, px(PAGES_TOP), width - margin, height - px(FOOTER)), name == self.current)
+        self._paint_header()
 
-    def _render_backdrop(self):
-        px, (x0, y0, x1, y1) = self.px, self.panel
-        self.backdrop_image = self.art.render(self.size, self.panel, self.footer_top, self.separators,
-                                              (px(34), px(2)), self.scale)
-        self.images = {"backdrop": art.photo(self.backdrop_image),
-                       "panel": art.photo(self.backdrop_image.crop((x0 + 1, y0 + 1, x1 - 1, y1 - 1)))}
-        self.canvas.itemconfigure(self.backdrop, image=self.images["backdrop"])
-        for page in self.pages.values():
-            page.canvas.itemconfigure(page.backdrop, image=self.images["panel"])
-        self._draw_nav()
+    def _draw_tabs(self, x, y):
+        c, px, height, pad = self.canvas, self.px, self.px(38), self.px(4)
+        widths = [self.fonts["tab"].measure(name) + px(36) for name in PAGES]
+        c.create_image(x, y, anchor="nw", image=self.box((sum(widths) + 2 * pad, height), px(10), BG, LINE), tags="layout")
+        boxes, cursor = {}, x + pad
+        for name, width in zip(PAGES, widths):
+            boxes[name] = (cursor, y + pad, cursor + width, y + height - pad)
+            c.create_rectangle(*boxes[name], fill=BG, outline="", tags=("layout", f"tab:{name}"))
+            cursor += width
+        self.tab_pill = c.create_image(0, 0, anchor="nw", tags="layout")
+        self.tabs = {name: (box, c.create_text((box[0] + box[2]) // 2, (box[1] + box[3]) // 2, text=name,
+                                               font=self.fonts["tab"], tags=("layout", f"tab:{name}")))
+                     for name, box in boxes.items()}
+        self._paint_tabs()
 
-    def _nav_state(self, name):
-        return "selected" if name == self.current else "hover" if name == self.nav_hover else "normal"
-
-    def _nav_image(self, name, state):
-        key = ("nav", name, state)
-        if key not in self.images:
-            crop = self.backdrop_image.crop(self.nav[name])
-            self.images[key] = art.photo(crop if state == "normal" else art.highlight(crop, self.scale, state == "selected"))
-        return self.images[key]
-
-    def _draw_nav(self):
-        c, px = self.canvas, self.px
-        c.delete("nav")
-        self.nav_items = {}
-        for name, glyph in PAGES:
-            x0, y0, x1, y1 = self.nav[name]
-            tags, cy = ("nav", f"nav:{name}"), (y0 + y1) // 2
-            if self.backdrop_image:
-                face, bar = c.create_image(x0, y0, anchor="nw", tags=tags), None
-            else:
-                face = c.create_rectangle(x0, y0, x1 - 1, y1 - 1, outline="", tags=tags)
-                bar = c.create_rectangle(x0, y0, x0 + px(4) - 1, y1 - 1, fill=ACCENT, outline="", tags=tags)
-            icon = c.create_text(x0 + px(32), cy, text=glyph if self.icons else "", font=self.fonts["nav_icon"], tags=tags)
-            label = c.create_text(x0 + px(78), cy, text=tracked(name), anchor="w", font=self.fonts["nav"], tags=tags)
-            self.nav_items[name] = (face, bar, icon, label)
-        self._paint_nav()
-
-    def _paint_nav(self):
+    def _paint_tabs(self):
         c = self.canvas
-        for name, (face, bar, icon, label) in self.nav_items.items():
-            state = self._nav_state(name)
-            if bar is None:
-                c.itemconfigure(face, image=self._nav_image(name, state))
-            else:
-                c.itemconfigure(face, fill={"selected": "#15324d", "hover": "#10263a", "normal": BG}[state])
-                c.itemconfigure(bar, state="normal" if state == "selected" else "hidden")
-            color = {"selected": ACCENT, "hover": "#ffffff", "normal": "#c9d6e2"}[state]
-            c.itemconfigure(icon, fill=color)
-            c.itemconfigure(label, fill=color)
+        for name, (box, label) in self.tabs.items():
+            c.itemconfigure(label, fill=TEXT if name in (self.current, self.tab_hover) else MUTED)
+            if name == self.current:
+                size = (box[2] - box[0], box[3] - box[1])
+                c.coords(self.tab_pill, box[0], box[1])
+                c.itemconfigure(self.tab_pill, image=self.box(size, self.px(7), "#262c36"))
 
-    def _hover_nav(self, name):
-        self.nav_hover = name
+    def _hover_tab(self, name):
+        self.tab_hover = name
         self.canvas.configure(cursor="hand2" if name and name != self.current else "")
-        self._paint_nav()
+        self._paint_tabs()
+
+    def _drag_start(self, event):
+        self.drag_offset = (event.x_root - self.root.winfo_x(), event.y_root - self.root.winfo_y())
+
+    def _drag(self, event):
+        self.root.geometry(f"+{event.x_root - self.drag_offset[0]}+{event.y_root - self.drag_offset[1]}")
+
+    def minimize(self):
+        # Tk refuses to iconify a window without a native frame.
+        import ctypes
+        ctypes.windll.user32.ShowWindow(int(self.root.wm_frame(), 16), 6)
 
     def show_page(self, name):
         self.current = name
         for page_name, page in self.pages.items():
             page.show(page_name == name)
+        # A page hidden under the pointer never receives its <Leave>.
+        for button in self.buttons:
+            if button.state != "normal":
+                button._set("normal")
         self.canvas.configure(cursor="")
-        self._paint_nav()
+        self._paint_tabs()
+        self._show_footer()
 
     def _draw_footer(self):
-        px = self.px
-        x, y = self.panel[2], self.footer_top + (px(FOOTER) - px(36)) // 2
-        for button in reversed(self.footer_buttons):
-            x -= button.width()
+        c, px, (width, height) = self.canvas, self.px, self.size
+        y = height - px(FOOTER) + px(12)
+        gap, widths = px(28), [link.width() for link in self.links]
+        x = (width - sum(widths) - gap * (len(widths) - 1)) // 2
+        for index, link in enumerate(self.links):
+            link.draw(x, y)
+            x += widths[index] + gap
+            if index < len(widths) - 1:
+                c.create_text(x - gap // 2, y + link.height // 2, text="•", font=self.fonts["link"], fill=EDGE,
+                              tags=("layout", "footer:Setup"))
+        x = px(MARGIN)
+        for button in self.form_actions:
             button.draw(x, y)
-            x -= px(14)
-        self.status_right = x - px(10)
+            x += button.width() + px(10)
+        self.save_button.draw(width - px(MARGIN) - self.save_button.width(), y)
+        self._show_footer()
         self._draw_status()
+
+    def _show_footer(self):
+        setup = self.current == "Setup"
+        self.canvas.itemconfigure("footer:Setup", state="normal" if setup else "hidden")
+        self.canvas.itemconfigure("footer:Settings", state="hidden" if setup else "normal")
 
     def _status_changed(self, *_):
         self.status_error, self._next_error = self._next_error, False
@@ -509,116 +554,151 @@ class Launcher:
         c.delete("status")
         if not self.size:
             return
-        cy, x = self.footer_top + px(FOOTER) // 2, px(36)
-        if self.icons:
-            c.create_text(x, cy, text=WARNING if self.status_error else INFO, anchor="w", font=self.fonts["icon"],
-                          fill=ORANGE if self.status_error else ACCENT, tags="status")
+        width, height = self.size
         full = self.status_var.get()
-        item = c.create_text(x + px(30), cy, text=full, anchor="w", width=max(px(120), self.status_right - x - px(30)),
-                             font=self.fonts["small"], fill=TEXT if self.status_error else MUTED, tags="status")
-        # Long messages are cut to fit the footer; errors are also shown in a dialog.
+        item = c.create_text(width // 2, height - px(40), text=full, anchor="n", justify="center",
+                             width=width - 2 * px(MARGIN), font=self.fonts["status"],
+                             fill=ORANGE if self.status_error else MUTED, tags="status")
+        # Long messages are cut to fit; errors are also shown in a dialog.
         length = len(full)
-        while length > 24 and c.bbox(item)[3] - c.bbox(item)[1] > px(FOOTER - 8):
+        while length > 24 and c.bbox(item)[3] > height - px(4):
             length = int(length * .85)
             c.itemconfigure(item, text=full[:length].rstrip() + "…")
 
+    def _paths_found(self):
+        game, steam = Path(self.game_var.get()), Path(self.steam_var.get())
+        return (game / "portal2.exe").is_file(), steam.is_file() and steam.name.lower() == "steam.exe"
+
+    def _paint_header(self):
+        text, color = ("Needs attention", ORANGE) if self.invalid or not all(self._paths_found()) else \
+            ("Unsaved changes", ORANGE) if self.dirty else \
+            ("Ready to play", MUTED) if self.installed else ("Not installed yet", MUTED)
+        self.canvas.itemconfigure(self.subtitle, text=text, fill=color)
+
+    def _elide(self, text, font, width):
+        """Cut the middle of a long path so both of its ends stay readable."""
+        font = self.fonts[font]
+        if font.measure(text) <= width:
+            return text
+        keep = len(text) // 2
+        while keep > 4 and font.measure(text[:keep] + "…" + text[-keep:]) > width:
+            keep -= 1
+        return text[:keep] + "…" + text[-keep:]
+
     def _text(self, canvas, x, y, right, text, font, fill):
         item = canvas.create_text(x, y, text=text, anchor="nw", width=max(1, right - x), font=self.fonts[font],
-                                  fill=fill, tags="layout")
+                                  fill=fill, tags=("layout", "row"))
         return canvas.bbox(item)[3]
 
-    def _heading(self, canvas, x, y, right, kicker, title):
-        canvas.create_text(x, y, text=tracked(kicker, 2), anchor="nw", font=self.fonts["kicker"], fill=ACCENT,
-                           tags="layout")
-        y = self._text(canvas, x, y + self.px(20), right, tracked(title), "title", TEXT) + self.px(8)
-        canvas.create_rectangle(x, y, x + self.px(56), y + self.px(2), fill=ACCENT, outline="", tags="layout")
-        return y + self.px(16)
+    def _card(self, canvas, top, bottom, width):
+        canvas.tag_lower(canvas.create_image(0, top, anchor="nw", tags="layout",
+                                             image=self.box((width, bottom - top), self.px(10), CARD, LINE)))
 
-    def _flow(self, buttons, x, y, right):
-        cursor = x
+    def _mark(self, canvas, x, y, state):
+        """Round status mark: blue check when ready, orange when it needs the user, empty otherwise."""
+        size = self.px(28)
+        fill, outline, glyph, color = {"ok": (TINT, "#27557c", "✓", BLUE), "warn": ("#3a2a18", "#6b4a23", "!", ORANGE),
+                                       "idle": (CARD, EDGE, "", MUTED)}[state]
+        canvas.create_image(x, y, anchor="nw", image=self.box((size, size), size // 2, fill, outline, CARD), tags="layout")
+        canvas.create_text(x + size // 2, y + size // 2, text=glyph, font=self.fonts["check"], fill=color, tags="layout")
+
+    def _setup_card(self, canvas, y, width, state, title, detail, buttons=(), badge=None, title_note=None, path=False):
+        px, pad = self.px, self.px(16)
+        text_x, right = pad + px(42), width - pad
         for button in buttons:
-            width = button.width()
-            if cursor > x and cursor + width > right:
-                cursor, y = x, y + button.height + self.px(12)
-            button.draw(cursor, y)
-            cursor += width + self.px(14)
-        return y + buttons[0].height
+            right -= button.width() + px(8)
+        if badge:
+            right -= self.fonts["button"].measure(badge[0]) + px(36)
+        right -= px(4)
+        if path:
+            detail = self._elide(detail, "detail", right - text_x)
+        title_item = canvas.create_text(text_x, y + px(15), text=title, anchor="nw", font=self.fonts["card"], fill=TEXT,
+                                        tags="layout")
+        if title_note:
+            canvas.create_text(canvas.bbox(title_item)[2] + px(10), y + px(16), text=title_note, anchor="nw",
+                               font=self.fonts["detail"], fill=ORANGE, tags="layout")
+        bottom = self._text(canvas, text_x, canvas.bbox(title_item)[3] + px(2), right, detail, "detail", MUTED) + px(15)
+        bottom = max(bottom, y + px(70))
+        center = (y + bottom) // 2
+        self._mark(canvas, pad, center - px(14), state)
+        x = width - pad
+        if badge:
+            text, fill, outline, color = badge
+            size = (self.fonts["button"].measure(text) + px(24), px(30))
+            x -= size[0]
+            canvas.create_image(x, center - size[1] // 2, anchor="nw", tags="layout",
+                                image=self.box(size, px(8), fill, outline, CARD))
+            canvas.create_text(x + size[0] // 2, center, text=text, font=self.fonts["button"], fill=color, tags="layout")
+            x -= px(14)
+        for button in reversed(buttons):
+            x -= button.width()
+            button.draw(x, center - button.height // 2)
+            x -= px(8)
+        self._card(canvas, y, bottom, width)
+        return bottom + px(10)
 
-    def _layout_play(self, page, width):
+    def _layout_setup(self, page, width):
         c, px = page.canvas, self.px
         c.delete("layout")
-        x, right = px(36), width - px(36)
-        y = self._heading(c, x, px(22), right, "Portal 2 VR", "Experience Portal 2 in virtual reality")
+        game_found, steam_found = self._paths_found()
+        y = self._setup_card(c, 0, width, "ok" if game_found else "warn", "Portal 2",
+                             str(Path(self.game_var.get())) if game_found else
+                             "portal2.exe is not in this folder. Choose your Portal 2 folder.",
+                             self.game_actions, path=game_found)
+        y = self._setup_card(c, y, width, "ok" if steam_found else "warn", "Steam",
+                             str(Path(self.steam_var.get())) if steam_found else
+                             "Choose steam.exe from your Steam folder.", self.steam_actions, path=steam_found)
+        y = self._setup_card(c, y, width, "ok" if self.installed else "idle", "Portal 2 VR mod",
+                             "Your original files are backed up." if self.installed else
+                             "Launch or Apply installs it and backs up your original files first.",
+                             (self.restore_button,) if self.installed else (),
+                             ("Installed", TINT, "#27557c", BLUE) if self.installed else ("Not installed", CARD, EDGE, MUTED))
         profile, _, note = self.profile_var.get().partition(" • ")
-        item = c.create_text(x, y, text=tracked(profile), anchor="nw", font=self.fonts["section"], fill=TEXT,
-                             tags="layout")
-        if note:
-            c.create_text(c.bbox(item)[2] + px(12), y, text=tracked("• " + note), anchor="nw",
-                          font=self.fonts["section"], fill=ORANGE, tags="layout")
-        y = self._text(c, x, y + px(24), right, self.summary_var.get(), "body", TEXT) + px(8)
-        y = self._text(c, x, y, right, "Use SteamVR / OpenVR. Start SteamVR and connect your headset before launching.",
-                       "muted", MUTED) + px(14)
-        self.launch_button.draw(x, y, right - x)
-        y = self._text(c, x, y + self.launch_button.height + px(8), right,
-                       "Launch applies these settings first. Restart the game after changing them.",
-                       "muted", MUTED) + px(18)
-        c.create_text(x, y, text=tracked("Game files"), anchor="nw", font=self.fonts["section"], fill=TEXT,
-                      tags="layout")
-        y += px(28)
-        browse_width = max(button.width() for _, _, button in self.path_rows)
-        for label, entry, browse in self.path_rows:
-            c.create_text(x, y + px(17), text=label, anchor="w", font=self.fonts["body"], fill=TEXT, tags="layout")
-            c.coords(entry, x + px(156), y)
-            c.itemconfigure(entry, width=max(px(80), right - browse_width - px(12) - x - px(156)), height=px(34))
-            browse.draw(right - browse_width, y - px(1), browse_width)
-            y += px(42)
-        y = self._flow(self.game_actions, x, y + px(2), right)
-        y = self._text(c, x, y + px(8), right,
-                       "Original files are backed up before first install. Updates keep that same snapshot.\n"
-                       "Restore removes only files created by the launcher and restores pre-existing files.",
-                       "muted", MUTED) + px(12)
-        return self._flow(self.diagnostics, x, y, right) + px(20)
+        y = self._setup_card(c, y, width, "warn" if self.invalid else "ok", profile, self.summary_var.get(),
+                             (self.customize_button,), title_note=note.capitalize() or None)
+        item = c.create_text(width // 2, y + px(4), text="Start SteamVR and connect your headset before launching.",
+                             anchor="n", font=self.fonts["detail"], fill=MUTED, tags="layout")
+        return c.bbox(item)[3] + px(6)
 
     def _layout_settings(self, page, width, advanced):
-        c, px, fonts = page.canvas, self.px, self.fonts
+        c, px = page.canvas, self.px
         c.delete("layout")
-        x, right = px(36), width - px(36)
-        y = self._heading(c, x, px(22), right, *(("Advanced", "Full mod configuration") if advanced else
-                                                  ("Settings", "Comfort and controls")))
-        y = self._text(c, x, y, right, "Changes take effect on your next Apply or Launch. "
-                       "Save alone does not touch the game.", "muted", MUTED) + px(6)
-        control_width = min(px(230), (right - x) // 3)
-        text_right, first = right - control_width - px(28), True
+        pad, y, top = px(16), 0, None
+        right, text_right = width - pad, width - pad - min(px(190), width // 3) - px(20)
         for group, item, control in page.rows:
             if group:
-                label = c.create_text(x, y + px(18), text=tracked(group), anchor="nw", font=fonts["section"],
-                                      fill=ACCENT, tags="layout")
-                x0, y0, x1, y1 = c.bbox(label)
-                c.create_line(x1 + px(14), (y0 + y1) // 2, right, (y0 + y1) // 2, fill=LINE, tags="layout")
-                y, first = y1 + px(16), True
+                if top is not None:
+                    self._card(c, top, y, width)
+                    y += px(14)
+                y = self._text(c, px(2), y, width, group, "group", BLUE) + px(6)
+                top, y, first = y, y + px(14), True
                 continue
             if not first:
-                c.create_line(x, y - px(9), right, y - px(9), fill=LINE, tags="layout")
-            first, top = False, y
-            bottom = self._text(c, x, y, text_right, item.label, "body", TEXT)
+                c.create_line(pad, y, right, y, fill=LINE, tags="layout")
+                y += px(13)
+            first, row = False, y
+            c.dtag("row")
+            bottom = self._text(c, pad, y, text_right, item.label, "row", TEXT)
             if advanced:
-                bottom = self._text(c, x, bottom + px(1), text_right, item.key, "mono", "#6f8aa3")
+                bottom = self._text(c, pad, bottom + px(1), text_right, item.key, "mono", "#6d7786")
             help_text = item.help
             if item.bounds:
                 low, high = item.bounds
                 help_text = f"Range: {low:g} to {high:g}. " + help_text
             if help_text:
-                bottom = self._text(c, x, bottom + px(3), text_right, help_text, "muted", MUTED)
+                bottom = self._text(c, pad, bottom + px(2), text_right, help_text.strip(), "help", MUTED)
+            height = control.height if isinstance(control, Toggle) else px(32)
+            if bottom - row < height:
+                c.move("row", 0, (height - (bottom - row)) // 2)
+                bottom = row + height
             if isinstance(control, Toggle):
-                control.draw(right - control.width, top)
-                bottom = max(bottom, top + control.height)
+                control.draw(right - control.width, (row + bottom - height) // 2)
             else:
-                control_x = right - (control_width if item.choices else px(130))
-                c.coords(control, control_x, top - px(5))
-                c.itemconfigure(control, width=right - control_x, height=px(32))
-                bottom = max(bottom, top + px(27))
-            y = bottom + px(18)
-        return y + px(8)
+                field_width = min(px(190), width // 3) if item.choices else px(110)
+                control.draw(right - field_width, (row + bottom - height) // 2, field_width, height)
+            y = bottom + px(13)
+        self._card(c, top, y, width)
+        return y + px(6)
 
     def preferences(self):
         return {"version": 1, "game_dir": self.game_var.get().strip(),
@@ -626,6 +706,7 @@ class Launcher:
                 "values": settings.validate_settings({key: var.get() for key, var in self.vars.items()})}
 
     def _changed(self, *_):
+        invalid = False
         try:
             prefs = self.preferences()
             recommended = prefs["values"] == settings.recommended_settings()
@@ -648,14 +729,17 @@ class Launcher:
                 features.append("controller haptics")
             elif values["ExperimentalPortalShotHaptics"] == "true":
                 features.append("portal shot haptics")
-            self.summary_var.set("  •  ".join(feature[:1].upper() + feature[1:] for feature in features))
+            # The no-break space keeps each bullet off the start of a wrapped line.
+            self.summary_var.set("  •  ".join(feature[:1].upper() + feature[1:] for feature in features))
         except ValueError as error:
-            dirty = True
+            dirty = invalid = True
             self.profile_var.set("Custom setup • needs attention")
             self.summary_var.set(str(error))
-        self.save_button.emphasis = dirty
+        self.dirty, self.invalid = dirty, invalid
+        self.save_button.style = "primary" if dirty else "outline"
         self.save_button.paint()
-        self.pages["Play"].relayout()
+        self._paint_header()
+        self.pages["Setup"].relayout()
 
     def _error(self, error):
         self._next_error = True
@@ -693,7 +777,7 @@ class Launcher:
         window.title("Config preview — not applied")
         window.geometry(f"{self.px(930)}x{self.px(640)}")
         dark_title_bar(window)
-        view = tk.Text(window, bg=FIELD, fg=TEXT, insertbackground=TEXT, selectbackground=ACCENT_DEEP,
+        view = tk.Text(window, bg=FIELD, fg=TEXT, insertbackground=TEXT, selectbackground="#24557d",
                        font=("Consolas", 10), wrap="none", padx=12, pady=12, bd=0, highlightthickness=0)
         scroll = ttk.Scrollbar(window, command=view.yview, style="Launcher.Vertical.TScrollbar")
         scroll.pack(side="right", fill="y")
@@ -727,7 +811,17 @@ class Launcher:
         # override later launcher edits.
         settings.retire_ingame_settings(Path(prefs["game_dir"]), self.ingame)
         self.ingame = {}
+        self._refresh_install()
         self._changed()
+
+    def _refresh_install(self):
+        try:
+            self.installed = bool(core.load_state(self.install_state_path)["managed_files"])
+        except (OSError, ValueError, RuntimeError):
+            return
+        self.restore_button._set("normal")  # Restoring removes the link from under the pointer.
+        self._paint_header()
+        self.pages["Setup"].relayout()
 
     def apply(self):
         try:
@@ -774,6 +868,8 @@ class Launcher:
             self.status_var.set("Original files restored. Settings and backup snapshot retained.")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             self._error(error)
+        finally:
+            self._refresh_install()
 
     def browse_game(self):
         path = filedialog.askdirectory(parent=self.root, title="Select the folder containing portal2.exe",
@@ -796,6 +892,9 @@ class Launcher:
         except (OSError, ValueError) as error:
             self._error(error)
 
+    def open_game(self):
+        self._open(Path(self.game_var.get()))
+
     def open_log(self):
         self._open(Path(self.game_var.get()) / "bin/portal2vr.log")
 
@@ -806,8 +905,11 @@ class Launcher:
         messagebox.showinfo("About Portal2VR", "Incremental modernization of Gistix/portal2vr.\n\n"
                             "Windows Portal 2, 32-bit runtime, SteamVR / OpenVR, modified DXVK.\n"
                             "Recommended: tested world aim line with original dynamic Portal reticle.\n\n"
+                            "Launch applies your settings first; restart the game after changing them.\n\n"
                             "Native robot_point_beam remains invisible. Experimental portal modes, floor/ceiling "
                             "comfort, performance and other headset coverage need further testing. No OpenXR.\n\n"
+                            "Original files are backed up before the first install and updates keep that snapshot. "
+                            "Restore removes only the files the launcher created.\n\n"
                             "Backups and preferences are local to this repository. Keep tools/.launcher-state.json "
                             "and tools/.launcher-backups together for recovery.", parent=self.root)
 
@@ -842,6 +944,7 @@ def package_self_test(report: Path) -> int:
             root = tk.Tk()
             root.withdraw()
             app = Launcher(root, REPO, folder / "preferences.json", state)
+            borderless_window(root)
             values = settings.recommended_settings()
             app.game_var.set(str(game))
             app.steam_var.set(str(steam))
@@ -872,12 +975,15 @@ def main():
         try:
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            # Its own taskbar identity; under pythonw the button would show Python's icon.
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(art.APP_ID)
         except (AttributeError, OSError):
             pass
     root = tk.Tk()
     root.withdraw()
     try:
         Launcher(root)
+        borderless_window(root)
     except (OSError, ValueError, RuntimeError) as error:
         messagebox.showerror("Portal2VR startup", f"{error}\n\nNo game files were changed. "
                              "Keep the state and backup files; do not delete them to repair an installation.", parent=root)

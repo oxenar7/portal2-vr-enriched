@@ -6,7 +6,7 @@ The name nods to the Aperture Science Enrichment Center and to what this fork ad
 
 This is an unofficial fan project, not affiliated with or endorsed by Valve. You need your own copy of Portal 2; no game files are included.
 
-**Experimental:** it has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070). Other headsets and machines are untested. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
+**Tested setup:** it has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070). Other headsets and machines are untested, so logs from them are welcome. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
 
 ## What's new in this fork
 

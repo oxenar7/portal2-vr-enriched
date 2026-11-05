@@ -42,8 +42,7 @@ The source snapshots are committed as ordinary files in this repository.
 Neither library requires Git submodule initialization to build Portal 2 VR Enriched.
 
 VR controller icons (instructor hints)
-  Source: an icon sheet the project owner supplied on 2026-11-05. Its
-  origin and license are unknown, and the sheet is not in this repository.
+  Source: an icon sheet the project owner supplied on 2026-11-05. Only the
+  cut icons are published; the sheet itself is not in this repository.
   Files: L4D2VR/hint_icons.h, generated from the sheet by
   tools/make_hint_icons.py.
-  Clear the rights to these icons before publishing a build that contains them.

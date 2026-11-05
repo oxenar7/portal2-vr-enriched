@@ -14,6 +14,8 @@ HAPTICS_DEFAULTS = {"Haptics": "true", "HapticsIntensity": "1", "HapticsNativeRu
 CROUCH_DEFAULTS = {"PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.25"}
 HELD_DEFAULTS = {"LaserCubeAimAssist": "true", "HeldObjectColumn": "false"}
 ANCHOR_DEFAULTS = {"HeldObjectAnchor": "true"}
+ZOOM_DEFAULTS = {"BinocularZoom": "true", "ZoomMagnification": "3",
+                 "ZoomWindowWidthMeters": "0.8", "ZoomDistanceMeters": "1"}
 
 
 class EyeHudSettingsTests(unittest.TestCase):
@@ -149,6 +151,26 @@ class EyeHudSettingsTests(unittest.TestCase):
             migrated = settings.load_preferences(path, {})
             self.assertEqual(migrated["values"], {**pre_anchor, "HeldObjectColumn": "true", **ANCHOR_DEFAULTS})
             self.assertEqual(path.read_bytes(), original)
+
+    def test_pre_zoom_preferences_gain_zoom_defaults(self):
+        pre_zoom = {k: v for k, v in settings.recommended_settings().items() if k not in ZOOM_DEFAULTS}
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original = json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                   "values": dict(pre_zoom, TurnSpeed="0.27")}).encode()
+            path.write_bytes(original)
+            migrated = settings.load_preferences(path, {})
+            self.assertEqual(migrated["values"], {**pre_zoom, "TurnSpeed": "0.27", **ZOOM_DEFAULTS})
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_zoom_defaults_match_the_mod_config(self):
+        template = Path(__file__).resolve().parents[1] / "L4D2VR/config.txt"
+        written = {line.split("=", 1)[0].strip(): line.split("=", 1)[1].split("#", 1)[0].strip()
+                   for line in template.read_text(encoding="utf-8").splitlines() if "=" in line}
+        recommended = settings.recommended_settings()
+        for key, value in ZOOM_DEFAULTS.items():
+            self.assertEqual(recommended[key], value, key)
+            self.assertEqual(written[key], value, key)
 
     def test_old_complete_schema_still_rejects_invalid_old_value(self):
         old_values = {k: v for k, v in settings.recommended_settings().items() if k not in NEW_DEFAULTS}

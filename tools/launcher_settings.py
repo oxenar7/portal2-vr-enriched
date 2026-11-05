@@ -100,6 +100,13 @@ SETTINGS = (
             help="How fast the captions catch up with your gaze. Higher is quicker."),
     Setting("HUDCaptionOpacityBoost", "Caption background opacity boost", "Captions", "3", bounds=(1, 4),
             help="Makes the caption box darker over bright scenes. 1 keeps the game's own transparency."),
+    Setting("BinocularZoom", "Binocular zoom", "Zoom", "true", ("false", "true"),
+            help="Hold the right stick in to look through binoculars. Also completes Portal 2's zoom lesson."),
+    Setting("ZoomMagnification", "Zoom magnification", "Zoom", "3", bounds=(1.5, 8),
+            help="How much larger things look through the binoculars."),
+    Setting("ZoomWindowWidthMeters", "Binocular window width (m)", "Zoom", "0.8", bounds=(.3, 1.5)),
+    Setting("ZoomDistanceMeters", "Binocular window distance (m)", "Zoom", "1", bounds=(.5, 3),
+            help="How far from your eyes the binocular window floats."),
     Setting("ExperimentalPortalShotHaptics", "Portal shot vibration", "Haptics", "false", ("false", "true")),
     Setting("PortalShotHapticAmplitude", "Vibration strength", "Haptics", "0.35", bounds=(0, 1)),
     Setting("PortalShotHapticDurationSeconds", "Vibration duration (seconds)", "Haptics", "0.05", bounds=(.01, .15)),
@@ -125,8 +132,9 @@ _HAPTICS_KEYS = frozenset(("Haptics", "HapticsIntensity", "HapticsNativeRumble",
 _CROUCH_KEYS = frozenset(("PhysicalCrouch", "PhysicalCrouchDropMeters"))
 _HELD_KEYS = frozenset(("LaserCubeAimAssist", "HeldObjectColumn"))
 _HELD_ANCHOR_KEYS = frozenset(("HeldObjectAnchor",))
+_ZOOM_KEYS = frozenset(("BinocularZoom", "ZoomMagnification", "ZoomWindowWidthMeters", "ZoomDistanceMeters"))
 # Key groups added after the first complete schema. A saved schema missing whole groups gains their defaults.
-_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS, _HELD_KEYS, _HELD_ANCHOR_KEYS)
+_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS, _HELD_KEYS, _HELD_ANCHOR_KEYS, _ZOOM_KEYS)
 
 
 # Options > VR in the game writes these keys to VR/ingame_settings.txt, which the mod

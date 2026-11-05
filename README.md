@@ -17,6 +17,8 @@ This is an unofficial fan project, not affiliated with or endorsed by Valve. You
 - **DXVK 2.6.8 (DXVK-GPLALL):** asynchronous pipelines and low-latency pacing, stereo frames no longer wait for the GPU to go idle.
 - **Steadier portal gun:** it pivots at its body, so it no longer shakes with your head.
 - **Readable captions:** an opaque backing, placed just below your gaze and following it.
+- **Button hints you can see:** Portal 2's on-screen hints now appear in the headset and show the controller button bound to that action in SteamVR, not a keyboard key.
+- **Binocular zoom:** hold the right stick in to look through a magnified binocular window. It also completes the game's zoom lesson.
 - **A small, clean launcher** that only needs the Python standard library when run from source.
 
 ## Getting started
@@ -50,7 +52,7 @@ These observations concern the tested installation, not every headset, game buil
 
 ### Configuration and recovery
 
-Settings provides tracking, movement, roomscale, turning and desktop-render options. Advanced exposes all current mod parameters with descriptions/bounds: caption placement, gun calibration, IPD/world scale, controller pitch, haptics, portal orientation, anti-aliasing, aiming and diagnostics. Invalid numbers and incompatible roomscale/muzzle settings are rejected before deployment. Preview config, on the Advanced page, shows what will be written.
+Settings provides tracking, movement, roomscale, turning and desktop-render options. Advanced exposes all current mod parameters with descriptions/bounds: caption placement, binocular zoom, gun calibration, IPD/world scale, controller pitch, haptics, portal orientation, anti-aliasing, aiming and diagnostics. Invalid numbers and incompatible roomscale/muzzle settings are rejected before deployment. Preview config, on the Advanced page, shows what will be written.
 
 ### In-game VR options
 

@@ -565,10 +565,14 @@ namespace dxvk {
      * Lifetime tracking would throw every shader *
      * library away after compiling it and redo   *
      * it inline at first use (40-80 ms); the     *
-     * game has address space to keep them.       */
+     * game has address space to keep them.       *
+     * 16x anisotropic filtering keeps floor and  *
+     * wall panels sharp at grazing angles, where *
+     * a headset shows lower modes as shimmer.    */
     { R"(\\portal2\.exe$)", {{
       { "dxvk.enableGraphicsPipelineLibrary", "Auto" },
       { "dxvk.trackPipelineLifetime",         "False" },
+      { "d3d9.samplerAnisotropy",             "16" },
     }} },
     /* Sonic Adventure 2                          */
     { R"(\\Sonic Adventure 2\\(launcher|sonic2app)\.exe$)", {{

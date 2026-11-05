@@ -418,6 +418,32 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(other.vars["HUDWidthMeters"].get(), "1.8")
         self.assertIn("Custom", other.profile_var.get())
 
+    def test_found_paths_fill_a_first_start_without_unsaved_changes(self):
+        legacy = core.load_state(self.state_path)
+        legacy.update(game_dir=r"Z:\missing\Portal 2", steam_exe=r"Z:\missing\steam.exe")
+        core.save_state(self.state_path, legacy)
+        asked = []
+        def find(game_dir, steam_exe):
+            asked.append((game_dir, steam_exe))
+            return str(self.game), str(self.steam)
+        other = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path, find_paths=find)
+        self.assertEqual(asked, [(r"Z:\missing\Portal 2", r"Z:\missing\steam.exe")])
+        self.assertEqual((other.game_var.get(), other.steam_var.get()), (str(self.game), str(self.steam)))
+        self.assertEqual(other._paths_found(), (True, True))
+        self.assertNotIn("unsaved", other.profile_var.get())
+        self.assertIn("Found Portal 2 and Steam automatically", other.status_var.get())
+        self.assertFalse(self.prefs_path.exists())
+        other.save()
+        saved = json.loads(self.prefs_path.read_text())
+        self.assertEqual((saved["game_dir"], saved["steam_exe"]), (str(self.game), str(self.steam)))
+
+    def test_path_lookup_failure_keeps_the_saved_paths(self):
+        def find(game_dir, steam_exe):
+            raise OSError("registry unavailable")
+        other = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path, find_paths=find)
+        self.assertEqual((other.game_var.get(), other.steam_var.get()), (str(self.game), str(self.steam)))
+        self.assertEqual(other.status_var.get(), "")
+
     def test_bad_dependency_blocks_apply_before_any_settings_or_game_write(self):
         self.app.vars["6DOF"].set("false")
         self.app.apply()

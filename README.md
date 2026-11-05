@@ -19,7 +19,7 @@ This is an unofficial fan project, not affiliated with or endorsed by Valve. You
 - **Readable captions:** an opaque backing, placed just below your gaze and following it.
 - **Button hints you can see:** Portal 2's on-screen hints now appear in the headset and show the controller button bound to that action in SteamVR, not a keyboard key.
 - **Binocular zoom:** hold the right stick in to look through a magnified binocular window. It also completes the game's zoom lesson.
-- **A small, clean launcher** that only needs the Python standard library when run from source.
+- **A small, clean launcher** that finds Portal 2 and Steam by itself, and only needs the Python standard library when run from source.
 
 ## Install
 
@@ -34,7 +34,7 @@ Then:
 
 1. Download `Portal2VR-Enriched-vX.Y.Z-win32.zip` from the [Releases](https://github.com/oxenar7/portal2-vr-enriched/releases) page and extract the whole ZIP to a folder you keep, for example in Documents. Python and build tools are not needed.
 2. Close Portal 2, connect your headset and open `Portal 2 VR Enriched Launcher.exe`. The launcher is not code-signed, so Windows may show "Windows protected your PC": choose **More info**, then **Run anyway**.
-3. Check the **Portal 2** and **Steam** rows. If one asks for a folder, press **Change** and pick the folder that contains `portal2.exe` (in Steam: right-click Portal 2 > Manage > Browse local files) or `steam.exe` in your Steam folder.
+3. The launcher finds Portal 2 and Steam by itself, including Steam libraries on other drives. If a row still asks for a folder, press **Change** and pick the folder that contains `portal2.exe` (in Steam: right-click Portal 2 > Manage > Browse local files) or `steam.exe` in your Steam folder.
 4. Press **Launch in VR**. The launcher backs up the game files it replaces, installs the mod and starts Portal 2 through Steam with the launch options it needs. SteamVR starts with the game. Next time, just press **Launch in VR** again.
 5. Optional: turn on subtitles in Portal 2's audio options to get captions in the headset.
 
@@ -164,7 +164,7 @@ Requirements: the same as above, plus a local build. The launcher requires Pytho
 
 1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
 2. Double-click **`Portal 2 VR Enriched Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal 2 VR Enriched Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
-3. Select the folder containing `portal2.exe` and your `steam.exe`. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
+3. Check the folder containing `portal2.exe` and your `steam.exe`; the launcher fills them in from Steam's registry entry and library list when the saved ones are missing. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
 4. Connect the headset and controllers, then click **Launch in VR**; SteamVR starts with the game. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
 5. Enable subtitles in Portal 2's own options if you want captions.
 

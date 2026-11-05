@@ -12,10 +12,12 @@ if not __package__:
     from tools import launcher_art as art, launcher_settings as settings, test_launcher_core as core
     from tools.test_launcher import game_is_running
     from tools.launcher_paths import application_root, prepare_frozen_process
+    from tools.steam_paths import find_installation
 else:
     from . import launcher_art as art, launcher_settings as settings, test_launcher_core as core
     from .test_launcher import game_is_running
     from .launcher_paths import application_root, prepare_frozen_process
+    from .steam_paths import find_installation
 
 
 REPO = application_root()
@@ -286,11 +288,25 @@ class Page:
 class Launcher:
     def __init__(self, root: tk.Tk, repo: Path = REPO,
                  preferences_path: Path = PREFERENCES_PATH,
-                 install_state_path: Path = INSTALL_STATE_PATH):
+                 install_state_path: Path = INSTALL_STATE_PATH, find_paths=None):
         self.root, self.repo = root, repo
         self.preferences_path, self.install_state_path = preferences_path, install_state_path
         legacy = core.load_state(install_state_path)
         prefs = settings.load_preferences(preferences_path, legacy)
+        # Missing or stale paths are filled in from Steam's own records. They count
+        # as the saved paths, so a first start shows no unsaved changes; they are
+        # written on Save, Apply or Launch, and installing still asks first.
+        found = ""
+        if find_paths:
+            try:
+                game_dir, steam_exe = find_paths(prefs["game_dir"], prefs["steam_exe"])
+            except (OSError, ValueError):
+                game_dir, steam_exe = prefs["game_dir"], prefs["steam_exe"]
+            names = [name for name, old, new in (("Portal 2", prefs["game_dir"], game_dir),
+                                                  ("Steam", prefs["steam_exe"], steam_exe)) if old != new]
+            if names:
+                prefs = {**prefs, "game_dir": game_dir, "steam_exe": steam_exe}
+                found = f"Found {' and '.join(names)} automatically."
         self.saved = prefs
         self.installed = bool(legacy["managed_files"])
         self.game_var = tk.StringVar(root, prefs["game_dir"])
@@ -303,7 +319,7 @@ class Launcher:
         changed = sum(values[key] != prefs["values"][key] for key in values)
         self.status_var = tk.StringVar(root, (
             f"Loaded {changed} setting(s) changed in game under Options > VR. "
-            "Save, Apply or Launch to keep them here.") if changed else "")
+            "Save, Apply or Launch to keep them here.") if changed else found)
         self.status_error = self._next_error = False
         self.dirty, self.invalid = False, False
         self.root.title("Portal 2 VR Enriched Launcher")
@@ -999,7 +1015,7 @@ def main():
     root = tk.Tk()
     root.withdraw()
     try:
-        Launcher(root)
+        Launcher(root, find_paths=find_installation)
         borderless_window(root)
     except (OSError, ValueError, RuntimeError) as error:
         messagebox.showerror("Portal 2 VR Enriched startup", f"{error}\n\nNo game files were changed. "

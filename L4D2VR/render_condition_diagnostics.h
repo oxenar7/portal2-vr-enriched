@@ -10,7 +10,7 @@ enum class RenderCondition : std::size_t
     Bridge, BackBufferCapture, BackBufferImage, BackBufferDimensions, BackBufferDevice,
     RenderContext, Allocation, RetryBudget, MenuSubmit, StereoSubmit,
     HudSubmit, PresentOwnership, LeftShare, RightShare, HudShare, BlankShare,
-    ResourceDrain, MenuDetach, HudDetach, Count
+    ResourceDrain, MenuDetach, HudDetach, ZoomShare, ZoomSubmit, ZoomDetach, Count
 };
 
 enum class RenderConditionChange { None, Failure, DetailsChanged, Recovery, Ready };

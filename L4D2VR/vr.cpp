@@ -195,6 +195,7 @@ VR::VR(Game *game)
     }
     if (m_Config.experimentalHudOverlay)
         CreateExperimentalHUDOverlay();
+    CreateZoomOverlay();
 
     if (!UpdatePosesAndActions()) {
         Game::errorMsg("Initial OpenVR pose/action update failed.");
@@ -219,6 +220,11 @@ VR::~VR()
         const auto result = m_Overlay->DestroyOverlay(m_HUDHandle);
         if (result != vr::VROverlayError_None)
             Logger::Write("HUD overlay cleanup failed: " + std::to_string(result));
+    }
+    if (m_Overlay && m_ZoomHandle != vr::k_ulOverlayHandleInvalid) {
+        const auto result = m_Overlay->DestroyOverlay(m_ZoomHandle);
+        if (result != vr::VROverlayError_None)
+            Logger::Write("Binocular zoom overlay cleanup failed: " + std::to_string(result));
     }
     if (m_Overlay && m_MainMenuHandle != vr::k_ulOverlayHandleInvalid) {
         const auto result = m_Overlay->DestroyOverlay(m_MainMenuHandle);
@@ -273,6 +279,10 @@ void VR::CreateExperimentalHUDOverlay()
         m_HUDHandle = vr::k_ulOverlayHandleInvalid;
         return;
     }
+    // Captions and hints stay readable over the binocular window (order 0).
+    const auto sortError = m_Overlay->SetOverlaySortOrder(m_HUDHandle, 1);
+    if (sortError != vr::VROverlayError_None)
+        Logger::Write("Experimental HUD overlay sort order failed: " + std::to_string(sortError));
     Logger::Write("EXPERIMENTAL HUD overlay created: " +
         std::to_string(m_Config.hudWidthMeters) + "m wide, " +
         std::to_string(m_Config.hudDistanceMeters) +
@@ -328,6 +338,7 @@ bool VR::SetActionManifest(const char *fileName)
     GET_ACTION(m_Scoreboard, "Scoreboard");
     GET_ACTION(m_ShowHUD, "ShowHUD");
     GET_ACTION(m_Pause, "Pause");
+    GET_ACTION(m_ActionZoom, "Zoom");
 #undef GET_ACTION
 
     const auto setError = m_Input->GetActionSetHandle("/actions/main", &m_ActionSet);
@@ -536,7 +547,7 @@ void VR::PerfNoteCompiler(const PerfStats::CompilerCounts &counts)
         m_PerfFrameCompilerBusy = true;
 }
 
-unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[3]) const
+unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[4]) const
 {
     // Menus submit the back buffer through an overlay and MSAA eyes submit
     // their resolve image; both keep the device drain.
@@ -548,6 +559,8 @@ unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[3]) const
     surfaces[count++] = m_D9RightEyeSurface;
     if (m_Config.experimentalHudOverlay && m_D9HUDSurface)
         surfaces[count++] = m_D9HUDSurface;
+    if (m_ZoomRendered && m_ZoomMasked && m_D9ZoomSurface)
+        surfaces[count++] = m_D9ZoomSurface;
     return count;
 }
 
@@ -714,9 +727,19 @@ bool VR::InvalidateD3DResources(bool deviceReset)
     m_RenderedNewFrame = false;
     m_RenderedHud = false;
     m_HUDBoundsReady = false;
+    m_ZoomRendered = m_ZoomMasked = false;
     return RetireVRResources([&] {
         const bool menuDetached = DetachBackBufferOverlay();
-        bool hudDetached = true;
+        bool hudDetached = true, zoomDetached = true;
+        if (m_Overlay && m_ZoomHandle != vr::k_ulOverlayHandleInvalid) {
+            const VRSubmissionScope queue(m_D3DVR);
+            m_Overlay->HideOverlay(m_ZoomHandle);
+            const auto zoomError = m_Overlay->ClearOverlayTexture(m_ZoomHandle);
+            zoomDetached = zoomError == vr::VROverlayError_None;
+            if (m_RenderConditions.Observe(RenderCondition::ZoomDetach, !zoomDetached,
+                    {static_cast<std::uint64_t>(zoomError)}) != RenderConditionChange::None)
+                Logger::Write("Binocular zoom texture detach: error=" + std::to_string(zoomError));
+        }
         if (m_Overlay && m_HUDHandle != vr::k_ulOverlayHandleInvalid) {
             const VRSubmissionScope queue(m_D3DVR);
             m_Overlay->HideOverlay(m_HUDHandle);
@@ -730,7 +753,7 @@ bool VR::InvalidateD3DResources(bool deviceReset)
             const VRSubmissionScope queue(m_D3DVR);
             vr::VRCompositor()->ClearLastSubmittedFrame();
         }
-        return menuDetached && hudDetached;
+        return menuDetached && hudDetached && zoomDetached;
     }, [&] {
         const HRESULT result = m_D3DVR ? m_D3DVR->WaitDeviceIdle() : D3D_OK;
         if (m_RenderConditions.Observe(RenderCondition::ResourceDrain, FAILED(result),
@@ -748,14 +771,16 @@ bool VR::InvalidateD3DResources(bool deviceReset)
     releaseSurface(m_D9RightEyeSurface);
     releaseSurface(m_D9HUDSurface);
     releaseSurface(m_D9BlankSurface);
+    releaseSurface(m_D9ZoomSurface);
     m_VKLeftEye.m_VRTexture.handle = nullptr;
     m_VKRightEye.m_VRTexture.handle = nullptr;
     m_VKHUD.m_VRTexture.handle = nullptr;
     m_VKBlankTexture.m_VRTexture.handle = nullptr;
+    m_VKZoom.m_VRTexture.handle = nullptr;
     m_VKBackBuffer.m_VRTexture.handle = nullptr;
     // Named Source textures are borrowed material-system objects. Only the
     // GetSurfaceLevel references above belong to the mod.
-    m_LeftEyeTexture = m_RightEyeTexture = m_HUDTexture = m_BlankTexture = nullptr;
+    m_LeftEyeTexture = m_RightEyeTexture = m_HUDTexture = m_BlankTexture = m_ZoomTexture = nullptr;
     if (deviceReset && m_D3DVR) m_D3DVR->DiscardBackBufferAfterDrain();
     });
 }
@@ -852,7 +877,11 @@ void VR::CreateVRTextures()
     
     m_CreatingTextureID = Texture_Blank;
     m_BlankTexture = m_Game->m_MaterialSystem->CreateNamedRenderTargetTextureEx("blankTexture", 512, 512, RT_SIZE_NO_CHANGE, m_Game->m_MaterialSystem->GetBackBufferFormat(), MATERIAL_RT_DEPTH_SHARED, TEXTUREFLAGS_NOMIP);
-    
+
+    // Optional: stereo never waits on it. Alpha carries the lens outline.
+    m_CreatingTextureID = Texture_Zoom;
+    m_ZoomTexture = m_Game->m_MaterialSystem->CreateNamedRenderTargetTextureEx("vrZoom", BinocularZoom::kTextureWidth, BinocularZoom::kTextureHeight, RT_SIZE_NO_CHANGE, IMAGE_FORMAT_BGRA8888, MATERIAL_RT_DEPTH_SEPARATE, TEXTUREFLAGS_NOMIP);
+
     m_CreatingTextureID = Texture_None;
 
     m_Game->m_MaterialSystem->EndRenderTargetAllocation();
@@ -887,6 +916,11 @@ void VR::CreateVRTextures()
     if (m_Config.experimentalHudOverlay &&
         (!m_HUDTexture || !m_VKHUD.m_VRTexture.handle))
         Logger::Write("Experimental HUD: render target or Vulkan share unavailable; overlay stays hidden");
+    Logger::Write("Binocular zoom target " + std::to_string(BinocularZoom::kTextureWidth) + "x" +
+            std::to_string(BinocularZoom::kTextureHeight) + ": texture=" + std::to_string(m_ZoomTexture != nullptr) +
+            " surface=" + std::to_string(m_D9ZoomSurface != nullptr) +
+            " shared=" + std::to_string(m_VKZoom.m_VRTexture.handle != nullptr) +
+            (m_ZoomTexture && m_VKZoom.m_VRTexture.handle ? "" : "; zoom unavailable"));
 
     const RenderTargetReadiness readiness{
         {m_LeftEyeTexture != nullptr, m_D9LeftEyeSurface != nullptr,
@@ -936,13 +970,17 @@ void VR::SubmitVRTextures()
             m_Overlay->HideOverlay(m_MainMenuHandle);
             if (m_HUDHandle != vr::k_ulOverlayHandleInvalid)
                 m_Overlay->HideOverlay(m_HUDHandle);
+            if (m_ZoomHandle != vr::k_ulOverlayHandleInvalid)
+                m_Overlay->HideOverlay(m_ZoomHandle);
         }
         m_RenderedNewFrame = false;
         m_RenderedHud = false;
+        m_ZoomRendered = m_ZoomMasked = false;
         ReleaseMenuMouse();
         return;
     }
     SubmitExperimentalHUDOverlay();
+    SubmitZoomOverlay();
     m_RenderedHud = false;
     if (!m_RenderedNewFrame)
     {
@@ -1084,6 +1122,7 @@ bool VR::PlaceExperimentalHUDOverlay()
         m_HUDHeadLocked = m_Overlay->SetOverlayTransformTrackedDeviceRelative(
             m_HUDHandle, vr::k_unTrackedDeviceIndex_Hmd, &transform) == vr::VROverlayError_None;
         m_CaptionFollow.Reset();
+        m_HUDFollowPose.reset();
         return m_HUDHeadLocked;
     }
 
@@ -1105,7 +1144,81 @@ bool VR::PlaceExperimentalHUDOverlay()
         return false;
     }
     m_HUDHeadLocked = false;
+    m_HUDFollowPose = pose;
     return true;
+}
+
+std::optional<InstructorHints::Glyph> VR::HintGlyphForBinding(const char *binding)
+{
+    using InstructorHints::Action;
+    const Action action = InstructorHints::ActionForBinding(binding);
+    vr::VRActionHandle_t handle = vr::k_ulInvalidActionHandle;
+    switch (action) {
+    case Action::Jump: handle = m_ActionJump; break;
+    case Action::Use: handle = m_ActionUse; break;
+    case Action::Crouch: handle = m_ActionCrouch; break;
+    case Action::PrimaryAttack: handle = m_ActionPrimaryAttack; break;
+    case Action::SecondaryAttack: handle = m_ActionSecondaryAttack; break;
+    case Action::Reload: handle = m_ActionReload; break;
+    case Action::Zoom: handle = m_ActionZoom; break;
+    default: return std::nullopt;
+    }
+    if (!m_IsVREnabled || !m_Input || handle == vr::k_ulInvalidActionHandle)
+        return std::nullopt;
+
+    // Bindings can change in the SteamVR dashboard while the game runs.
+    auto &cache = m_HintGlyphs[static_cast<std::size_t>(action)];
+    const auto now = std::chrono::steady_clock::now();
+    if (cache.checked && now - cache.at < std::chrono::seconds(3))
+        return cache.glyph;
+    vr::InputBindingInfo_t bindings[4]{};
+    uint32_t count = 0;
+    const auto error = m_Input->GetActionBindingInfo(handle, bindings, sizeof(bindings[0]),
+        static_cast<uint32_t>(std::size(bindings)), &count);
+    std::optional<InstructorHints::Glyph> glyph;
+    std::string source = "none";
+    if (error == vr::VRInputError_None) {
+        for (uint32_t i = 0; i < count && i < std::size(bindings) && !glyph; ++i) {
+            glyph = InstructorHints::GlyphForInput(bindings[i].rchDevicePathName, bindings[i].rchInputPathName,
+                bindings[i].rchSlotName);
+            source = std::string(bindings[i].rchDevicePathName) + bindings[i].rchInputPathName + " " +
+                bindings[i].rchModeName + "/" + bindings[i].rchSlotName;
+        }
+    }
+    if (!cache.checked || cache.glyph != glyph)
+        Logger::Write(std::string("Instructor hint: ") + binding + " -> " + source + " (error " +
+            std::to_string(error) + ", " + std::to_string(count) + " binding(s)); " +
+            (glyph ? std::string("VR icon ") + InstructorHints::GlyphName(*glyph) : std::string("native key icon")));
+    cache = {true, now, glyph};
+    return glyph;
+}
+
+VR::HintProjection VR::ProjectHintToHud(const Vector &world, int windowWidth, int windowHeight)
+{
+    const auto &hmdPose = m_Poses[vr::k_unTrackedDeviceIndex_Hmd];
+    if (!m_IsVREnabled || !m_TrackingOutputValid || !m_HUDBoundsReady || !hmdPose.bPoseIsValid)
+        return {};
+    const auto &hmd = hmdPose.mDeviceToAbsoluteTracking.m;
+    float overlay[3][4];
+    if (m_Config.hudLazyFollow) {
+        if (!m_HUDFollowPose)
+            return {};
+        std::memcpy(overlay, m_HUDFollowPose->m, sizeof(overlay));
+    } else {
+        // Head-locked at (0, HUDVerticalOffsetMeters, -HUDDistanceMeters) in HMD space.
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column)
+                overlay[row][column] = hmd[row][column];
+            overlay[row][3] = hmd[row][3] + hmd[row][1] * m_Config.hudVerticalOffsetMeters -
+                hmd[row][2] * m_Config.hudDistanceMeters;
+        }
+    }
+    const Vector origin = GetViewOrigin(m_SetupOrigin);
+    const InstructorHints::HeadFrame head{{origin.x, origin.y, origin.z},
+        {m_HmdForward.x, m_HmdForward.y, m_HmdForward.z}, {m_HmdRight.x, m_HmdRight.y, m_HmdRight.z},
+        {m_HmdUp.x, m_HmdUp.y, m_HmdUp.z}, m_VRScale};
+    return {true, InstructorHints::ProjectToOverlay({world.x, world.y, world.z}, head, hmd, overlay,
+        m_Config.hudWidthMeters, windowWidth, windowHeight)};
 }
 
 void VR::BoostHUDAlpha(IDirect3DDevice9 *device)
@@ -1186,6 +1299,250 @@ void VR::BoostHUDAlpha(IDirect3DDevice9 *device)
             " applied to " + std::to_string(desc.Width) + "x" + std::to_string(desc.Height) +
             " HUD surface: hr=" + std::to_string(drawResult));
     }
+}
+
+void VR::CreateZoomOverlay()
+{
+    const auto created = m_Overlay->CreateOverlay("Portal2VR.Zoom", "Portal 2 VR Enriched Binoculars", &m_ZoomHandle);
+    if (created != vr::VROverlayError_None) {
+        Logger::Write(std::string("Binocular zoom overlay unavailable: ") +
+            m_Overlay->GetOverlayErrorNameFromEnum(created));
+        m_ZoomHandle = vr::k_ulOverlayHandleInvalid;
+        return;
+    }
+    const vr::VRTextureBounds_t bounds{0.0f, 0.0f, 1.0f, 1.0f};
+    const auto inputError = m_Overlay->SetOverlayInputMethod(m_ZoomHandle, vr::VROverlayInputMethod_None);
+    const auto boundsError = m_Overlay->SetOverlayTextureBounds(m_ZoomHandle, &bounds);
+    const auto sortError = m_Overlay->SetOverlaySortOrder(m_ZoomHandle, 0);
+    if (inputError != vr::VROverlayError_None || boundsError != vr::VROverlayError_None ||
+        sortError != vr::VROverlayError_None) {
+        Logger::Write("Binocular zoom overlay setup failed: " + std::to_string(inputError) + "," +
+            std::to_string(boundsError) + "," + std::to_string(sortError));
+        m_Overlay->DestroyOverlay(m_ZoomHandle);
+        m_ZoomHandle = vr::k_ulOverlayHandleInvalid;
+        return;
+    }
+    Logger::Write("Binocular zoom overlay created");
+}
+
+bool VR::ZoomViewWanted() const
+{
+    return m_ZoomHold.Active() && m_Config.binocularZoom && m_ZoomHandle != vr::k_ulOverlayHandleInvalid &&
+        m_ZoomTexture && m_D9ZoomSurface && TextureSubmissionReady(m_VKZoom);
+}
+
+float VR::ZoomFovDegrees() const
+{
+    return BinocularZoom::RenderFovDegrees(m_Config.zoomWindowWidthMeters, m_Config.zoomDistanceMeters,
+        m_Config.zoomMagnification);
+}
+
+void VR::NoteZoomRendered(double milliseconds)
+{
+    m_ZoomRendered = true;
+    m_ZoomMasked = false;
+    ++m_ZoomFrames;
+    m_ZoomRenderMs += milliseconds;
+    m_ZoomWorstMs = (std::max)(m_ZoomWorstMs, milliseconds);
+}
+
+void VR::MaskZoomView(IDirect3DDevice9 *device)
+{
+    m_ZoomMasked = false;
+    if (!device || !m_ZoomRendered || !m_D9ZoomSurface)
+        return;
+
+    // The scene leaves arbitrary alpha in the target. Rewrite alpha to the
+    // lens outline and darken the rim, with the same state discipline as
+    // BoostHUDAlpha: Source caches device state, so all of it is restored.
+    IDirect3DStateBlock9 *saved = nullptr;
+    if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved)) || !saved) {
+        if (m_RenderDiagnostics.First(RenderDiagnosticEvent::ZoomStateBlockUnavailable))
+            Logger::Write("Binocular zoom: state block unavailable; window stays hidden");
+        return;
+    }
+    D3DSURFACE_DESC desc{};
+    m_D9ZoomSurface->GetDesc(&desc);
+    if (m_ZoomMask.lenses.empty())
+        m_ZoomMask = BinocularZoom::MaskFor(static_cast<int>(desc.Width), static_cast<int>(desc.Height));
+    IDirect3DSurface9 *oldTarget = nullptr, *oldDepth = nullptr;
+    device->GetRenderTarget(0, &oldTarget);
+    device->GetDepthStencilSurface(&oldDepth);
+
+    device->SetRenderTarget(0, m_D9ZoomSurface);
+    device->SetDepthStencilSurface(nullptr);
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetTexture(0, nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+    device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+    device->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    device->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+
+    HRESULT result = D3D_OK;
+    const auto draw = [&](const std::vector<BinocularZoom::Vertex> &triangles) {
+        if (SUCCEEDED(result) && !triangles.empty())
+            result = device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, static_cast<UINT>(triangles.size() / 3),
+                triangles.data(), sizeof(triangles[0]));
+    };
+    // 1. Transparent everywhere.
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_ALPHA);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+    const float w = static_cast<float>(desc.Width) - 0.5f, h = static_cast<float>(desc.Height) - 0.5f;
+    const BinocularZoom::Vertex clear[6] = {{-0.5f, -0.5f, 0, 1, 0}, {w, -0.5f, 0, 1, 0}, {-0.5f, h, 0, 1, 0},
+                                            {w, -0.5f, 0, 1, 0}, {w, h, 0, 1, 0}, {-0.5f, h, 0, 1, 0}};
+    draw(std::vector<BinocularZoom::Vertex>(std::begin(clear), std::end(clear)));
+    // 2. Opaque lenses; MAX keeps their overlap and soft edges right.
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_MAX);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+    draw(m_ZoomMask.lenses);
+    // 3. Dark rim, each lens clipped to its own side of the seam.
+    device->SetRenderState(D3DRS_COLORWRITEENABLE,
+        D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+    device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetRenderState(D3DRS_SCISSORTESTENABLE, TRUE);
+    const LONG seam = static_cast<LONG>(desc.Width / 2);
+    const RECT left{0, 0, seam, static_cast<LONG>(desc.Height)};
+    const RECT right{seam, 0, static_cast<LONG>(desc.Width), static_cast<LONG>(desc.Height)};
+    device->SetScissorRect(&left);
+    draw(m_ZoomMask.leftShade);
+    device->SetScissorRect(&right);
+    draw(m_ZoomMask.rightShade);
+
+    device->SetRenderTarget(0, oldTarget);
+    device->SetDepthStencilSurface(oldDepth);
+    saved->Apply(); // after the targets: SetRenderTarget resets the viewport
+    saved->Release();
+    if (oldTarget) oldTarget->Release();
+    if (oldDepth) oldDepth->Release();
+    m_ZoomMasked = SUCCEEDED(result);
+    if (m_RenderDiagnostics.First(m_ZoomMasked ? RenderDiagnosticEvent::ZoomMaskApplied :
+            RenderDiagnosticEvent::ZoomMaskFailed))
+        Logger::Write("Binocular zoom lens mask on " + std::to_string(desc.Width) + "x" +
+            std::to_string(desc.Height) + " surface (format " + std::to_string(desc.Format) +
+            "): hr=" + HRESULTText(result) + (m_ZoomMasked ? "" : "; window stays hidden"));
+}
+
+void VR::SubmitZoomOverlay()
+{
+    const bool show = m_Overlay && m_ZoomHandle != vr::k_ulOverlayHandleInvalid && m_ZoomRendered &&
+        m_ZoomMasked && m_RenderedNewFrame && m_CreatedVRTextures && m_ZoomHold.Active() &&
+        TextureSubmissionReady(m_VKZoom) && !m_Game->m_VguiSurface->IsCursorVisible();
+    m_ZoomRendered = m_ZoomMasked = false;
+    if (!m_Overlay || m_ZoomHandle == vr::k_ulOverlayHandleInvalid)
+        return;
+    if (!show) {
+        if (m_Overlay->IsOverlayVisible(m_ZoomHandle))
+            m_Overlay->HideOverlay(m_ZoomHandle);
+        return;
+    }
+    const VRSubmissionScope queue(m_D3DVR);
+    vr::EVROverlayError placeError = vr::VROverlayError_None, widthError = vr::VROverlayError_None;
+    if (!m_Overlay->IsOverlayVisible(m_ZoomHandle)) {
+        // Placed when it opens, so config reloads apply on the next look.
+        vr::HmdMatrix34_t transform{};
+        transform.m[0][0] = transform.m[1][1] = transform.m[2][2] = 1.0f;
+        transform.m[2][3] = -m_Config.zoomDistanceMeters; // OpenVR HMD forward is -Z
+        placeError = m_Overlay->SetOverlayTransformTrackedDeviceRelative(
+            m_ZoomHandle, vr::k_unTrackedDeviceIndex_Hmd, &transform);
+        widthError = m_Overlay->SetOverlayWidthInMeters(m_ZoomHandle, m_Config.zoomWindowWidthMeters);
+    }
+    const auto textureError = m_Overlay->SetOverlayTexture(m_ZoomHandle, &m_VKZoom.m_VRTexture);
+    const bool ready = placeError == vr::VROverlayError_None && widthError == vr::VROverlayError_None &&
+        textureError == vr::VROverlayError_None;
+    const auto showError = ready ? m_Overlay->ShowOverlay(m_ZoomHandle) : textureError;
+    const bool failed = !ready || showError != vr::VROverlayError_None;
+    if (m_RenderConditions.Observe(RenderCondition::ZoomSubmit, failed,
+            {static_cast<std::uint64_t>(placeError), static_cast<std::uint64_t>(widthError),
+             static_cast<std::uint64_t>(textureError), static_cast<std::uint64_t>(showError)}, true) !=
+            RenderConditionChange::None)
+        Logger::Write("Binocular zoom overlay submission: place=" + std::to_string(placeError) +
+            " width=" + std::to_string(widthError) + " texture=" + std::to_string(textureError) +
+            " visibility=" + std::to_string(showError));
+    if (failed)
+        m_Overlay->HideOverlay(m_ZoomHandle);
+}
+
+void VR::ProcessZoomInput()
+{
+    if (!m_ZoomBindingLogged) {
+        // SteamVR bindings saved before this action existed leave it unbound.
+        m_ZoomBindingLogged = true;
+        vr::InputBindingInfo_t bindings[2]{};
+        uint32_t count = 0;
+        const auto error = m_Input->GetActionBindingInfo(m_ActionZoom, bindings, sizeof(bindings[0]),
+            static_cast<uint32_t>(std::size(bindings)), &count);
+        std::string where;
+        for (uint32_t i = 0; i < count && i < std::size(bindings); ++i)
+            where += std::string(i ? ", " : "") + bindings[i].rchDevicePathName + bindings[i].rchInputPathName +
+                " (" + bindings[i].rchModeName + ")";
+        Logger::Write("Binocular zoom action: " + (where.empty() ? std::string("unbound") : where) +
+            " (error " + std::to_string(error) + ")" +
+            (m_Config.binocularZoom ? "" : "; BinocularZoom=false"));
+    }
+    vr::InputDigitalActionData_t click{};
+    const auto clickError = m_Input->GetDigitalActionData(m_ActionZoom, &click, sizeof(click),
+        vr::k_ulInvalidInputValueHandle);
+    const bool pressed = m_Config.binocularZoom && clickError == vr::VRInputError_None &&
+        click.bActive && click.bState;
+    vr::InputAnalogActionData_t stick{};
+    if (!GetAnalogActionData(m_ActionTurn, stick))
+        stick = {};
+    switch (m_ZoomHold.Update(pressed, stick.x, stick.y)) {
+    case BinocularZoom::Hold::Change::Started:
+        m_ZoomFrames = 0;
+        m_ZoomRenderMs = m_ZoomWorstMs = 0.0;
+        m_ZoomStart = std::chrono::steady_clock::now();
+        // Portal 2's own zoom: no visible effect in the headset, but the
+        // instructor lesson for it completes.
+        m_Game->ClientCmd_Unrestricted("+zoom");
+        Logger::Write("Binocular zoom on: x" + std::to_string(m_Config.zoomMagnification) + ", " +
+            std::to_string(m_Config.zoomWindowWidthMeters) + " m window at " +
+            std::to_string(m_Config.zoomDistanceMeters) + " m, view fov " + std::to_string(ZoomFovDegrees()) +
+            " deg");
+        break;
+    case BinocularZoom::Hold::Change::Ignored:
+        if (m_RenderDiagnostics.First(RenderDiagnosticEvent::ZoomClickWhileTurning))
+            Logger::Write("Binocular zoom: right stick click ignored while the stick is pushed to " +
+                std::to_string(stick.x) + "," + std::to_string(stick.y) + " (turning); later ones are not logged");
+        break;
+    case BinocularZoom::Hold::Change::Ended:
+        EndZoom("released");
+        break;
+    default:
+        break;
+    }
+}
+
+void VR::EndZoom(const char *reason)
+{
+    m_Game->ClientCmd_Unrestricted("-zoom");
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_ZoomStart).count();
+    char line[224];
+    std::snprintf(line, sizeof(line),
+        "Binocular zoom off (%s) after %.1f s: %u views, render avg %.2f ms, worst %.2f ms",
+        reason, seconds, m_ZoomFrames, m_ZoomFrames ? m_ZoomRenderMs / m_ZoomFrames : 0.0, m_ZoomWorstMs);
+    Logger::Write(line);
 }
 
 void VR::GetPoseData(vr::TrackedDevicePose_t &poseRaw, TrackedDevicePoseData &poseOut)
@@ -1703,6 +2060,8 @@ void VR::ReleaseHeldActions()
     for (const auto &action : actions)
         if (const char *command = action.state->HeldCommand(false, false, false, "", action.releaseCommand))
             m_Game->ClientCmd_Unrestricted(command);
+    if (m_ZoomHold.Cancel())
+        EndZoom("menu or input lost");
 }
 
 bool VR::GetAnalogActionData(vr::VRActionHandle_t &actionHandle, vr::InputAnalogActionData_t &analogDataOut)
@@ -1897,6 +2256,7 @@ void VR::ProcessInput()
     ProcessHeldAction(m_ActionCrouch, m_CrouchState, "+duck", "-duck");
     ProcessHeldAction(m_ActionUse, m_UseState, "+use", "-use");
     ProcessHeldAction(m_ActionReload, m_ReloadState, "+reload", "-reload");
+    ProcessZoomInput();
 
     if (PressedDigitalAction(m_ActionPrevItem, true))
     {

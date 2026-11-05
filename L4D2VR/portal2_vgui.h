@@ -80,6 +80,8 @@ inline constexpr Slot DrawSetTextureFile{35, "55 8B EC 56 57 8B F1 E8", "DrawSet
 inline constexpr Slot DrawSetTexture{37, "55 8B EC 56 8B 75 08 57 8B F9 3B B7 BC 02 00 00", "DrawSetTexture"};
 inline constexpr Slot DrawTexturedRect{39, "55 8B EC 83 EC 50 56 8B F1 80 7E 2F 00 0F 84", "DrawTexturedRect"};
 inline constexpr Slot CreateNewTextureID{41, "55 8B EC E8 ? ? ? ? 8B 10 8B C8 8B 12 5D FF E2", "CreateNewTextureID"};
+// Not in All: only the instructor hint glyphs need it, and they verify it themselves.
+inline constexpr Slot DrawSetTextureRGBA{36, "55 8B EC E8 ? ? ? ? 8B 4D 14 8B 10 8B 52 30 6A 02 6A 00 51", "DrawSetTextureRGBA"};
 inline constexpr Slot GetScreenSize{42, "55 8B EC 83 EC 08 80 B9 80 03 01 00 00", "GetScreenSize"};
 inline constexpr Slot GetFontTall{72, "55 8B EC 8B 45 08 50 E8", "GetFontTall"};
 inline constexpr Slot GetTextSize{77, "55 8B EC 8B 45 14 8B 4D 10 8B 55 0C 50 8B 45 08", "GetTextSize"};
@@ -224,6 +226,18 @@ public:
         return true;
     }
 
+    // Texture drawing only, for the instructor hint glyphs. Works after the
+    // options menu has hooked PaintTraverseEx (which Resolve checks); Ready()
+    // stays false and only the five slots verified here may be used.
+    bool ResolveTextureDrawing(void *surface, std::string &failure)
+    {
+        for (const Slot *slot : {&SurfaceSlot::DrawSetColor, &SurfaceSlot::DrawSetTexture,
+                 &SurfaceSlot::DrawTexturedRect, &SurfaceSlot::CreateNewTextureID, &SurfaceSlot::DrawSetTextureRGBA})
+            if (!VerifySlot(surface, *slot, failure)) return false;
+        m_Surface = surface;
+        return true;
+    }
+
     bool Ready() const { return m_Ready; }
     void *PaintTraverseExAddress() const { return const_cast<std::uint8_t *>(m_PaintTraverseEx); }
 
@@ -240,6 +254,9 @@ public:
     void DrawSetTexture(int id) const { CallSlot<void>(m_Surface, SurfaceSlot::DrawSetTexture.index, id); }
     void DrawTexturedRect(int x0, int y0, int x1, int y1) const { CallSlot<void>(m_Surface, SurfaceSlot::DrawTexturedRect.index, x0, y0, x1, y1); }
     int CreateNewTextureID() const { return CallSlot<int>(m_Surface, SurfaceSlot::CreateNewTextureID.index, false); }
+    int CreateProceduralTextureID() const { return CallSlot<int>(m_Surface, SurfaceSlot::CreateNewTextureID.index, true); }
+    // Requires a successful VerifySlot(surface, SurfaceSlot::DrawSetTextureRGBA).
+    void DrawSetTextureRGBA(int id, const unsigned char *rgba, int wide, int tall) const { CallSlot<void>(m_Surface, SurfaceSlot::DrawSetTextureRGBA.index, id, rgba, wide, tall); }
     void GetScreenSize(int &wide, int &tall) const { CallSlot<void, int &, int &>(m_Surface, SurfaceSlot::GetScreenSize.index, wide, tall); }
     int GetFontTall(HFont font) const { return CallSlot<int>(m_Surface, SurfaceSlot::GetFontTall.index, font); }
     void GetTextSize(HFont font, const wchar_t *text, int &wide, int &tall) const { CallSlot<void, HFont, const wchar_t *, int &, int &>(m_Surface, SurfaceSlot::GetTextSize.index, font, text, wide, tall); }

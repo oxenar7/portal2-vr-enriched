@@ -41,6 +41,10 @@ HUDLazyFollow=true # Captions follow the gaze, left/right and up/down, only past
 HUDFollowDeadzoneDegrees=10 # 0-60; head turn allowed before the captions recenter
 HUDFollowSpeed=8 # 1-20; how fast the captions catch up, higher is quicker
 HUDCaptionOpacityBoost=3 # 1-4; multiplies caption overlay alpha so text stays readable over bright scenes (1 = game's own)
+BinocularZoom=true # Hold the right stick in to look through binoculars; also sends the game's +zoom
+ZoomMagnification=3 # 1.5-8; how much larger things look through the binoculars
+ZoomWindowWidthMeters=0.8 # 0.3-1.5; width of the binocular window
+ZoomDistanceMeters=1 # 0.5-3; distance of the binocular window from the eyes
 HeightOffsetMeters=0.0 # Standing only; applied at recenter
 ControllerPitchDegrees=-30.0 # Controller forward correction, degrees
 SnapTurning=false

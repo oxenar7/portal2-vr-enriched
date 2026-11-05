@@ -52,6 +52,9 @@
             },
             {
                "inputs" : {
+                  "click" : {
+                     "output" : "/actions/main/in/Zoom"
+                  },
                   "position" : {
                      "output" : "/actions/main/in/Turn"
                   }

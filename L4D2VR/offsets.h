@@ -187,6 +187,18 @@ public:
     Offset FloorButtonPress = { "server.dll", 0x3DEE80, "55 8B EC 56 57 8B F9 8B 87 E8 06 00 00 50 E8 ? ? ? ? 80 BF E0 06 00 00 01 74 2A" };
     Offset FloorButtonUnpress = { "server.dll", 0x3DEF10, "55 8B EC 56 57 8B F9 8B 87 E4 06 00 00 50 E8 ? ? ? ? 80 BF E0 06 00 00 00 74 2A" };
 
+    // Game instructor hints (instructor_hints.h), all in client.dll:
+    // CLocatorPanel::Paint and DrawTarget(CLocatorTarget *); GetHudSize(int &, int &),
+    // behind ScreenWidth/ScreenHeight; cdecl GetVectorInScreenSpace(Vector, int &, int &,
+    // const Vector *), called only by the locator; CLocatorTarget::SetBinding(const char *)
+    // and UseBindingImage(char *icon, size_t) returning the key label.
+    Offset LocatorPanelPaint = { "client.dll", 0x14CDF0, "55 8B EC 81 EC 9C 00 00 00 53 56 57 8B F9 83 CE FF 89 7D F4 39 B7 D0 01 00 00" };
+    Offset LocatorDrawTarget = { "client.dll", 0x14BE70, "55 8B EC 51 56 8B 75 08 57 56 8B F9 E8 ? ? ? ? 84 C0 74 74" };
+    Offset LocatorHudSize = { "client.dll", 0x1CC3B0, "55 8B EC 8B 55 0C 8B 0D ? ? ? ? 8B 01 8B 80 A8 00 00 00 52 8B 55 08 52 FF D0 5D C3" };
+    Offset GetVectorInScreenSpace = { "client.dll", 0xDA1D0, "55 8B EC 8B 45 1C 83 EC 20 85 C0 74 2C F3 0F 10 00 F3 0F 58 45 08" };
+    Offset LocatorSetBinding = { "client.dll", 0x149710, "55 8B EC 81 EC 60 01 00 00 53 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 0D" };
+    Offset LocatorUseBindingImage = { "client.dll", 0x147C20, "55 8B EC 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 4E 38 8B F8 85 C9 7F 20" };
+
     // Multiplayer
     Offset GetOwner = { "server.dll", 0xD7550, "8B 81 ? ? ? ? 83 F8 FF 74 23 8B 15 ? ? ? ?" };
     //Offset GetActiveWeapon = { "server.dll", 0xD3FD0, "8B 89 ? ? ? ? 83 F9 FF 74 1F 8B 15 ? ? ? ?" };

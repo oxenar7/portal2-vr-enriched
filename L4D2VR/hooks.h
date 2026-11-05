@@ -9,6 +9,7 @@
 #include "required_hooks.h"
 #include "optional_hooks.h"
 #include "compatibility_hook_policy.h"
+#include "instructor_hints.h"
 
 class Game;
 class VR;
@@ -169,6 +170,11 @@ typedef void*(__thiscall* tGetOwner)(void* thisptr);
 typedef void* (__thiscall* tCWeaponPortalgun_FirePortal)(void* thisptr, bool bPortal2, Vector* pVector);
 typedef void(__cdecl* tRumbleEffect)(int splitSlot, int index, int data, int flags);
 typedef void(__thiscall* tButtonPress)(void* thisptr, void* pActivator);
+typedef void(__thiscall* tLocatorPaint)(void* thisptr);
+typedef void(__thiscall* tLocatorDrawTarget)(void* thisptr, void* target);
+typedef bool(__cdecl* tGetVectorInScreenSpace)(InstructorHints::Vec3 pos, int& x, int& y, const InstructorHints::Vec3* offset);
+typedef void(__thiscall* tLocatorSetBinding)(void* thisptr, const char* binding);
+typedef const char*(__thiscall* tLocatorUseBindingImage)(void* thisptr, char* iconName, size_t size);
 
 class Hooks
 {
@@ -258,6 +264,17 @@ public:
 	static inline Hook<tGetClipRect> hkGetClipRect;
 	static inline Hook<tGetHudSize> hkGetHudSize;
 	static inline Hook<tSetSize> hkSetSize;
+	// Game instructor hints in the caption overlay (instructor_hints.h).
+	static inline Hook<tLocatorPaint> hkLocatorPaint;
+	static inline Hook<tLocatorDrawTarget> hkLocatorDrawTarget;
+	static inline Hook<tGetVectorInScreenSpace> hkGetVectorInScreenSpace;
+	static inline Hook<tLocatorSetBinding> hkLocatorSetBinding;
+	static inline Hook<tLocatorUseBindingImage> hkLocatorUseBindingImage;
+	static void __fastcall dLocatorPaint(void* ecx, void* edx);
+	static void __fastcall dLocatorDrawTarget(void* ecx, void* edx, void* target);
+	static bool __cdecl dGetVectorInScreenSpace(InstructorHints::Vec3 pos, int& x, int& y, const InstructorHints::Vec3* offset);
+	static void __fastcall dLocatorSetBinding(void* ecx, void* edx, const char* binding);
+	static const char* __fastcall dLocatorUseBindingImage(void* ecx, void* edx, char* iconName, size_t size);
 	
 	static inline Hook<tComputeError> hkComputeError;
 	static inline Hook<tUpdateObject> hkUpdateObject;

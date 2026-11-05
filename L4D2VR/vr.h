@@ -17,6 +17,8 @@
 #include "render_condition_diagnostics.h"
 #include "menu_overlay_placement.h"
 #include "caption_follow.h"
+#include "instructor_hints.h"
+#include "binocular_zoom.h"
 #include "muzzle_origin.h"
 #include "openvr_session.h"
 #include "vr_options_menu.h"
@@ -211,24 +213,28 @@ public:
 		Texture_LeftEye,
 		Texture_RightEye,
 		Texture_HUD,
-		Texture_Blank
+		Texture_Blank,
+		Texture_Zoom
 	};
 
 	ITexture *m_LeftEyeTexture = nullptr;
 	ITexture *m_RightEyeTexture = nullptr;
 	ITexture *m_HUDTexture = nullptr;
 	ITexture *m_BlankTexture = nullptr;
+	ITexture *m_ZoomTexture = nullptr;
 
 	IDirect3DSurface9 *m_D9LeftEyeSurface = nullptr;
 	IDirect3DSurface9 *m_D9RightEyeSurface = nullptr;
 	IDirect3DSurface9 *m_D9HUDSurface = nullptr;
 	IDirect3DSurface9 *m_D9BlankSurface = nullptr;
+	IDirect3DSurface9 *m_D9ZoomSurface = nullptr;
 
 	SharedTextureHolder m_VKLeftEye;
 	SharedTextureHolder m_VKRightEye;
 	SharedTextureHolder m_VKBackBuffer;
 	SharedTextureHolder m_VKHUD;
 	SharedTextureHolder m_VKBlankTexture;
+	SharedTextureHolder m_VKZoom;
 
 	bool m_IsVREnabled = false;
 	RenderDiagnosticGate m_RenderDiagnostics;
@@ -242,7 +248,15 @@ public:
 	// Caption overlay placement in tracking space while HUDLazyFollow is on.
 	bool m_HUDHeadLocked = true;
 	CaptionFollow m_CaptionFollow;
+	std::optional<CaptionFollow::Pose> m_HUDFollowPose; // last lazy-follow placement
 	std::chrono::steady_clock::time_point m_HUDFollowLast;
+	// The VR control bound to each hinted action, re-read every few seconds.
+	struct HintGlyphCache {
+		bool checked = false;
+		std::chrono::steady_clock::time_point at;
+		std::optional<InstructorHints::Glyph> glyph;
+	};
+	std::array<HintGlyphCache, static_cast<std::size_t>(InstructorHints::Action::Count)> m_HintGlyphs{};
 	bool m_HUDAlphaBoostLogged = false;
 	bool m_CreatedVRTextures = false;
     RenderTargetRetryState m_RenderTargetRetry;
@@ -292,6 +306,20 @@ public:
 	vr::VRActionHandle_t m_Scoreboard;
 	vr::VRActionHandle_t m_ShowHUD;
 	vr::VRActionHandle_t m_Pause;
+	vr::VRActionHandle_t m_ActionZoom;
+
+	// Binocular zoom (binocular_zoom.h), held on the right stick click.
+	// Game-thread only, like the perf state below.
+	vr::VROverlayHandle_t m_ZoomHandle = vr::k_ulOverlayHandleInvalid;
+	BinocularZoom::Hold m_ZoomHold;
+	BinocularZoom::Mask m_ZoomMask;
+	bool m_ZoomRendered = false; // dRenderView drew the zoom target this frame
+	bool m_ZoomMasked = false;   // and PresentEx cut it to the lens outline
+	bool m_ZoomBindingLogged = false;
+	std::uint32_t m_ZoomFrames = 0;
+	double m_ZoomRenderMs = 0.0;
+	double m_ZoomWorstMs = 0.0;
+	std::chrono::steady_clock::time_point m_ZoomStart{};
 
 	TrackedDevicePoseData m_HmdPose;
 	TrackedDevicePoseData m_LeftControllerPose;
@@ -365,9 +393,9 @@ public:
 	void PerfNotePresent(double presentMs, double drainMs, bool fastSubmit);
 	// DXVK's compiler counters, read by PresentEx while the perf log is on.
 	void PerfNoteCompiler(const PerfStats::CompilerCounts &counts);
-	// Surfaces this frame submits without a device drain (eyes, HUD), or 0
-	// when the frame must drain: menus, MSAA eyes, GpuDrainEachFrame=true.
-	unsigned int FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[3]) const;
+	// Surfaces this frame submits without a device drain (eyes, HUD, zoom), or
+	// 0 when the frame must drain: menus, MSAA eyes, GpuDrainEachFrame=true.
+	unsigned int FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[4]) const;
 	void PerfBeginFrame(std::chrono::steady_clock::time_point now);
 	void PerfReadCompositorTiming();
 	bool PerfReadCompositorCounts(PerfStats::CompositorCounts &counts);
@@ -388,9 +416,26 @@ public:
 	void CreateExperimentalHUDOverlay();
 	void SubmitExperimentalHUDOverlay();
 	bool PlaceExperimentalHUDOverlay();
+	// Instructor hints in the caption overlay (instructor_hints.h).
+	std::optional<InstructorHints::Glyph> HintGlyphForBinding(const char *binding);
+	struct HintProjection {
+		bool ready = false; // false: no overlay pose yet, keep Source's own projection
+		std::optional<InstructorHints::ScreenPoint> point; // nullopt: behind the player
+	};
+	HintProjection ProjectHintToHud(const Vector &world, int windowWidth, int windowHeight);
 	// Raises the captured caption alpha (HUDCaptionOpacityBoost) on the
 	// device thread before Present hands the HUD surface to OpenVR.
 	void BoostHUDAlpha(IDirect3DDevice9 *device);
+	// Binocular zoom: dRenderView asks whether to draw the third view and
+	// reports its cost; PresentEx cuts it to the lens outline; Update shows it.
+	bool ZoomViewWanted() const;
+	float ZoomFovDegrees() const;
+	void NoteZoomRendered(double milliseconds);
+	void MaskZoomView(IDirect3DDevice9 *device);
+	void CreateZoomOverlay();
+	void SubmitZoomOverlay();
+	void ProcessZoomInput();
+	void EndZoom(const char *reason);
 	void GetPoses();
 	bool UpdatePosesAndActions();
 	void GetViewParameters();

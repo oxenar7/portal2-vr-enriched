@@ -787,6 +787,11 @@ namespace dxvk {
               textureTarget = &game->m_VR->m_VKBlankTexture;
               surfaceTarget = &game->m_VR->m_D9BlankSurface;
           }
+          else if (texID == VR::Texture_Zoom)
+          {
+              textureTarget = &game->m_VR->m_VKZoom;
+              surfaceTarget = &game->m_VR->m_D9ZoomSurface;
+          }
             if (textureTarget && surfaceTarget) {
                 textureTarget->m_VRTexture.handle = nullptr;
                 if (*surfaceTarget) {
@@ -798,7 +803,8 @@ namespace dxvk {
                   ? m_vrBridge->GetVRDesc(*surfaceTarget, &texDesc) : D3DERR_INVALIDCALL;
               const RenderCondition condition = texID == VR::Texture_LeftEye ? RenderCondition::LeftShare :
                   texID == VR::Texture_RightEye ? RenderCondition::RightShare :
-                  texID == VR::Texture_HUD ? RenderCondition::HudShare : RenderCondition::BlankShare;
+                  texID == VR::Texture_HUD ? RenderCondition::HudShare :
+                  texID == VR::Texture_Zoom ? RenderCondition::ZoomShare : RenderCondition::BlankShare;
               m_vrDiagnostics.SetVerbose(game->m_VR->m_Config.verboseDiagnostics, GetTickCount64());
               if (m_vrDiagnostics.Observe(condition, FAILED(shareResult),
                     {static_cast<std::uint32_t>(surfaceResult), static_cast<std::uint32_t>(shareResult),
@@ -4398,8 +4404,10 @@ namespace dxvk {
       const auto waitStart = std::chrono::steady_clock::now();
       previousFrameResult = m_vrBridge->WaitPreviousFrame();
       previousFrameWaitMs = PerfStats::ElapsedMs(waitStart);
-      if (SUCCEEDED(previousFrameResult))
+      if (SUCCEEDED(previousFrameResult)) {
         game->m_VR->BoostHUDAlpha(this);
+        game->m_VR->MaskZoomView(this);
+      }
       IDirect3DSurface9* backBuffer = nullptr;
       if (SUCCEEDED(GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer)) && backBuffer) {
         // Window presentation resolves separately. OpenVR uses this texture's
@@ -4432,7 +4440,7 @@ namespace dxvk {
     {
         // Stereo frames hand their eyes to OpenVR without waiting for the GPU
         // to go idle; menus, MSAA eyes and failures keep the device drain.
-        IDirect3DSurface9* submitSurfaces[3] = {};
+        IDirect3DSurface9* submitSurfaces[4] = {};
         const UINT submitCount = SUCCEEDED(previousFrameResult) ?
           game->m_VR->FastSubmitSurfaces(submitSurfaces) : 0u;
         const auto drainStart = std::chrono::steady_clock::now();

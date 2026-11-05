@@ -17,6 +17,7 @@
 #include "eye_hud.h"
 #include <Windows.h>
 #include <intrin.h>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -25,6 +26,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 static bool RuntimePublished()
 {
@@ -895,6 +897,16 @@ int Hooks::initSourceHooks()
 	// Options > VR paints above every menu panel; unresolved when the VGUI ABI is unverified.
 	REGISTER_IF_RESOLVED(hkPaintTraverseEx, m_VR->m_OptionsMenu.PaintTarget(), dPaintTraverseEx);
 
+	// Game instructor hints in the caption overlay; without them hints keep Source's layout.
+	REGISTER_IF_RESOLVED(hkLocatorPaint, m_Game->m_Offsets->LocatorPanelPaint.address, dLocatorPaint);
+	REGISTER_IF_RESOLVED(hkLocatorDrawTarget, m_Game->m_Offsets->LocatorDrawTarget.address, dLocatorDrawTarget);
+	REGISTER_IF_RESOLVED(hkGetHudSize, m_Game->m_Offsets->LocatorHudSize.address, dGetHudSize);
+	REGISTER_IF_RESOLVED(hkGetVectorInScreenSpace, m_Game->m_Offsets->GetVectorInScreenSpace.address,
+		dGetVectorInScreenSpace);
+	REGISTER_IF_RESOLVED(hkLocatorSetBinding, m_Game->m_Offsets->LocatorSetBinding.address, dLocatorSetBinding);
+	REGISTER_IF_RESOLVED(hkLocatorUseBindingImage, m_Game->m_Offsets->LocatorUseBindingImage.address,
+		dLocatorUseBindingImage);
+
 	// Portal Gun VFX
 	REQUIRE_HOOK(hkGetDefaultFOV, m_Game->m_Offsets->GetDefaultFOV.address, dGetDefaultFOV);
 	REQUIRE_HOOK(hkGetFOV, m_Game->m_Offsets->GetFOV.address, dGetFOV);
@@ -1105,6 +1117,30 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 				std::to_string((*scopes & 1) != 0) + " rightScope=" +
 				std::to_string((*scopes & 2) != 0) + " outsideScope=" +
 				std::to_string((*scopes & 4) != 0) + " (all zero means no draw call observed; not visibility proof)");
+	}
+
+	if (m_VR->ZoomViewWanted()) {
+		// Binocular zoom: a narrow view from between the eyes, without the gun
+		// or the HUD. It is not an aim eye, so the reticle hooks leave it alone.
+		CViewSetup zoomView = setup;
+		tempAngle = QAngle(setup.angles.x, setup.angles.y, setup.angles.z);
+		zoomView.origin = m_VR->TraceEye((uint32_t*)localPlayer, position, m_VR->GetViewOrigin(position), tempAngle);
+		if (m_VR->ExperimentalPortalOrientation())
+			zoomView.angles = Vector(tempAngle.x, tempAngle.y, tempAngle.z);
+		else
+			zoomView.angles.y = tempAngle.y;
+		zoomView.width = zoomView.m_nUnscaledWidth = BinocularZoom::kTextureWidth;
+		zoomView.height = zoomView.m_nUnscaledHeight = BinocularZoom::kTextureHeight;
+		zoomView.fov = zoomView.fovViewmodel = m_VR->ZoomFovDegrees();
+		zoomView.m_flAspectRatio = static_cast<float>(BinocularZoom::kTextureWidth) / BinocularZoom::kTextureHeight;
+
+		rndrContext = matSystem->GetRenderContext();
+		rndrContext->SetRenderTarget(m_VR->m_ZoomTexture);
+		rndrContext->Release();
+		eyeStart = std::chrono::steady_clock::now();
+		hkRenderView.fOriginal(ecx, zoomView, hudViewSetup, nClearFlags,
+			whatToDraw & ~(RENDERVIEW_DRAWVIEWMODEL | RENDERVIEW_DRAWHUD));
+		m_VR->NoteZoomRendered(PerfStats::ElapsedMs(eyeStart));
 	}
 
 	m_PushedHud = false;
@@ -1722,8 +1758,91 @@ bool Hooks::ScreenTransform(const Vector& point, Vector* pScreen, int width, int
 	return retval;
 }
 
+// Game instructor hints. CLocatorPanel lays hints out on ScreenWidth() x
+// ScreenHeight(), but the caption overlay shows only the Source window crop
+// of the HUD capture: while the locator paints there, GetHudSize reports the
+// window and world-anchored hints are projected onto the overlay plane.
+static struct {
+	bool active = false;
+	int width = 0, height = 0;
+} s_HintCanvas;
+static const void *s_HintTarget = nullptr; // CLocatorTarget inside CLocatorPanel::DrawTarget
+static InstructorHints::TargetTable s_HintTargets;
+static constexpr char kHintKeyIcon[] = "icon_key_generic"; // square key cap, replaced by the glyph
+
+// VR icon textures, scaled on the CPU to the hint icon's exact size and drawn
+// 1:1 through the verified VGUI surface ABI, so no filtering blurs the letters.
+class HintGlyphPainter
+{
+public:
+	bool Draw(Game *game, const InstructorHints::Glyph &glyph, int x, int y, int w, int h, int alpha)
+	{
+		const int side = (std::min)(w, h);
+		if (side <= 0 || side > 512 || !Ready(game))
+			return false;
+		const int texture = Texture(glyph, side);
+		if (texture <= 0)
+			return false;
+		const int left = x + (w - side) / 2, top = y + (h - side) / 2;
+		m_Api.DrawSetColor(255, 255, 255, alpha);
+		m_Api.DrawSetTexture(texture);
+		m_Api.DrawTexturedRect(left, top, left + side, top + side);
+		return true;
+	}
+
+	bool Ready(Game *game)
+	{
+		if (m_Tried)
+			return m_Ready;
+		m_Tried = true;
+		std::string failure;
+		m_Ready = m_Api.ResolveTextureDrawing(game->m_VguiSurface, failure);
+		Logger::Write(m_Ready ? std::string("Instructor hint glyphs ready") :
+			"Instructor hint glyphs unavailable: unverified VGUI " + failure + "; native key icons stay");
+		return m_Ready;
+	}
+
+private:
+	int Texture(const InstructorHints::Glyph &glyph, int side)
+	{
+		const int key = InstructorHints::GlyphKey(glyph);
+		auto entry = std::find_if(m_Textures.begin(), m_Textures.end(),
+			[key](const Entry &texture) { return texture.key == key; });
+		if (entry == m_Textures.end()) {
+			const int id = m_Api.CreateProceduralTextureID();
+			Logger::Write(std::string("Instructor hint icon ") + InstructorHints::GlyphName(glyph) +
+				": texture id " + std::to_string(id) + ", " + std::to_string(side) + " px");
+			if (id <= 0)
+				return 0;
+			entry = m_Textures.insert(m_Textures.end(), Entry{key, id, 0});
+		}
+		if (entry->side != side) {
+			// Pulsing hints resize their icon: upload again at the new size.
+			const auto rgba = InstructorHints::RenderGlyph(glyph, side);
+			m_Api.DrawSetTextureRGBA(entry->id, rgba.data(), side, side);
+			entry->side = side;
+		}
+		return entry->id;
+	}
+
+	struct Entry { int key, id, side; };
+	Portal2Vgui::Api m_Api;
+	bool m_Tried = false, m_Ready = false;
+	std::vector<Entry> m_Textures;
+};
+static HintGlyphPainter s_HintGlyphPainter;
+
 int __fastcall Hooks::dDrawSelf(void* ecx, void* edx, int x, int y, int w, int h, const void* clr, float flApparentZ) {
 	if (!RuntimePublished()) return hkDrawSelf.fOriginal(ecx, x, y, w, h, clr, flApparentZ);
+	if (s_HintTarget) {
+		// UseBindingImage swapped this target's key icon for the plain key cap.
+		const auto glyph = s_HintTargets.GlyphFor(s_HintTarget);
+		const auto identity = glyph ? ReadSourceHudTextureIdentity(ecx) : std::nullopt;
+		const int alpha = clr ? static_cast<const std::uint8_t *>(clr)[3] : 255;
+		if (identity && std::strcmp(identity->shortName.data(), kHintKeyIcon) == 0 &&
+			s_HintGlyphPainter.Draw(m_Game, *glyph, x, y, w, h, alpha))
+			return 0;
+	}
     if (!m_VR->m_Config.showSourceCrosshair && (m_VR->m_AimMode == 0 || m_VR->m_AimMode == 1) &&
         m_ActiveAimEyeView && m_VR->m_IsVREnabled && m_VR->m_TrackingOutputValid &&
         m_VR->m_CreatedVRTextures && m_Game->m_EngineClient->IsInGame() &&
@@ -1969,8 +2088,11 @@ void __fastcall Hooks::dGetScreenSize(void* ecx, void* edx, int& wide, int& tall
 }
 
 void __cdecl Hooks::dGetHudSize(int& w, int& h) {
-	w = m_VR->m_RenderWidth;
-	h = m_VR->m_RenderHeight;
+	hkGetHudSize.fOriginal(w, h);
+	if (s_HintCanvas.active) {
+		w = s_HintCanvas.width;
+		h = s_HintCanvas.height;
+	}
 }
 
 void __fastcall Hooks::dPush2DView(void* ecx, void* edx, IMatRenderContext* pRenderContext, const CViewSetup& view, int nFlags, ITexture* pRenderTarget, void* frustumPlanes) {
@@ -2168,4 +2290,97 @@ double __fastcall Hooks::dGetFOV(void* ecx, void* edx) {
 float __fastcall Hooks::dGetViewModelFOV(void* ecx, void* edx) {
 	if (!RuntimePublished()) return hkGetViewModelFOV.fOriginal(ecx);
 	return static_cast<float>(m_VR->m_Fov);
+}
+
+void __fastcall Hooks::dLocatorPaint(void *ecx, void *edx)
+{
+	if (!RuntimePublished() || !m_VR->m_IsVREnabled || !m_VR->m_Config.experimentalHudOverlay ||
+		!m_Game->m_Hooks->m_HudCaptureHooksReady)
+		return hkLocatorPaint.fOriginal(ecx);
+	// Hints belong to the caption overlay. The eye passes would draw them again
+	// at stereo-target coordinates and advance their fades twice per frame.
+	if (m_ActiveAimEye != 0)
+		return;
+	if (!m_ExplicitHudCaptureActive)
+		return hkLocatorPaint.fOriginal(ecx);
+	int windowWidth = 0, windowHeight = 0;
+	if (IMatRenderContext *context = m_Game->m_MaterialSystem->GetRenderContext()) {
+		if (CheckRenderContextAbi(context) != Portal2MaterialAbi::Kind::Unsupported)
+			context->GetWindowSize(windowWidth, windowHeight);
+		context->Release();
+	}
+	// The overlay crop, clamped like HudCapture::WindowTextureCrop.
+	windowWidth = (std::min)(windowWidth, static_cast<int>(m_VR->m_RenderWidth));
+	windowHeight = (std::min)(windowHeight, static_cast<int>(m_VR->m_RenderHeight));
+	if (windowWidth <= 0 || windowHeight <= 0)
+		return hkLocatorPaint.fOriginal(ecx);
+	s_HintCanvas = {true, windowWidth, windowHeight};
+	hkLocatorPaint.fOriginal(ecx);
+	s_HintCanvas = {};
+}
+
+void __fastcall Hooks::dLocatorDrawTarget(void *ecx, void *edx, void *target)
+{
+	s_HintTarget = target;
+	hkLocatorDrawTarget.fOriginal(ecx, target);
+	s_HintTarget = nullptr;
+	// Once when it appears and once after its fade-in has settled.
+	const std::uint32_t draws = s_HintCanvas.active ? s_HintTargets.CountDraw(target) : 0;
+	if (draws != 1 && draws != 120)
+		return;
+	// CLocatorTarget fields as CLocatorPanel::DrawTarget leaves them in this
+	// client.dll: icon centre +0xCC/+0xD0, icon size +0xD4, effect flags +0x13C.
+	std::int32_t fields[4]{};
+	const auto *base = static_cast<const std::uint8_t *>(target);
+	std::memcpy(&fields[0], base + 0xCC, 3 * sizeof(std::int32_t));
+	std::memcpy(&fields[3], base + 0x13C, sizeof(std::int32_t));
+	const char *binding = s_HintTargets.Binding(target);
+	Logger::Write(std::string(draws == 1 ? "Instructor hint drawn: " : "Instructor hint settled: ") +
+		(binding && *binding ? binding : "no binding") +
+		((fields[3] & 0x100) ? ", static" : ", world") + " at " + std::to_string(fields[0]) + "," +
+		std::to_string(fields[1]) + " size " + std::to_string(fields[2]) + " in " +
+		std::to_string(s_HintCanvas.width) + "x" + std::to_string(s_HintCanvas.height) +
+		(s_HintTargets.GlyphFor(target) ?
+			std::string(", VR icon ") + InstructorHints::GlyphName(*s_HintTargets.GlyphFor(target)) :
+			std::string(", Source icon")));
+}
+
+bool __cdecl Hooks::dGetVectorInScreenSpace(InstructorHints::Vec3 pos, int &x, int &y,
+	const InstructorHints::Vec3 *offset)
+{
+	if (!s_HintCanvas.active)
+		return hkGetVectorInScreenSpace.fOriginal(pos, x, y, offset);
+	const InstructorHints::Vec3 world = offset ? pos + *offset : pos;
+	const auto projection = m_VR->ProjectHintToHud(Vector(world.x, world.y, world.z),
+		s_HintCanvas.width, s_HintCanvas.height);
+	if (!projection.ready)
+		return hkGetVectorInScreenSpace.fOriginal(pos, x, y, offset);
+	if (!projection.point) {
+		x = y = -640; // what Source reports for a target behind the view
+		return false;
+	}
+	x = projection.point->x;
+	y = projection.point->y;
+	return true;
+}
+
+void __fastcall Hooks::dLocatorSetBinding(void *ecx, void *edx, const char *binding)
+{
+	s_HintTargets.SetBinding(ecx, binding);
+	hkLocatorSetBinding.fOriginal(ecx, binding);
+}
+
+const char *__fastcall Hooks::dLocatorUseBindingImage(void *ecx, void *edx, char *iconName, size_t size)
+{
+	const char *label = hkLocatorUseBindingImage.fOriginal(ecx, iconName, size);
+	std::optional<InstructorHints::Glyph> glyph;
+	if (RuntimePublished() && iconName && size >= sizeof(kHintKeyIcon) && s_HintGlyphPainter.Ready(m_Game))
+		glyph = m_VR->HintGlyphForBinding(s_HintTargets.Binding(ecx));
+	s_HintTargets.SetGlyph(ecx, glyph);
+	if (!glyph)
+		return label;
+	// The locator draws this key cap through CHudTexture::DrawSelf, where the
+	// VR icon replaces it. No label, so no keyboard key name on top.
+	std::memcpy(iconName, kHintKeyIcon, sizeof(kHintKeyIcon));
+	return nullptr;
 }

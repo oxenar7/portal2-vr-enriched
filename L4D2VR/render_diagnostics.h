@@ -57,6 +57,10 @@ enum class RenderDiagnosticEvent : std::size_t
     NativeReticleCaptureSuppressed,
     NativeBeamPlayerOwned,
     NativeBeamManualOrigin,
+    ZoomStateBlockUnavailable,
+    ZoomMaskApplied,
+    ZoomMaskFailed,
+    ZoomClickWhileTurning,
     Count
 };
 

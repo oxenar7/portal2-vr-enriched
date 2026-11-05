@@ -21,17 +21,52 @@ This is an unofficial fan project, not affiliated with or endorsed by Valve. You
 - **Binocular zoom:** hold the right stick in to look through a magnified binocular window. It also completes the game's zoom lesson.
 - **A small, clean launcher** that only needs the Python standard library when run from source.
 
-## Getting started
+## Install
 
-Most players should download a build from the **Releases** page, as described in [RELEASES.md](RELEASES.md). The steps below are for running from source.
+You need:
 
-Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). It does not install Python, SteamVR or drivers automatically.
+- Portal 2 on Steam, for Windows.
+- SteamVR working with your headset. Quest users can connect through Virtual Desktop, Steam Link or Quest Link.
+- The latest [Microsoft Visual C++ Redistributable for x86](https://aka.ms/vc14/vc_redist.x86.exe). Install the x86 one even on 64-bit Windows.
+- A graphics driver with Vulkan support (any recent NVIDIA, AMD or Intel driver).
 
-1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
-2. Double-click **`Portal 2 VR Enriched Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal 2 VR Enriched Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
-3. Select the folder containing `portal2.exe` and your `steam.exe`. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
-4. Connect the headset and controllers, then click **Launch in VR**; SteamVR starts with the game. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
-5. Enable subtitles in Portal 2's own options if you want captions.
+Then:
+
+1. Download `Portal2VR-Enriched-vX.Y.Z-win32.zip` from the [Releases](https://github.com/oxenar7/portal2-vr-enriched/releases) page and extract the whole ZIP to a folder you keep, for example in Documents. Python and build tools are not needed.
+2. Close Portal 2, connect your headset and open `Portal 2 VR Enriched Launcher.exe`. The launcher is not code-signed, so Windows may show "Windows protected your PC": choose **More info**, then **Run anyway**.
+3. Check the **Portal 2** and **Steam** rows. If one asks for a folder, press **Change** and pick the folder that contains `portal2.exe` (in Steam: right-click Portal 2 > Manage > Browse local files) or `steam.exe` in your Steam folder.
+4. Press **Launch in VR**. The launcher backs up the game files it replaces, installs the mod and starts Portal 2 through Steam with the launch options it needs. SteamVR starts with the game. Next time, just press **Launch in VR** again.
+5. Optional: turn on subtitles in Portal 2's audio options to get captions in the headset.
+
+The mod stays installed after you quit. To play Portal 2 normally again, open the launcher and press **Restore original game files**. Do the same before switching to a newer version of the mod, and keep the extracted folder until then: it holds your backups.
+
+## Controls
+
+Default bindings for Quest / Oculus Touch controllers:
+
+| Action | Button |
+| --- | --- |
+| Move | Left stick |
+| Turn (smooth or snap) | Right stick |
+| Blue portal | Right trigger |
+| Orange portal | Right grip |
+| Use, pick up, drop | B |
+| Jump | A |
+| Crouch | Left grip, or crouch for real |
+| Binocular zoom | Hold the right stick in |
+| Pause menu | Y |
+| Menus | Point and pull the trigger, or left stick with A and B |
+
+Valve Index and Vive Cosmos controllers have their own default bindings. Other controllers can be bound in SteamVR: Settings > Controllers > Manage Controller Bindings. **Recenter** is in Options > VR > Advanced VR. Turning, movement direction, left-handed mode and vibration are in Options > VR.
+
+## If something goes wrong
+
+- **The game does not start in VR:** make sure SteamVR sees the headset and controllers before pressing **Launch in VR**.
+- **The game closes at startup:** install the latest Visual C++ Redistributable for x86 from the link above.
+- **After a Portal 2 update:** some features may switch themselves off until the mod is updated. The log says which.
+- **Reporting a problem:** press **Open mod log** in the launcher, or find `bin/portal2vr.log` in your Portal 2 folder, and attach it to a GitHub issue with your headset and graphics card.
+
+## Settings
 
 The launcher starts with the **recommended setup**. Settings survive restarts. `Save settings` changes only local preferences; `Apply` installs the mod/config without starting the game. Apply changes with the game closed; restart to use the new settings.
 
@@ -123,6 +158,16 @@ These changes require a fresh game/headset session. Test startup, repeated menu 
 
 OpenVR Vulkan submissions use the application's queue, so consumer detachment and producer queue draining are resource-ordering safeguards, not a compositor fence or proof across drivers. The modified DXVK/OpenVR resource lifetime remains a runtime compatibility risk. See [Valve's Vulkan integration guidance](https://github.com/ValveSoftware/openvr/wiki/Vulkan). No new hardware validation is claimed by this backport.
 
+## Running from source
+
+Requirements: the same as above, plus a local build. The launcher requires Python **3.10+** with Tcl/Tk (included in the standard Windows Python installer). It does not install Python, SteamVR or drivers automatically.
+
+1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
+2. Double-click **`Portal 2 VR Enriched Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal 2 VR Enriched Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
+3. Select the folder containing `portal2.exe` and your `steam.exe`. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
+4. Connect the headset and controllers, then click **Launch in VR**; SteamVR starts with the game. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
+5. Enable subtitles in Portal 2's own options if you want captions.
+
 ## Building and verification
 
 Use Visual Studio 2022 / Build Tools with the C++ desktop workload, MSVC v143 and a Windows SDK. Visual Studio 2026 also works: add `/p:PlatformToolset=v145` to each command. Build **Release / x86**; the game-facing DLL must remain 32-bit. DXVK, OpenVR and MinHook sources are included; no submodule initialization is required.
@@ -146,7 +191,7 @@ C++/Python suites validate isolated logic and fixture installations. GUI tests u
 
 ## Credits
 
-This project stands on the work of many people:
+This project stands on the work of many people. Thanks to:
 
 - [sd805/l4d2vr](https://github.com/sd805/l4d2vr): the original Left 4 Dead 2 VR mod this code descends from.
 - [Gistix/portal2vr](https://github.com/Gistix/portal2vr): the Portal 2 VR port.
@@ -158,7 +203,7 @@ This project stands on the work of many people:
 - [DXVK](https://github.com/doitsujin/dxvk), [DXVK-GPLALL](https://github.com/Digger1955/dxvk-gplall), [MinHook](https://github.com/TsudaKageyu/minhook) and [OpenVR](https://github.com/ValveSoftware/openvr). Licenses and source pins are in `THIRD_PARTY_SOURCES.txt`.
 - [CircuitLord](https://github.com/CircuitLord)'s VR Mod Installer inspired the launcher's look.
 
-The authors of l4d2vr, portal2vr, portal2vr-ultimate and iFeelLikeChicken2Nite's fork agreed to this fork being published, in November 2026.
+Gistix (portal2vr) and mmadej20 (portal2vr-ultimate) agreed to this fork being published, in November 2026.
 
 ## License
 

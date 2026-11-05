@@ -167,13 +167,13 @@ class CaptionButton(CanvasButton):
 
 
 class Toggle:
-    """Pill switch for a "true"/"false" setting."""
+    """Pill switch for a two-value setting such as "false"/"true"."""
 
-    def __init__(self, app, canvas, var):
-        self.app, self.canvas, self.var = app, canvas, var
+    def __init__(self, app, canvas, var, values):
+        self.app, self.canvas, self.var, (self.off, self.on) = app, canvas, var, values
         self.tag, self.items, self.hover = f"toggle{id(self)}", None, False
         self.width, self.height = app.px(40), app.px(22)
-        canvas.tag_bind(self.tag, "<ButtonRelease-1>", lambda _: var.set("false" if var.get() == "true" else "true"))
+        canvas.tag_bind(self.tag, "<ButtonRelease-1>", lambda _: var.set(self.off if var.get() == self.on else self.on))
         canvas.tag_bind(self.tag, "<Enter>", lambda _: self._hover(True))
         canvas.tag_bind(self.tag, "<Leave>", lambda _: self._hover(False))
         var.trace_add("write", lambda *_: self.paint())
@@ -188,7 +188,7 @@ class Toggle:
     def paint(self):
         if not self.items or not self.canvas.winfo_exists():
             return
-        c, app, on = self.canvas, self.app, self.var.get() == "true"
+        c, app, on = self.canvas, self.app, self.var.get() == self.on
         track, knob = self.items
         x, y = self.origin
         inset, size = app.px(3), self.height - 2 * app.px(3)
@@ -303,8 +303,7 @@ class Launcher:
         changed = sum(values[key] != prefs["values"][key] for key in values)
         self.status_var = tk.StringVar(root, (
             f"Loaded {changed} setting(s) changed in game under Options > VR. "
-            "Save, Apply or Launch to keep them here.") if changed else
-            "Save is local; Apply and Launch update the game with backups.")
+            "Save, Apply or Launch to keep them here.") if changed else "")
         self.status_error = self._next_error = False
         self.dirty, self.invalid = False, False
         self.root.title("Portal 2 VR Enriched Launcher")
@@ -401,12 +400,13 @@ class Launcher:
         self.apply_button = CanvasButton(self, self.canvas, "Apply", self.apply)
         self.links = tuple(CanvasButton(self, self.canvas, text, command, "link", group="footer:Setup")
                            for text, command in (("Open mod log", self.open_log), ("Open backups", self.open_backups),
-                                                 ("About / limitations", self.about)))
+                                                 ("About", self.about)))
         self.save_button = CanvasButton(self, self.canvas, "Save settings", self.save, group="footer:Settings")
+        # Preview config is a troubleshooting aid, so only Advanced offers it.
         self.form_actions = (CanvasButton(self, self.canvas, "Restore recommended", self.reset_recommended,
                                           group="footer:Settings"),
                              CanvasButton(self, self.canvas, "Preview config", self.show_preview,
-                                          group="footer:Settings"))
+                                          group="footer:Advanced"))
         self.canvas.bind("<Configure>", lambda event: self._relayout(event.width, event.height))
         self._relayout(width, height)
 
@@ -428,13 +428,11 @@ class Launcher:
                 group = item.group
                 page.rows.append((group, None, None))
             var = self.vars[item.key]
-            if item.choices == ("false", "true"):
-                control = Toggle(self, c, var)
+            if item.choices in (("false", "true"), ("0", "1")):
+                control = Toggle(self, c, var, item.choices)
             else:
                 if item.choices:
-                    widget = ttk.Combobox(c, textvariable=var, values=item.choices, state="readonly",
-                                          style="Launcher.TCombobox", font=self.fonts["entry"])
-                    widget.bind("<<ComboboxSelected>>", lambda event: event.widget.selection_clear())
+                    widget = self._choice(c, var, dict(zip(item.choices, item.labels or item.choices)))
                 else:
                     widget = ttk.Entry(c, textvariable=var, style="Launcher.TEntry", font=self.fonts["entry"],
                                        justify="right")
@@ -442,6 +440,21 @@ class Launcher:
                 control = Field(self, c, widget)
             page.rows.append((None, item, control))
         page.layout = lambda page, width: self._layout_settings(page, width, advanced)
+
+    def _choice(self, canvas, var, names):
+        """Read-only combobox showing names for the stored values."""
+        values = {name: value for value, name in names.items()}
+        shown = tk.StringVar(canvas, names.get(var.get(), var.get()))
+        widget = ttk.Combobox(canvas, textvariable=shown, values=list(names.values()), state="readonly",
+                              style="Launcher.TCombobox", font=self.fonts["entry"])
+        widget.shown = shown  # Tk forgets a variable once Python drops it.
+
+        def select(_):
+            var.set(values[shown.get()])
+            widget.selection_clear()
+        widget.bind("<<ComboboxSelected>>", select)
+        var.trace_add("write", lambda *_: shown.set(names.get(var.get(), var.get())))
+        return widget
 
     def _relayout(self, width, height):
         px = self.px
@@ -544,6 +557,7 @@ class Launcher:
         setup = self.current == "Setup"
         self.canvas.itemconfigure("footer:Setup", state="normal" if setup else "hidden")
         self.canvas.itemconfigure("footer:Settings", state="hidden" if setup else "normal")
+        self.canvas.itemconfigure("footer:Advanced", state="normal" if self.current == "Advanced" else "hidden")
 
     def _status_changed(self, *_):
         self.status_error, self._next_error = self._next_error, False
@@ -638,7 +652,7 @@ class Launcher:
         return bottom + px(10)
 
     def _layout_setup(self, page, width):
-        c, px = page.canvas, self.px
+        c = page.canvas
         c.delete("layout")
         game_found, steam_found = self._paths_found()
         y = self._setup_card(c, 0, width, "ok" if game_found else "warn", "Portal 2",
@@ -656,9 +670,7 @@ class Launcher:
         profile, _, note = self.profile_var.get().partition(" • ")
         y = self._setup_card(c, y, width, "warn" if self.invalid else "ok", profile, self.summary_var.get(),
                              (self.customize_button,), title_note=note.capitalize() or None)
-        item = c.create_text(width // 2, y + px(4), text="Start SteamVR and connect your headset before launching.",
-                             anchor="n", font=self.fonts["detail"], fill=MUTED, tags="layout")
-        return c.bbox(item)[3] + px(6)
+        return y
 
     def _layout_settings(self, page, width, advanced):
         c, px = page.canvas, self.px
@@ -714,21 +726,24 @@ class Launcher:
             self.profile_var.set(("Recommended setup" if recommended else "Custom setup") +
                                  (" • unsaved changes" if dirty else ""))
             values = prefs["values"]
-            features = [values["TrackingMode"] + " tracking", "portal orientation: " + values["PortalOrientationMode"]]
+            # What the player will notice, in plain words; Advanced has the details.
+            features = [values["TrackingMode"],
+                        "snap turning" if values["SnapTurning"] == "true" else "smooth turning"]
             if values["RoomscaleMode"] == "ActiveExperimental":
-                features.append("physical roomscale walking")
-            if values["AimMode"] == "2":
-                features.append("world aim line" if values["ExperimentalWorldAimMarker"] == "true" else
-                                "native beam (currently invisible on the tested setup)")
-                features.append("original Portal reticle" if values["ExperimentalStereoReticle"] == "false" else "atlas reticle rollback")
+                features.append("physical walking")
+            if values["PhysicalCrouch"] == "true" and values["6DOF"] == "true":
+                features.append("physical crouch")
+            if values["AimMode"] == "2" and values["ExperimentalWorldAimMarker"] == "true":
+                features.append("aim line")
             if values["ExperimentalViewmodelAlignment"] == "true":
-                features.append("aligned portal gun / glow")
+                features.append("gun follows the controller")
             if values["ExperimentalHUDOverlay"] == "true":
-                features.append("caption overlay")
-            if values["Haptics"] == "true" and values["HapticsIntensity"] != "0":
-                features.append("controller haptics")
-            elif values["ExperimentalPortalShotHaptics"] == "true":
-                features.append("portal shot haptics")
+                features.append("readable captions")
+            if values["Haptics"] == "true" and values["HapticsIntensity"] != "0" or \
+                    values["ExperimentalPortalShotHaptics"] == "true":
+                features.append("vibration")
+            if values["PortalOrientationMode"] != "LegacyYaw":
+                features.append("experimental portal orientation")
             # The no-break space keeps each bullet off the start of a wrapped line.
             self.summary_var.set("  •  ".join(feature[:1].upper() + feature[1:] for feature in features))
         except ValueError as error:
@@ -829,7 +844,7 @@ class Launcher:
             if prefs is None:
                 return
             self._stage(prefs)
-            self.status_var.set("Settings applied. Original backups retained. No game was launched.")
+            self.status_var.set("Mod and settings installed. Your original files stay backed up.")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             self._error(error)
 
@@ -843,7 +858,7 @@ class Launcher:
             staged = True
             steam = Path(prefs["steam_exe"])
             subprocess.Popen(core.build_steam_command(steam), cwd=str(steam.parent))
-            self.status_var.set("Launch request sent to Steam. Mod files stay installed until you choose Restore original game files.")
+            self.status_var.set("Portal 2 is starting through Steam; SteamVR opens with it.")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             if staged:
                 error = RuntimeError(f"Steam launch failed: {error}. Mod files and backups are retained; retry or use Restore original game files.")
@@ -905,15 +920,15 @@ class Launcher:
         messagebox.showinfo("About Portal 2 VR Enriched", "Unofficial fan project, not affiliated with Valve.\n"
                             "Incremental modernization of Gistix/portal2vr, "
                             "built on mmadej20/portal2vr-ultimate.\n\n"
-                            "Windows Portal 2, 32-bit runtime, SteamVR / OpenVR, modified DXVK.\n"
-                            "Recommended: tested world aim line with original dynamic Portal reticle.\n\n"
-                            "Launch applies your settings first; restart the game after changing them.\n\n"
-                            "Native robot_point_beam remains invisible. Experimental portal modes, floor/ceiling "
-                            "comfort, performance and other headset coverage need further testing. No OpenXR.\n\n"
-                            "Original files are backed up before the first install and updates keep that snapshot. "
-                            "Restore removes only the files the launcher created.\n\n"
-                            "Backups and preferences are local to this repository. Keep tools/.launcher-state.json "
-                            "and tools/.launcher-backups together for recovery.", parent=self.root)
+                            "Needs Portal 2 for Windows, Steam and SteamVR.\n\n"
+                            "Launch installs the mod, applies your settings and starts Portal 2 in VR. "
+                            "Apply does the same without starting the game. "
+                            "Restart the game after changing settings.\n\n"
+                            "Your original game files are backed up before the first install. "
+                            "Restore original game files puts them back and removes only what the launcher added. "
+                            "Keep the launcher's tools folder: it holds those backups.\n\n"
+                            "Experimental portal orientation modes and other headsets are not tested yet.",
+                            parent=self.root)
 
     def close(self):
         try:

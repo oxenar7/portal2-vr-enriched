@@ -344,6 +344,29 @@ class LauncherTests(unittest.TestCase):
         sizes = {data[6 + 16 * index] or 256 for index in range(count)}
         self.assertEqual(sizes, set(launcher_art.ICON_SIZES))
 
+    def test_choices_show_names_but_store_config_values(self):
+        from tkinter import ttk
+
+        page = self.app.pages["Settings"]
+        widget = next(control.widget for _, item, control in page.rows
+                      if item and item.key == "MovementDirection")
+        self.assertIsInstance(widget, ttk.Combobox)
+        self.assertIn("Left controller", widget.cget("values"))
+        widget.set("Left controller")
+        widget.event_generate("<<ComboboxSelected>>")
+        self.assertEqual(self.app.vars["MovementDirection"].get(), "LeftController")
+        self.app.vars["MovementDirection"].set("HMD")
+        self.assertEqual(widget.get(), "Headset")
+        toggle = next(control for _, item, control in page.rows if item and item.key == "RenderWindow")
+        self.assertIsInstance(toggle, self.launcher.Toggle)
+        self.assertEqual((toggle.off, toggle.on), ("0", "1"))
+
+    def test_preview_is_offered_only_on_advanced(self):
+        preview = next(button for button in self.app.buttons if button.text == "Preview config")
+        for name, shown in (("Setup", "hidden"), ("Settings", "hidden"), ("Advanced", "normal")):
+            self.app.show_page(name)
+            self.assertEqual(self.app.canvas.itemcget(preview.label, "state"), shown, name)
+
     def test_setup_card_follows_the_install_on_every_page(self):
         self.assertFalse(self.app.installed)
         for name in self.app.pages:

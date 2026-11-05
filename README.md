@@ -28,7 +28,7 @@ Requirements: Portal 2 for Windows, Steam, working SteamVR and a VR headset. The
 1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
 2. Double-click **`Portal 2 VR Enriched Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal 2 VR Enriched Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
 3. Select the folder containing `portal2.exe` and your `steam.exe`. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
-4. Start SteamVR and connect the headset/controllers, then click **Launch in VR**. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
+4. Connect the headset and controllers, then click **Launch in VR**; SteamVR starts with the game. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
 5. Enable subtitles in Portal 2's own options if you want captions.
 
 The launcher starts with the **recommended setup**. Settings survive restarts. `Save settings` changes only local preferences; `Apply` installs the mod/config without starting the game. Apply changes with the game closed; restart to use the new settings.
@@ -50,7 +50,7 @@ These observations concern the tested installation, not every headset, game buil
 
 ### Configuration and recovery
 
-Settings provides tracking, movement, roomscale, turning and desktop-render options. Advanced exposes all current mod parameters with descriptions/bounds: caption placement, gun calibration, IPD/world scale, controller pitch, haptics, portal orientation, anti-aliasing, aiming and diagnostics. Invalid numbers and incompatible roomscale/muzzle settings are rejected before deployment. Preview config shows what will be written.
+Settings provides tracking, movement, roomscale, turning and desktop-render options. Advanced exposes all current mod parameters with descriptions/bounds: caption placement, gun calibration, IPD/world scale, controller pitch, haptics, portal orientation, anti-aliasing, aiming and diagnostics. Invalid numbers and incompatible roomscale/muzzle settings are rejected before deployment. Preview config, on the Advanced page, shows what will be written.
 
 ### In-game VR options
 

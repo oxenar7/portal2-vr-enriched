@@ -158,4 +158,10 @@ This project stands on the work of many people:
 - [DXVK](https://github.com/doitsujin/dxvk), [DXVK-GPLALL](https://github.com/Digger1955/dxvk-gplall), [MinHook](https://github.com/TsudaKageyu/minhook) and [OpenVR](https://github.com/ValveSoftware/openvr). Licenses and source pins are in `THIRD_PARTY_SOURCES.txt`.
 - [CircuitLord](https://github.com/CircuitLord)'s VR Mod Installer inspired the launcher's look.
 
+The authors of l4d2vr, portal2vr, portal2vr-ultimate and iFeelLikeChicken2Nite's fork agreed to this fork being published, in November 2026.
+
+## License
+
+GPL-3.0, like [portal2vr](https://github.com/Gistix/portal2vr) and [portal2vr-ultimate](https://github.com/mmadej20/portal2vr-ultimate): see `COPYING`. DXVK, MinHook, OpenVR and the Source SDK headers keep their own licenses, listed in `THIRD_PARTY_SOURCES.txt`.
+
 Portal 2 is a trademark of Valve Corporation.

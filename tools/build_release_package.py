@@ -90,8 +90,10 @@ def assemble_release(repo: Path, launcher_exe: Path, output: Path,
         payloads[relative] = _source_bytes(repo, relative)
     for name in LICENSES:
         payloads[name] = _source_bytes(repo, name)
-    if (repo / "LICENSE").exists() or (repo / "LICENSE").is_symlink():
-        payloads["LICENSE"] = _source_bytes(repo, "LICENSE")
+    # The project license at the root: GPL-3.0 in COPYING, as in portal2vr.
+    for name in ("LICENSE", "COPYING"):
+        if (repo / name).exists() or (repo / name).is_symlink():
+            payloads[name] = _source_bytes(repo, name)
     for dll in ("Release/d3d9.dll", "thirdparty/openvr/bin/win32/openvr_api.dll"):
         if _pe_machine(payloads[dll], dll) != 0x14c:
             raise ValueError(f"Release DLL must be 32-bit x86 PE: {dll}")

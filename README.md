@@ -19,6 +19,9 @@ This is an unofficial fan project, not affiliated with or endorsed by Valve. You
 - **Readable captions:** an opaque backing, placed just below your gaze and following it.
 - **Button hints you can see:** Portal 2's on-screen hints now appear in the headset and show the controller button bound to that action in SteamVR, not a keyboard key.
 - **Binocular zoom:** hold the right stick in to look through a magnified binocular window. It also completes the game's zoom lesson.
+- **Anti-aliasing at full frame rate:** with anti-aliasing on, stereo frames no longer wait for the GPU, and the parts of each eye image the headset never shows are not drawn. On the tested setup, 4x anti-aliasing went from 46 to a steady 90 fps.
+- **Smooth grates and sharp floors:** with anti-aliasing on, grate holes and railing cut-outs get smooth edges instead of crawling stair steps; 16x anisotropic filtering keeps floors and walls sharp at grazing angles.
+- **Aim through grates:** the aim line and reticle pass through grates and railings, like the portal shot itself.
 - **A small, clean launcher** that finds Portal 2 and Steam by itself, and only needs the Python standard library when run from source.
 
 ## Install
@@ -38,7 +41,9 @@ Then:
 4. Press **Launch in VR**. The launcher backs up the game files it replaces, installs the mod and starts Portal 2 through Steam with the launch options it needs. SteamVR starts with the game. Next time, just press **Launch in VR** again.
 5. Optional: turn on subtitles in Portal 2's audio options to get captions in the headset.
 
-The mod stays installed after you quit. To play Portal 2 normally again, open the launcher and press **Restore original game files**. Do the same before switching to a newer version of the mod, and keep the extracted folder until then: it holds your backups.
+The mod stays installed after you quit. To play Portal 2 normally again, open the launcher and press **Restore original game files**. Keep the extracted folder until then: it holds your backups.
+
+To update, close the launcher and extract the new ZIP into the same folder, replacing the files. Your settings and backups stay, and the next **Launch in VR** installs the new version. If you prefer a new folder, first press **Restore original game files** in the old launcher.
 
 ## Controls
 
@@ -64,6 +69,7 @@ Valve Index and Vive Cosmos controllers have their own default bindings. Other c
 - **The game does not start in VR:** make sure SteamVR sees the headset and controllers before pressing **Launch in VR**.
 - **The game closes at startup:** install the latest Visual C++ Redistributable for x86 from the link above.
 - **After a Portal 2 update:** some features may switch themselves off until the mod is updated. The log says which.
+- **Dark or black wedges at the edge of your view:** the mod skips the eye pixels your headset reports as never shown. If your headset shows them anyway, create a text file named `dxvk.conf` in your Portal 2 folder containing `d3d9.vrEyeMask = False`, and please report your headset.
 - **Reporting a problem:** press **Open mod log** in the launcher, or find `bin/portal2vr.log` in your Portal 2 folder, and attach it to a GitHub issue with your headset and graphics card.
 
 ## Settings

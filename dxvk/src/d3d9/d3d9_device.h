@@ -1157,6 +1157,14 @@ namespace dxvk {
             VkImageLayout            OldLayout,
             VkImageLayout            NewLayout);
 
+    // Portal2VR: same, for an explicit image (the resolve image that OpenVR
+    // copies from when an eye target is multisampled).
+    void TransformImage(
+      const Rc<DxvkImage>&           Image,
+      const VkImageSubresourceRange* pSubresources,
+            VkImageLayout            OldLayout,
+            VkImageLayout            NewLayout);
+
     // Portal2VR: records a GPU event after everything already in the command
     // stream, used to wait for the end of one submitted VR frame.
     void SignalGpuEvent(const Rc<DxvkEvent>& Event);

@@ -23,6 +23,13 @@ namespace dxvk {
         return *registry;
     }
 
+    // The image OpenVR copies from: GetVRDesc hands out the resolve image of a
+    // multisampled target, so layout changes for submit must use it too.
+    static Rc<DxvkImage> SubmitImage(D3D9CommonTexture* tex)
+    {
+        return tex->Desc()->MultiSample != D3DMULTISAMPLE_NONE ? tex->GetResolveImage() : tex->GetImage();
+    }
+
     class D3D9VR final : public ComObjectClamp<IDirect3DVR9>
     {
     public:
@@ -116,7 +123,7 @@ namespace dxvk {
                 return D3DERR_INVALIDCALL;
 
             auto *tex = static_cast<D3D9Surface *>(pSurface)->GetCommonTexture();
-            const auto &image = tex->GetImage();
+            const Rc<DxvkImage> image = SubmitImage(tex);
 
             VkImageSubresourceRange subresources = {
               VK_IMAGE_ASPECT_COLOR_BIT,
@@ -125,7 +132,7 @@ namespace dxvk {
             };
 
             m_device->TransformImage(
-                tex, &subresources,
+                image, &subresources,
                 image->info().layout,
                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
@@ -219,13 +226,13 @@ namespace dxvk {
                 if (ppSurfaces[i] == nullptr)
                     continue;
                 auto *tex = static_cast<D3D9Surface *>(ppSurfaces[i])->GetCommonTexture();
-                const auto &image = tex->GetImage();
+                const Rc<DxvkImage> image = SubmitImage(tex);
                 VkImageSubresourceRange subresources = {
                   VK_IMAGE_ASPECT_COLOR_BIT,
                   0, image->info().mipLevels,
                   0, image->info().numLayers
                 };
-                m_device->TransformImage(tex, &subresources,
+                m_device->TransformImage(image, &subresources,
                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image->info().layout);
             }
             // A fresh event per frame: a reused one would still report the

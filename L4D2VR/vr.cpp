@@ -549,10 +549,11 @@ void VR::PerfNoteCompiler(const PerfStats::CompilerCounts &counts)
 
 unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[4]) const
 {
-    // Menus submit the back buffer through an overlay and MSAA eyes submit
-    // their resolve image; both keep the device drain.
+    // Menus submit the back buffer through an overlay and keep the device
+    // drain. MSAA eyes go through the fast path too: the bridge transfers
+    // their resolve image, which Present fills before this frame is handed over.
     if (m_Config.gpuDrainEachFrame || !m_RenderedNewFrame || !m_CreatedVRTextures ||
-        m_AntiAliasing != 0 || !m_D9LeftEyeSurface || !m_D9RightEyeSurface)
+        !m_D9LeftEyeSurface || !m_D9RightEyeSurface)
         return 0;
     unsigned int count = 0;
     surfaces[count++] = m_D9LeftEyeSurface;

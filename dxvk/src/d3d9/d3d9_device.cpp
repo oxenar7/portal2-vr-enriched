@@ -4442,7 +4442,7 @@ namespace dxvk {
     if (ownedVR && m_vrBridge != nullptr)
     {
         // Stereo frames hand their eyes to OpenVR without waiting for the GPU
-        // to go idle; menus, MSAA eyes and failures keep the device drain.
+        // to go idle; menus and failures keep the device drain.
         IDirect3DSurface9* submitSurfaces[4] = {};
         const UINT submitCount = SUCCEEDED(previousFrameResult) ?
           game->m_VR->FastSubmitSurfaces(submitSurfaces) : 0u;
@@ -8874,8 +8874,17 @@ namespace dxvk {
     const VkImageSubresourceRange* pSubresources,
           VkImageLayout            OldLayout,
           VkImageLayout            NewLayout) {
+    TransformImage(pResource->GetImage(), pSubresources, OldLayout, NewLayout);
+  }
+
+
+  void D3D9DeviceEx::TransformImage(
+    const Rc<DxvkImage>&           Image,
+    const VkImageSubresourceRange* pSubresources,
+          VkImageLayout            OldLayout,
+          VkImageLayout            NewLayout) {
     EmitCs([
-      cImage        = pResource->GetImage(),
+      cImage        = Image,
       cSubresources = *pSubresources,
       cOldLayout    = OldLayout,
       cNewLayout    = NewLayout

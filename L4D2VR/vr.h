@@ -23,6 +23,7 @@
 #include "openvr_session.h"
 #include "vr_options_menu.h"
 #include "perf_stats.h"
+#include "eye_mask.h"
 #include <filesystem>
 
 #define MAX_STR_LEN 256
@@ -113,6 +114,11 @@ public:
 	float m_Fov;
 
 	vr::VRTextureBounds_t m_TextureBounds[2];
+	// Eye pixels the headset never shows, in eye render target pixels. Built
+	// once at init; DXVK reads them after full depth clears of the eyes.
+	std::vector<EyeMask::Rect> m_EyeMaskRects[2];
+	// The part of each eye texture the compositor reads; Present resolves only this.
+	EyeMask::Rect m_EyeVisibleRect[2];
 	vr::TrackedDevicePose_t m_Poses[vr::k_unMaxTrackedDeviceCount];
 
 	Vector m_EyeToHeadTransformPosLeft = { 0,0,0 };

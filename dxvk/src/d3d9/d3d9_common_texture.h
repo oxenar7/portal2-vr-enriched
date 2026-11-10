@@ -339,6 +339,10 @@ namespace dxvk {
       return m_transitionedToHazardLayout;
     }
 
+    /// Portal2VR: 0 or 1 for the eye render target and its depth surface, -1 otherwise.
+    void SetVREye(int32_t Eye) { m_vrEye = Eye; }
+    int32_t GetVREye() const { return m_vrEye; }
+
     D3DRESOURCETYPE GetType() const {
       return m_type;
     }
@@ -525,6 +529,7 @@ namespace dxvk {
     int64_t                       m_size = 0;
 
     bool                          m_transitionedToHazardLayout = false;
+    int32_t                       m_vrEye = -1;
 
     D3D9ColorView                 m_sampleView;
     D3D9ColorView                 m_resolveView;

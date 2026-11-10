@@ -132,6 +132,25 @@ VR::VR(Game *game)
     m_Aspect = tanHalfFov[0] / tanHalfFov[1];
     m_Fov = 2.0f * atan(tanHalfFov[0]) * 360 / (3.14159265358979323846 * 2);
 
+    for (int eye = 0; eye < 2; ++eye) {
+        const vr::HiddenAreaMesh_t mesh = m_System->GetHiddenAreaMesh(static_cast<vr::EVREye>(eye),
+                                                                      vr::k_eHiddenAreaMesh_Standard);
+        std::vector<EyeMask::Point> triangles;
+        if (mesh.pVertexData)
+            for (uint32_t i = 0; i < mesh.unTriangleCount * 3; ++i)
+                triangles.push_back({mesh.pVertexData[i].v[0], mesh.pVertexData[i].v[1]});
+        const auto &tb = m_TextureBounds[eye];
+        const EyeMask::Result mask = EyeMask::Build(m_RenderWidth, m_RenderHeight,
+            {tb.uMin, tb.vMin, tb.uMax, tb.vMax}, triangles);
+        m_EyeMaskRects[eye] = mask.rects;
+        m_EyeVisibleRect[eye] = mask.visible;
+        char line[192];
+        snprintf(line, sizeof(line), "Eye mask %s: %u lens triangles, %zu rects, outside bounds %.1f%%, lens %.1f%% of the eye texture",
+                 eye == 0 ? "left" : "right", mesh.unTriangleCount, mask.rects.size(),
+                 mask.outsideFraction * 100.0, mask.lensFraction * 100.0);
+        Logger::Write(line);
+    }
+
     if (!InstallApplicationManifest("manifest.vrmanifest") ||
         !SetActionManifest("action_manifest.json"))
         return;

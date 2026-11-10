@@ -771,11 +771,13 @@ namespace dxvk {
           {
               textureTarget = &game->m_VR->m_VKLeftEye;
               surfaceTarget = &game->m_VR->m_D9LeftEyeSurface;
+              texture->GetCommonTexture()->SetVREye(0);
           }
           else if (texID == VR::Texture_RightEye)
           {
               textureTarget = &game->m_VR->m_VKRightEye;
               surfaceTarget = &game->m_VR->m_D9RightEyeSurface;
+              texture->GetCommonTexture()->SetVREye(1);
           }
           else if (texID == VR::Texture_HUD)
           {
@@ -1535,6 +1537,8 @@ namespace dxvk {
         region.dstSubresource = blitInfo.dstSubresource;
         region.dstOffset      = blitInfo.dstOffsets[0];
         region.extent         = srcCopyExtent;
+        m_vrCopyResolves++;
+        m_vrCopyResolvePixels += uint64_t(srcCopyExtent.width) * srcCopyExtent.height;
 
         EmitCs([
           cDstImage    = dstImage,
@@ -2186,7 +2190,111 @@ namespace dxvk {
       }
     }
 
+    if (unlikely(m_d3d9Options.vrEyeMask) && !Count && offset.x == 0 && offset.y == 0
+        && (depthAspectMask & VK_IMAGE_ASPECT_DEPTH_BIT))
+      NoteVREyeClear(Flags, Z, extent);
+
     return D3D_OK;
+  }
+
+
+  void D3D9DeviceEx::NoteVREyeClear(DWORD Flags, float Z, VkExtent3D Extent) {
+    // Only a full clear of an eye render target with its own depth surface.
+    const D3D9CommonTexture* rt0 = GetCommonTexture(m_state.renderTargets[0].ptr());
+    const D3D9CommonTexture* ds = m_state.depthStencil->GetCommonTexture();
+    const int32_t eye = rt0 ? rt0->GetVREye() : -1;
+    if (eye < 0 || ds->GetVREye() != eye)
+      return;
+
+    const VkExtent3D rtExtent = rt0->GetImage()->info().extent;
+    if (Extent.width < rtExtent.width || Extent.height < rtExtent.height)
+      return;
+
+    // The stamp is the depth nothing can pass: near for the usual LESS/LESSEQUAL
+    // with a 1.0 clear, far for reversed depth with a 0.0 clear.
+    if (Z != 0.0f && Z != 1.0f) {
+      if (!(m_vrEyeMaskLogged & 4u)) {
+        m_vrEyeMaskLogged |= 4u;
+        Logger::warn(str::format("Portal2VR eye mask: skipped an eye depth clear to ", Z));
+      }
+      return;
+    }
+
+    if (Flags & D3DCLEAR_TARGET)
+      m_vrEyeColorCleared |= 1u << eye;
+
+    m_vrEyeMaskDepth = m_state.depthStencil;
+    m_vrEyeMaskEye = eye;
+    m_vrEyeMaskDepthValue = 1.0f - Z;
+  }
+
+
+  void D3D9DeviceEx::ApplyVREyeMask() {
+    if (m_state.depthStencil != m_vrEyeMaskDepth)
+      return;
+
+    const int32_t eye = m_vrEyeMaskEye;
+    m_vrEyeMaskDepth = nullptr;
+
+    Game* const game = g_Game.load(std::memory_order_acquire);
+    if (!game || !game->m_VR || !game->m_VR->OwnsD3DDevice(this))
+      return;
+
+    const auto& source = game->m_VR->m_EyeMaskRects[eye];
+    D3D9CommonTexture* ds = m_state.depthStencil->GetCommonTexture();
+    const VkExtent3D dsExtent = ds->GetImage()->info().extent;
+
+    std::vector<VkClearRect> rects;
+    rects.reserve(source.size());
+    for (const auto& r : source) {
+      if (r.x < 0 || r.y < 0 || uint32_t(r.x) + r.width > dsExtent.width || uint32_t(r.y) + r.height > dsExtent.height)
+        continue;
+      VkClearRect rect;
+      rect.rect.offset = { r.x, r.y };
+      rect.rect.extent = { r.width, r.height };
+      rect.baseArrayLayer = 0;
+      rect.layerCount = 1;
+      rects.push_back(rect);
+    }
+    if (rects.empty())
+      return;
+
+    m_vrEyeStampedEyes |= 1u << eye;
+    m_vrEyeStampsThisFrame++;
+
+    VkClearValue depthValue = { };
+    depthValue.depthStencil.depth = m_vrEyeMaskDepthValue;
+
+    // Nothing draws into the masked pixels any more except full-screen passes,
+    // so give them a defined colour once per frame unless the engine's own
+    // clear already did.
+    const D3D9CommonTexture* rt0 = HasRenderTargetBound(0) ? GetCommonTexture(m_state.renderTargets[0].ptr()) : nullptr;
+    const bool clearColor = !(m_vrEyeColorCleared & (1u << eye)) && rt0 && rt0->GetVREye() == eye;
+    if (clearColor)
+      m_vrEyeColorCleared |= 1u << eye;
+    Rc<DxvkImageView> colorView;
+    if (clearColor)
+      colorView = m_state.renderTargets[0]->GetRenderTargetView(m_state.renderStates[D3DRS_SRGBWRITEENABLE]);
+
+    if (!(m_vrEyeMaskLogged & (1u << eye))) {
+      m_vrEyeMaskLogged |= 1u << eye;
+      Logger::info(str::format("Portal2VR eye mask: eye ", eye, " stamps ", rects.size(),
+        " rects at depth ", m_vrEyeMaskDepthValue, ", colour cleared by the mask: ", clearColor));
+    }
+
+    EmitCs([
+      cDepthView = m_state.depthStencil->GetDepthStencilView(true),
+      cColorView = std::move(colorView),
+      cDepthValue = depthValue,
+      cRects = std::move(rects)
+    ] (DxvkContext* ctx) {
+      if (cDepthView != nullptr)
+        ctx->clearImageViewRects(cDepthView, VK_IMAGE_ASPECT_DEPTH_BIT, cDepthValue, uint32_t(cRects.size()), cRects.data());
+      if (cColorView != nullptr) {
+        VkClearValue black = { };
+        ctx->clearImageViewRects(cColorView, VK_IMAGE_ASPECT_COLOR_BIT, black, uint32_t(cRects.size()), cRects.data());
+      }
+    });
   }
 
 
@@ -4393,6 +4501,27 @@ namespace dxvk {
     // Reset invalidates owned VR surfaces under the same device lock. Keep
     // them alive through resolution and submission on multithreaded devices.
     D3D9DeviceLock lock = LockDevice();
+    // Eye mask state is per frame.
+    m_vrEyeMaskDepth = nullptr;
+    m_vrEyeColorCleared = 0u;
+    if (unlikely(m_d3d9Options.vrEyeMask)) {
+      m_vrEyeMaskFrames[m_vrEyeStampedEyes & 3u]++;
+      m_vrEyeMaskStamps += m_vrEyeStampsThisFrame;
+      m_vrEyeStampedEyes = 0u;
+      m_vrEyeStampsThisFrame = 0u;
+      const uint32_t frames = m_vrEyeMaskFrames[0] + m_vrEyeMaskFrames[1] + m_vrEyeMaskFrames[2] + m_vrEyeMaskFrames[3];
+      if (frames >= 2700u) {
+        Logger::info(str::format("Portal2VR eye mask: last ", frames, " frames: both eyes ", m_vrEyeMaskFrames[3],
+          ", left only ", m_vrEyeMaskFrames[1], ", right only ", m_vrEyeMaskFrames[2], ", none ", m_vrEyeMaskFrames[0],
+          ", stamps per frame ", double(m_vrEyeMaskStamps) / double(frames),
+          "; MSAA resolves per frame: full ", double(m_vrFullResolves) / double(frames),
+          ", copies ", double(m_vrCopyResolves) / double(frames),
+          " (", double(m_vrCopyResolvePixels) / double(frames) / 1.0e6, " Mpixel)"));
+        m_vrEyeMaskFrames = { };
+        m_vrEyeMaskStamps = 0u;
+        m_vrFullResolves = m_vrCopyResolves = m_vrCopyResolvePixels = 0u;
+      }
+    }
     Game* const game = g_Game.load(std::memory_order_acquire);
     const bool ownedVR = game && game->m_VR && game->m_VR->OwnsD3DDevice(this);
     m_vrDiagnostics.SetVerbose(game && game->m_VR && game->m_VR->m_Config.verboseDiagnostics, GetTickCount64());
@@ -4435,8 +4564,16 @@ namespace dxvk {
       m_vrBridge->InvalidateBackBufferData();
 
     if (ownedVR && game->m_VR->m_CreatedVRTextures) {
-      ResolveImage(GetCommonTexture(game->m_VR->m_D9LeftEyeSurface));
-      ResolveImage(GetCommonTexture(game->m_VR->m_D9RightEyeSurface));
+      // The compositor reads only the submitted bounds, so with the eye mask on
+      // the MSAA resolve skips the never-shown strips around them.
+      VkRect2D visible[2];
+      for (uint32_t eye = 0; eye < 2; eye++) {
+        const auto& r = game->m_VR->m_EyeVisibleRect[eye];
+        visible[eye] = { { r.x, r.y }, { r.width, r.height } };
+      }
+      const bool clip = m_d3d9Options.vrEyeMask;
+      ResolveImage(GetCommonTexture(game->m_VR->m_D9LeftEyeSurface), clip ? &visible[0] : nullptr);
+      ResolveImage(GetCommonTexture(game->m_VR->m_D9RightEyeSurface), clip ? &visible[1] : nullptr);
     }
 
     if (ownedVR && m_vrBridge != nullptr)
@@ -4673,6 +4810,13 @@ namespace dxvk {
     try {
       const Com<D3D9Surface> surface = new D3D9Surface(this, &desc, IsExtended(), nullptr, pSharedHandle);
       m_initializer->InitTexture(surface->GetCommonTexture());
+      // Portal2VR: the separate depth of an eye render target (eye mask, see Clear).
+      if (game && game->m_VR && game->m_VR->OwnsD3DDevice(this)) {
+        if (game->m_VR->m_CreatingTextureID == VR::Texture_LeftEye)
+          surface->GetCommonTexture()->SetVREye(0);
+        else if (game->m_VR->m_CreatingTextureID == VR::Texture_RightEye)
+          surface->GetCommonTexture()->SetVREye(1);
+      }
       *ppSurface = surface.ref();
       m_losableResourceCounter++;
 
@@ -7907,6 +8051,9 @@ namespace dxvk {
     if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::Framebuffer)))
       BindFramebuffer();
 
+    if (unlikely(m_vrEyeMaskDepth != nullptr))
+      ApplyVREyeMask();
+
     if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::ViewportScissor)))
       BindViewportAndScissor();
 
@@ -8928,6 +9075,7 @@ namespace dxvk {
 
 
   void D3D9DeviceEx::ResetState(D3DPRESENT_PARAMETERS* pPresentationParameters) {
+    m_vrEyeMaskDepth = nullptr;
     SetDepthStencilSurface(nullptr);
 
     for (uint32_t i = 0; i < caps::MaxSimultaneousRenderTargets; i++)
@@ -9310,7 +9458,7 @@ namespace dxvk {
     pResource->TrackMappingBufferSequenceNumber(Subresource, sequenceNumber);
   }
 
-  void D3D9DeviceEx::ResolveImage(D3D9CommonTexture* commonTex) {
+  void D3D9DeviceEx::ResolveImage(D3D9CommonTexture* commonTex, const VkRect2D* pRegion) {
     if (commonTex == nullptr)
       return;
 
@@ -9326,6 +9474,15 @@ namespace dxvk {
     region.dstSubresource = region.srcSubresource;
     region.dstOffset      = { 0, 0, 0 };
     region.extent         = image->mipLevelExtent(subresource.mipLevel);
+    if (pRegion != nullptr && pRegion->extent.width && pRegion->extent.height
+        && pRegion->offset.x >= 0 && pRegion->offset.y >= 0
+        && uint32_t(pRegion->offset.x) + pRegion->extent.width <= region.extent.width
+        && uint32_t(pRegion->offset.y) + pRegion->extent.height <= region.extent.height) {
+      region.srcOffset = { pRegion->offset.x, pRegion->offset.y, 0 };
+      region.dstOffset = region.srcOffset;
+      region.extent    = { pRegion->extent.width, pRegion->extent.height, 1u };
+    }
+    m_vrFullResolves++;
 
     EmitCs([
       cDstImage = commonTex->GetResolveImage(),

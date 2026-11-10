@@ -572,12 +572,15 @@ namespace dxvk {
      * With MSAA eyes, alpha-to-coverage replaces *
      * the alpha test so grate holes and railing  *
      * cut-outs get smooth edges instead of       *
-     * crawling stair steps.                      */
+     * crawling stair steps.                      *
+     * The VR eye mask skips shading for the eye  *
+     * pixels the headset never shows.            */
     { R"(\\portal2\.exe$)", {{
       { "dxvk.enableGraphicsPipelineLibrary", "Auto" },
       { "dxvk.trackPipelineLifetime",         "False" },
       { "d3d9.samplerAnisotropy",             "16" },
       { "d3d9.forceAlphaToCoverage",          "True" },
+      { "d3d9.vrEyeMask",                     "True" },
     }} },
     /* Sonic Adventure 2                          */
     { R"(\\Sonic Adventure 2\\(launcher|sonic2app)\.exe$)", {{

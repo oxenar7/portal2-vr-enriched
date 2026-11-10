@@ -503,7 +503,25 @@ namespace dxvk {
             VkExtent3D            extent,
             VkImageAspectFlags    aspect,
             VkClearValue          value);
-    
+
+    /**
+     * \brief Clears several rects of a render target view at once
+     *
+     * Portal2VR: one vkCmdClearAttachments for the whole list, inline
+     * when the view is bound to the current render pass.
+     * \param [in] imageView Color or depth attachment view
+     * \param [in] aspect Aspect mask to clear
+     * \param [in] value The clear value
+     * \param [in] rectCount Number of rects
+     * \param [in] rects Rects inside the view, layers 0..layerCount
+     */
+    void clearImageViewRects(
+      const Rc<DxvkImageView>&    imageView,
+            VkImageAspectFlags    aspect,
+            VkClearValue          value,
+            uint32_t              rectCount,
+      const VkClearRect*          rects);
+
     /**
      * \brief Copies data from one buffer to another
      * 
@@ -1490,7 +1508,14 @@ namespace dxvk {
             VkExtent3D            extent,
             VkImageAspectFlags    aspect,
             VkClearValue          value);
-    
+
+    void clearImageViewFb(
+      const Rc<DxvkImageView>&    imageView,
+            VkImageAspectFlags    aspect,
+            VkClearValue          value,
+            uint32_t              rectCount,
+      const VkClearRect*          rects);
+
     void clearImageViewCs(
       const Rc<DxvkImageView>&    imageView,
             VkOffset3D            offset,

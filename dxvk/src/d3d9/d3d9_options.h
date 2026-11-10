@@ -164,6 +164,12 @@ namespace dxvk {
     /// grates and railings get antialiased hole edges.
     bool forceAlphaToCoverage;
 
+    /// Portal2VR: after each full depth clear of an eye render target, set the
+    /// eye pixels the headset never shows (outside the submitted texture bounds
+    /// and inside the lens hidden area) to the nearest depth, so the GPU rejects
+    /// them before running pixel shaders.
+    bool vrEyeMask;
+
     /// How much virtual memory will be used for textures (in MB).
     int32_t textureMemory;
 

@@ -4335,6 +4335,49 @@ namespace dxvk {
           VkExtent3D            extent,
           VkImageAspectFlags    aspect,
           VkClearValue          value) {
+    VkClearRect clearRect;
+    clearRect.rect.offset.x       = offset.x;
+    clearRect.rect.offset.y       = offset.y;
+    clearRect.rect.extent.width   = extent.width;
+    clearRect.rect.extent.height  = extent.height;
+    clearRect.baseArrayLayer      = 0;
+    clearRect.layerCount          = imageView->info().layerCount;
+
+    this->clearImageViewFb(imageView, aspect, value, 1, &clearRect);
+  }
+
+
+  void DxvkContext::clearImageViewRects(
+    const Rc<DxvkImageView>&    imageView,
+          VkImageAspectFlags    aspect,
+          VkClearValue          value,
+          uint32_t              rectCount,
+    const VkClearRect*          rects) {
+    if (!rectCount)
+      return;
+
+    if (aspect & VK_IMAGE_ASPECT_COLOR_BIT) {
+      value.color = util::swizzleClearColor(value.color,
+        util::invertComponentMapping(imageView->info().unpackSwizzle()));
+    }
+
+    this->clearImageViewFb(imageView, aspect, value, rectCount, rects);
+
+    if (imageView->isMultisampled()) {
+      auto subresources = imageView->imageSubresources();
+      subresources.aspectMask = aspect;
+
+      m_implicitResolves.invalidate(*imageView->image(), subresources);
+    }
+  }
+
+
+  void DxvkContext::clearImageViewFb(
+    const Rc<DxvkImageView>&    imageView,
+          VkImageAspectFlags    aspect,
+          VkClearValue          value,
+          uint32_t              rectCount,
+    const VkClearRect*          rects) {
     this->updateRenderTargets(true);
 
     VkPipelineStageFlags clearStages = 0;
@@ -4425,12 +4468,15 @@ namespace dxvk {
         m_state.om.attachmentMask.trackStencilWrite();
 
       // Inline clears may affect render area
-      m_state.om.renderAreaLo = VkOffset2D {
-        std::min(m_state.om.renderAreaLo.x, offset.x),
-        std::min(m_state.om.renderAreaLo.y, offset.y) };
-      m_state.om.renderAreaHi = VkOffset2D {
-        std::max(m_state.om.renderAreaHi.x, int32_t(offset.x + extent.width)),
-        std::max(m_state.om.renderAreaHi.y, int32_t(offset.y + extent.height)) };
+      for (uint32_t i = 0; i < rectCount; i++) {
+        const VkRect2D& r = rects[i].rect;
+        m_state.om.renderAreaLo = VkOffset2D {
+          std::min(m_state.om.renderAreaLo.x, r.offset.x),
+          std::min(m_state.om.renderAreaLo.y, r.offset.y) };
+        m_state.om.renderAreaHi = VkOffset2D {
+          std::max(m_state.om.renderAreaHi.x, int32_t(r.offset.x + r.extent.width)),
+          std::max(m_state.om.renderAreaHi.y, int32_t(r.offset.y + r.extent.height)) };
+      }
     }
 
     // Perform the actual clear operation
@@ -4442,15 +4488,7 @@ namespace dxvk {
     if ((aspect & VK_IMAGE_ASPECT_COLOR_BIT) && (attachmentIndex >= 0))
       clearInfo.colorAttachment   = m_state.om.framebufferInfo.getColorAttachmentIndex(attachmentIndex);
 
-    VkClearRect clearRect;
-    clearRect.rect.offset.x       = offset.x;
-    clearRect.rect.offset.y       = offset.y;
-    clearRect.rect.extent.width   = extent.width;
-    clearRect.rect.extent.height  = extent.height;
-    clearRect.baseArrayLayer      = 0;
-    clearRect.layerCount          = imageView->info().layerCount;
-
-    m_cmd->cmdClearAttachments(1, &clearInfo, 1, &clearRect);
+    m_cmd->cmdClearAttachments(1, &clearInfo, rectCount, rects);
 
     // Unbind temporary framebuffer
     if (attachmentIndex < 0) {

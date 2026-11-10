@@ -7,6 +7,7 @@
 #include "../L4D2VR/render_condition_diagnostics.h"
 #include "../L4D2VR/digital_input.h"
 #include "../L4D2VR/ui_input.h"
+#include "../L4D2VR/eye_mask.h"
 
 int main()
 {
@@ -173,6 +174,34 @@ int main()
     check(heldMouse.PendingRelease() == UiInput::MouseTransition::None, "successful release clears the old menu press before recovery");
     check(heldAttack.HeldCommand(true, false, true, "+attack", "-attack") == nullptr,
         "recovered frame does not recreate a stale held action without a fresh edge");
+
+    // Eye mask: Quest 3 left eye bounds from the mod's symmetric frustum.
+    const EyeMask::Bounds questLeft{0.0f, 0.1619f, 0.8048f, 1.0f};
+    const auto noLens = EyeMask::Build(2688, 2880, questLeft, {});
+    check(noLens.outsideFraction > 0.30 && noLens.outsideFraction < 0.34, "eye mask covers the strips outside the submitted bounds");
+    check(noLens.lensFraction == 0.0, "eye mask without a hidden area mesh masks nothing inside the bounds");
+    check(noLens.visible.x == 0 && noLens.visible.width == 2164 + EyeMask::kBoundsMargin &&
+          noLens.visible.y == 466 - EyeMask::kBoundsMargin && noLens.visible.y + noLens.visible.height == 2880,
+        "eye mask visible rect is the bounds plus the margin, clamped to the texture");
+    // A lens mesh hiding the top-left quarter only: with v read either way the
+    // hidden cells must also be hidden in the bottom-left quarter, so nothing
+    // inside the bounds is masked.
+    const std::vector<EyeMask::Point> topLeft{{0, 0}, {0.5f, 0}, {0, 0.5f}, {0.5f, 0}, {0.5f, 0.5f}, {0, 0.5f}};
+    check(EyeMask::Build(2688, 2880, questLeft, topLeft).lensFraction == 0.0,
+        "eye mask masks no lens cell that is visible under the other v reading");
+    // A left band hidden under both readings is masked, but kept clear of its edge.
+    const std::vector<EyeMask::Point> leftBand{{0, 0}, {0.2f, 0}, {0, 1}, {0.2f, 0}, {0.2f, 1}, {0, 1}};
+    const auto band = EyeMask::Build(2688, 2880, questLeft, leftBand);
+    check(band.lensFraction > 0.05, "eye mask masks a lens band hidden under both v readings");
+    bool clearOfEdge = true, insideTexture = true;
+    const float bandEdge = 0.2f * 0.8048f * 2688.0f;
+    for (const auto &r : band.rects) {
+        insideTexture &= r.x >= 0 && r.y >= 0 && r.x + r.width <= 2688u && r.y + r.height <= 2880u;
+        if (r.y >= noLens.visible.y && r.x < noLens.visible.x + static_cast<int32_t>(noLens.visible.width))
+            clearOfEdge &= r.x + r.width <= bandEdge - EyeMask::kCellSize / 2;
+    }
+    check(insideTexture, "eye mask rects stay inside the eye texture");
+    check(clearOfEdge, "eye mask keeps lens rects at least half a cell away from the lens edge");
     if (failures) return 1;
     std::cout << "PCVR render policy checks passed: " << checks << '\n';
     return 0;

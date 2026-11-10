@@ -1020,6 +1020,12 @@ namespace dxvk {
 
     void UpdateAlphaToCoverangeAndAlphaTest();
 
+    /// Portal2VR: notes a full clear of an eye render target for the eye mask.
+    void NoteVREyeClear(DWORD Flags, float Z, VkExtent3D Extent);
+
+    /// Portal2VR: stamps the pending eye mask before a draw into that depth.
+    void ApplyVREyeMask();
+
     inline bool IsZTestEnabled() {
       return m_state.renderStates[D3DRS_ZENABLE] && m_state.depthStencil != nullptr;
     }
@@ -1530,7 +1536,9 @@ namespace dxvk {
 
     uint64_t GetCurrentSequenceNumber();
 
-    void ResolveImage(D3D9CommonTexture* commonTex);
+    /// Resolves a multisampled texture into its single-sample image; with
+    /// pRegion, only that part (Portal2VR: the eye area the compositor reads).
+    void ResolveImage(D3D9CommonTexture* commonTex, const VkRect2D* pRegion = nullptr);
 
     /**
      * \brief Will unmap the least recently used textures if the amount of mapped texture memory exceeds a threshold.
@@ -1655,6 +1663,21 @@ namespace dxvk {
     Com<D3D9SwapChainEx, false>     m_implicitSwapchain;
     Com<IDirect3DVR9>               m_vrBridge;
     RenderConditionDiagnostics      m_vrDiagnostics;
+
+    // Portal2VR eye mask: a full depth clear of an eye leaves the stamp
+    // pending; the next draw into that depth applies it inside its render pass.
+    Com<D3D9Surface, false>         m_vrEyeMaskDepth;
+    int32_t                         m_vrEyeMaskEye = -1;
+    float                           m_vrEyeMaskDepthValue = 0.0f;
+    uint32_t                        m_vrEyeColorCleared = 0u; // bit per eye, reset each Present
+    uint32_t                        m_vrEyeMaskLogged = 0u;
+    uint32_t                        m_vrEyeStampedEyes = 0u;  // bit per eye, this frame
+    uint32_t                        m_vrEyeStampsThisFrame = 0u;
+    std::array<uint32_t, 4>         m_vrEyeMaskFrames = { };  // frames by stamped-eye bits
+    uint64_t                        m_vrEyeMaskStamps = 0u;
+    uint64_t                        m_vrFullResolves = 0u;    // ResolveImage of MSAA textures
+    uint64_t                        m_vrCopyResolves = 0u;    // StretchRect from MSAA sources
+    uint64_t                        m_vrCopyResolvePixels = 0u;
 
     const D3D9Options               m_d3d9Options;
     DxsoOptions                     m_dxsoOptions;

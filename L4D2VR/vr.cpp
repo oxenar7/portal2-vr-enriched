@@ -3246,7 +3246,9 @@ Vector VR::Trace(uint32_t* localPlayer, bool &didHit) {
 
     ray.Init(vecStart, vecEnd);
 
-    m_Game->m_EngineTrace->TraceRay(ray, MASK_SHOT | MASK_SHOT_HULL, &tracefilter, &trace);
+    // Same contents as the portal shot (dTraceFirePortal uses this start and
+    // direction), so the beam and reticle cross grates and railings like a portal.
+    m_Game->m_EngineTrace->TraceRay(ray, MASK_SHOT_PORTAL, &tracefilter, &trace);
 
     didHit = trace.DidHit();
     return trace.endpos;

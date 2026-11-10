@@ -2467,6 +2467,9 @@ namespace dxvk {
         case D3DRS_DESTBLENDALPHA:
         case D3DRS_SRCBLEND:
         case D3DRS_SRCBLENDALPHA:
+          // Forced ATOC depends on the blend enable (Portal2VR).
+          if (State == D3DRS_ALPHABLENDENABLE && unlikely(m_d3d9Options.forceAlphaToCoverage))
+            UpdateAlphaToCoverangeAndAlphaTest();
           m_dirty.set(D3D9DeviceDirtyFlag::BlendState);
           break;
 
@@ -7383,7 +7386,11 @@ namespace dxvk {
       const bool isNVATOCEnabled  = m_state.renderStates[D3DRS_ADAPTIVETESS_Y] == uint32_t(D3D9Format::ATOC)
                                       && m_state.renderStates[D3DRS_ALPHATESTENABLE] != 0;
       const bool isAMD = m_adapter->GetVendorId() == uint32_t(DxvkGpuVendor::Amd);
-      alphaToCoverageEnabled &= (isAMD && isAMDATOCEnabled) || (!isAMD && isNVATOCEnabled);
+      // Portal2VR: blended draws keep the alpha test, their alpha is opacity.
+      const bool isForcedATOC = m_d3d9Options.forceAlphaToCoverage
+                                  && m_state.renderStates[D3DRS_ALPHATESTENABLE] != 0
+                                  && m_state.renderStates[D3DRS_ALPHABLENDENABLE] == 0;
+      alphaToCoverageEnabled &= isForcedATOC || (isAMD && isAMDATOCEnabled) || (!isAMD && isNVATOCEnabled);
 
       // Check sample count of RT 0
       const D3D9CommonTexture* rt0 = GetCommonTexture(m_state.renderTargets[0].ptr());

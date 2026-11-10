@@ -159,6 +159,11 @@ namespace dxvk {
     /// Clamps negative LOD bias
     bool clampNegativeLodBias;
 
+    /// Portal2VR: draw alpha-tested, unblended geometry into multisampled
+    /// render targets with alpha-to-coverage instead of alpha test, so
+    /// grates and railings get antialiased hole edges.
+    bool forceAlphaToCoverage;
+
     /// How much virtual memory will be used for textures (in MB).
     int32_t textureMemory;
 

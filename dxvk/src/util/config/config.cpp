@@ -568,11 +568,16 @@ namespace dxvk {
      * game has address space to keep them.       *
      * 16x anisotropic filtering keeps floor and  *
      * wall panels sharp at grazing angles, where *
-     * a headset shows lower modes as shimmer.    */
+     * a headset shows lower modes as shimmer.    *
+     * With MSAA eyes, alpha-to-coverage replaces *
+     * the alpha test so grate holes and railing  *
+     * cut-outs get smooth edges instead of       *
+     * crawling stair steps.                      */
     { R"(\\portal2\.exe$)", {{
       { "dxvk.enableGraphicsPipelineLibrary", "Auto" },
       { "dxvk.trackPipelineLifetime",         "False" },
       { "d3d9.samplerAnisotropy",             "16" },
+      { "d3d9.forceAlphaToCoverage",          "True" },
     }} },
     /* Sonic Adventure 2                          */
     { R"(\\Sonic Adventure 2\\(launcher|sonic2app)\.exe$)", {{

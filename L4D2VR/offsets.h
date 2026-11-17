@@ -130,6 +130,9 @@ public:
     // none came (PlayerUse, server 0x35F895). Both read EyePosition and EyeVectors.
     Offset ServerPollForUse = { "server.dll", 0x370FE0, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 83 EC 28 56 8B F1 80 BE ? ? ? ? 00 57 0F 85 ? ? ? ? A1 ? ? ? ? F3 0F 10 86" };
     Offset ClientPollForUse = { "client.dll", 0x2B0DF0, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 83 EC 28 56 8B F1 8B 8E ? ? ? ? 57 83 F9 FF 74 1F 8B 15 ? ? ? ? 8B C1" };
+    // CPortal_Player::FindUseEntity(CPortal_Base2D **), the search PollForUseEntity runs after a
+    // press. Called once a tick, not hooked, to show what a press would act on.
+    Offset ServerFindUseEntity = { "server.dll", 0x36D890, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 81 EC 28 09 00 00 56 57 8D 85 44 FF FF FF 50 8B F1 6A 00 8D 4D B4 51 8B CE E8" };
 
     // For Portal gun VFX (do we really need all three??)
     Offset GetFOV = { "client.dll", 0x2772B0, "55 8B EC 51 56 8B F1 E8 ? ? ? ? D9 5D FC 8B 06 8B 90 ? ? ? ? 8B CE FF D2" };

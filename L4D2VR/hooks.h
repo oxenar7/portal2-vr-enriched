@@ -120,6 +120,7 @@ typedef bool(__thiscall* tUpdateObject)(void* thisptr, void* pPlayer, float flEr
 typedef bool(__thiscall* tUpdateObjectVM)(void* thisptr, void* pPlayer, float flError);
 typedef bool(__cdecl* tGetPreferredCarryAngles)(void* pObject, void* pPlayer, const void* localToWorld, void* outAngles);
 typedef void(__thiscall* tPollForUseEntity)(void* thisptr, bool basicUse, void** useEntity, void** usePortal);
+typedef void*(__thiscall* tFindUseEntity)(void* thisptr, void** usePortal);
 typedef QAngle&(__thiscall* tEyeAngles)(void* thisptr);
 
 
@@ -222,6 +223,7 @@ public:
 	static inline Hook<tPollForUseEntity> hkClientPollForUse;
 	// The server player whose +use search is running with the gun as its eye.
 	static inline void *m_UseAimPlayer = nullptr;
+	static inline tFindUseEntity FindUseEntity = nullptr;
 	static inline Hook<tEyeAngles> hkEyeAngles;
 
 	

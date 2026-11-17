@@ -459,6 +459,7 @@ void Hooks::Initialize()
 	Logger::Write(std::string("Controller-aimed use: server=") + (hkServerPollForUse.isEnabled ? "OK" : "MISSING") +
 		" client=" + (hkClientPollForUse.isEnabled ? "OK" : "MISSING") +
 		" eyePosition=" + (hkEyePosition.isEnabled ? "OK" : "MISSING") +
+		" hover=" + (m_Game->m_Offsets->ServerFindUseEntity.address ? "OK" : "MISSING") +
 		(useAimReady ? "" : " (use keeps following the head)"));
 	if (m_VR->m_Config.experimentalHudOverlay &&
 		m_VR->m_HUDHandle != vr::k_ulOverlayHandleInvalid) {
@@ -771,6 +772,7 @@ int Hooks::initSourceHooks()
 	// +use aimed with the gun. Without all three hooks +use keeps following the head.
 	REGISTER_IF_RESOLVED(hkServerPollForUse, m_Game->m_Offsets->ServerPollForUse.address, dServerPollForUse);
 	REGISTER_IF_RESOLVED(hkClientPollForUse, m_Game->m_Offsets->ClientPollForUse.address, dClientPollForUse);
+	FindUseEntity = (tFindUseEntity)m_Game->m_Offsets->ServerFindUseEntity.address;
 
 	// Haptics: optional, each one only disables its own vibration source.
 	REGISTER_IF_RESOLVED(hkRumbleEffect, m_Game->m_Offsets->RumbleEffect.address, dRumbleEffect);
@@ -1181,6 +1183,11 @@ void __fastcall Hooks::dServerPollForUse(void* ecx, void* edx, bool basicUse, vo
 	m_VR->m_OverrideEyeAngles = true;
 	m_UseAimPlayer = ecx;
 	hkServerPollForUse.fOriginal(ecx, basicUse, useEntity, usePortal);
+	if (FindUseEntity && IsLocalPlayerEntity(ecx)) {
+		// What a press would act on right now: the aim line and the gun hand show it.
+		void *portal = nullptr;
+		m_VR->NoteUseHover(useEntity && *useEntity ? *useEntity : FindUseEntity(ecx, &portal));
+	}
 	m_UseAimPlayer = previousPlayer;
 	if (!wasOverriding)
 		m_VR->m_OverrideEyeAngles = false;

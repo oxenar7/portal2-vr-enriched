@@ -23,6 +23,7 @@
 #include "openvr_session.h"
 #include "vr_options_menu.h"
 #include "perf_stats.h"
+#include "use_target.h"
 #include "eye_mask.h"
 #include <filesystem>
 
@@ -94,6 +95,7 @@ public:
 	std::chrono::steady_clock::time_point m_RumbleLogWindow{};
 	int m_RumbleLogLines = 0;
 	unsigned m_ControllerUses = 0;
+	UseTarget::Hover m_UseHover;
 	bool m_PortalShotSupersededLogged = false;
 	bool m_HapticOutputsAvailable = false;
 	bool m_NativeRumbleHookActive = false;
@@ -455,6 +457,7 @@ public:
 	bool GameHapticsEnabled() const;
 	bool ControllerUseWanted() const;
 	void NoteControllerUse() { ++m_ControllerUses; }
+	void NoteUseHover(void *entity);
 	void QueueNativeRumble(int slot, int index, int data, int flags);
 	void QueueHapticEvent(Haptics::Event event);
 	void NoteHeldObjectUpdate();

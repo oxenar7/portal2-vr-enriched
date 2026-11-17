@@ -28,6 +28,7 @@
 #include "../L4D2VR/portal2_transition.h"
 #include "../L4D2VR/perf_stats.h"
 #include "../L4D2VR/logger.h"
+#include "../L4D2VR/use_target.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -1831,6 +1832,26 @@ int main()
     std::istringstream useOptions("ControllerAimedUse=false\n");
     expect(ParseConfig(useOptions, m2Defaults).value.controllerAimedUse, false,
            "head-aimed use can be restored");
+    const auto hoverStart = std::chrono::steady_clock::time_point{} + std::chrono::seconds(10);
+    const auto hoverAt = [&](int milliseconds) { return hoverStart + std::chrono::milliseconds(milliseconds); };
+    UseTarget::Hover hover;
+    expect(hover.Active(hoverAt(0)), false, "no use target before the first report");
+    expect(hover.Observe(0x100, hoverAt(0)), true, "the gun settling on a usable entity ticks");
+    expect(hover.Active(hoverAt(20)), true, "the aim line shows the use target");
+    expect(hover.Observe(0x100, hoverAt(33)), false, "resting on the target does not tick again");
+    expect(hover.Observe(0, hoverAt(66)), false, "leaving the target does not tick");
+    expect(hover.Active(hoverAt(70)), false, "the aim line drops the target once the gun leaves it");
+    expect(hover.Observe(0x100, hoverAt(100)), false, "grazing the edge of the same target stays silent");
+    expect(hover.Observe(0x200, hoverAt(140)), true, "a different target ticks");
+    expect(hover.Observe(0x300, hoverAt(170)), false, "sweeping across targets does not buzz");
+    expect(hover.Observe(0, hoverAt(200)), false, "empty aim after a sweep is silent");
+    expect(hover.Observe(0x200, hoverAt(700)), true, "coming back after a real absence ticks again");
+    expect(hover.Active(hoverAt(1000)), false, "a target goes stale when reports stop");
+    expectInt(UseTarget::LineColor(true).g, 255, "the aim line is green on a use target");
+    expectInt(UseTarget::LineColor(false).b, 255, "the aim line keeps its blue otherwise");
+    expect(Haptics::EventPattern(Haptics::Event::UseHover).count == 1 &&
+           Haptics::EventPattern(Haptics::Event::UseHover).pulses[0].amplitude < 0.3f, true,
+           "the use-target tick is a single light pulse");
     std::istringstream gameHapticBad("Haptics=on\nHapticsIntensity=1.5\n");
     const auto gameHapticFallback = ParseConfig(gameHapticBad, gameHaptics.value);
     expect(gameHapticFallback.errors.size() == 2, true, "invalid game haptic fields diagnosed");

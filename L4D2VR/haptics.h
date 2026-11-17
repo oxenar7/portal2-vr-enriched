@@ -44,7 +44,7 @@ enum NativeRumble {
     kRumblePlacementFailure = 27,
 };
 
-enum class Event { Pickup, Drop, Button, ButtonLocked, FloorPress, FloorRelease };
+enum class Event { Pickup, Drop, Button, ButtonLocked, FloorPress, FloorRelease, UseHover };
 
 inline Pattern Single(Target target, float duration, float frequency, float amplitude)
 {
@@ -99,6 +99,7 @@ inline Pattern EventPattern(Event event)
     case Event::ButtonLocked: return Double(Target::GunHand, 0.07f, 0.03f, 120.0f, 0.25f);
     case Event::FloorPress: return Single(Target::BothHands, 0.06f, 80.0f, 0.45f);
     case Event::FloorRelease: return Single(Target::BothHands, 0.04f, 80.0f, 0.25f);
+    case Event::UseHover: return Single(Target::GunHand, 0.02f, 160.0f, 0.2f);
     }
     return {};
 }

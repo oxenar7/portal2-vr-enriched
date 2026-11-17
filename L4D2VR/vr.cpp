@@ -1817,6 +1817,16 @@ bool VR::ControllerUseWanted() const
         m_RightControllerPose.valid;
 }
 
+// Called from the server's use search, once a tick, with what a press would act on.
+void VR::NoteUseHover(void *entity)
+{
+    // While an object is held a press drops it, whatever the gun points at.
+    if (m_HoldTracker.Holding())
+        entity = nullptr;
+    if (m_UseHover.Observe(reinterpret_cast<std::uintptr_t>(entity), std::chrono::steady_clock::now()))
+        QueueHapticEvent(Haptics::Event::UseHover);
+}
+
 bool VR::GameHapticsEnabled() const
 {
     return m_Config.haptics && m_Config.hapticsIntensity > 0.0f;
@@ -1849,7 +1859,8 @@ void VR::QueueHapticEvent(Haptics::Event event)
 {
     if (!GameHapticsEnabled()) return;
     const bool held = event == Haptics::Event::Pickup || event == Haptics::Event::Drop;
-    if (held ? !m_Config.hapticsHeldObject : !m_Config.hapticsButtons) return;
+    if (event != Haptics::Event::UseHover &&
+        (held ? !m_Config.hapticsHeldObject : !m_Config.hapticsButtons)) return;
     m_GameHapticQueue.Push(1000 + static_cast<int>(event), Haptics::EventPattern(event),
         std::chrono::steady_clock::now());
 }
@@ -2962,15 +2973,15 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
             if (geometry) {
                 // The beam is only a pointing aid. Source owns the reticle
                 // artwork and status; do not draw a competing impact plus.
-                constexpr int r = 64, g = 200, b = 255;
                 const auto now = std::chrono::steady_clock::now();
+                const auto color = UseTarget::LineColor(m_UseHover.Active(now));
                 const float frameInterval = m_LastWorldAimMarkerUpdate ==
                     std::chrono::steady_clock::time_point{} ? 0.0f :
                     std::chrono::duration<float>(now - m_LastWorldAimMarkerUpdate).count();
                 const float lifetime = AimFeedback::WorldAimOverlayLifetime(frameInterval);
                 m_LastWorldAimMarkerUpdate = now;
                 m_Game->m_DebugOverlay->AddLineOverlay(*beamOrigin, geometry->beamEnd,
-                    r, g, b, false, lifetime);
+                    color.r, color.g, color.b, false, lifetime);
                 if (!m_WorldAimMarkerLogged) {
                     Logger::Write("Experimental world aim marker submitted to Source debug overlay; "
                         "actual stereo visibility and shot alignment require VR testing");

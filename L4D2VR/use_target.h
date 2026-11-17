@@ -1,0 +1,62 @@
+#pragma once
+
+#include <chrono>
+#include <cstdint>
+
+// What +use would act on while the gun aims it (ControllerAimedUse). The server's use
+// search reports it once a tick; the aim line and the gun hand show it before the press.
+namespace UseTarget {
+
+struct Color {
+    int r, g, b;
+};
+
+inline Color LineColor(bool hasTarget)
+{
+    return hasTarget ? Color{96, 255, 128} : Color{64, 200, 255};
+}
+
+class Hover {
+public:
+    using Clock = std::chrono::steady_clock;
+
+    // Returns true when the gun has just settled on a usable entity: a new one, or the
+    // same one after a real absence. Grazing its edge back and forth stays silent.
+    bool Observe(std::uintptr_t entity, Clock::time_point now)
+    {
+        const bool returned = m_Entity == 0 && m_HasLeft && now - m_LeftAt >= kReturnGap;
+        const bool tick = entity != 0 && entity != m_Entity &&
+            (entity != m_Ticked || returned) && (!m_HasTick || now - m_TickAt >= kTickGap);
+        if (entity == 0 && m_Entity != 0) {
+            m_LeftAt = now;
+            m_HasLeft = true;
+        }
+        m_Entity = entity;
+        m_SeenAt = now;
+        m_HasSeen = true;
+        if (tick) {
+            m_Ticked = entity;
+            m_TickAt = now;
+            m_HasTick = true;
+        }
+        return tick;
+    }
+
+    // False once the reports stop (pause, menu, option off), so the line never stays lit.
+    bool Active(Clock::time_point now) const
+    {
+        return m_Entity != 0 && m_HasSeen && now >= m_SeenAt && now - m_SeenAt <= kStale;
+    }
+
+private:
+    static constexpr auto kTickGap = std::chrono::milliseconds(100);
+    static constexpr auto kReturnGap = std::chrono::milliseconds(400);
+    static constexpr auto kStale = std::chrono::milliseconds(250);
+
+    std::uintptr_t m_Entity = 0;
+    std::uintptr_t m_Ticked = 0;
+    bool m_HasSeen = false, m_HasLeft = false, m_HasTick = false;
+    Clock::time_point m_SeenAt{}, m_LeftAt{}, m_TickAt{};
+};
+
+} // namespace UseTarget

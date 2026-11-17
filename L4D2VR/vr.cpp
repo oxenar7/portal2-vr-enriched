@@ -2997,7 +2997,8 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
                 // The beam is only a pointing aid. Source owns the reticle
                 // artwork and status; do not draw a competing impact plus.
                 const auto now = std::chrono::steady_clock::now();
-                const auto color = UseTarget::LineColor(m_UseHover.Active(now));
+                const bool onUseTarget = m_UseHover.Active(now);
+                const auto color = UseTarget::LineColor(onUseTarget);
                 const float frameInterval = m_LastWorldAimMarkerUpdate ==
                     std::chrono::steady_clock::time_point{} ? 0.0f :
                     std::chrono::duration<float>(now - m_LastWorldAimMarkerUpdate).count();
@@ -3005,6 +3006,11 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
                 m_LastWorldAimMarkerUpdate = now;
                 m_Game->m_DebugOverlay->AddLineOverlay(*beamOrigin, geometry->beamEnd,
                     color.r, color.g, color.b, false, lifetime);
+                if (onUseTarget) {
+                    for (const auto &[from, to] : AimFeedback::BeamStrands(*beamOrigin, geometry->beamEnd,
+                             UseTarget::kStrandSpread))
+                        m_Game->m_DebugOverlay->AddLineOverlay(from, to, color.r, color.g, color.b, false, lifetime);
+                }
                 if (!m_WorldAimMarkerLogged) {
                     Logger::Write("Experimental world aim marker submitted to Source debug overlay; "
                         "actual stereo visibility and shot alignment require VR testing");

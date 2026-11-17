@@ -1973,8 +1973,23 @@ int main()
     expect(hover.Observe(0, hoverAt(200)), false, "empty aim after a sweep is silent");
     expect(hover.Observe(0x200, hoverAt(700)), true, "coming back after a real absence ticks again");
     expect(hover.Active(hoverAt(1000)), false, "a target goes stale when reports stop");
-    expectInt(UseTarget::LineColor(true).g, 255, "the aim line is green on a use target");
+    expect(UseTarget::LineColor(true).r == 255 && UseTarget::LineColor(true).b == 0, true,
+           "the aim line turns orange on a use target");
     expectInt(UseTarget::LineColor(false).b, 255, "the aim line keeps its blue otherwise");
+    {
+        const Vector gun{0, 0, 0}, hit{400, 0, 0};
+        const auto strands = AimFeedback::BeamStrands(gun, hit, UseTarget::kStrandSpread);
+        bool fromGun = true, aroundHit = true;
+        for (const auto &[from, to] : strands) {
+            fromGun = fromGun && from.x == 0 && from.y == 0 && from.z == 0;
+            const float apart = std::sqrt((to.y - hit.y) * (to.y - hit.y) + (to.z - hit.z) * (to.z - hit.z));
+            aroundHit = aroundHit && std::fabs(to.x - hit.x) < 0.01f && std::fabs(apart - 1.0f) < 0.01f;
+        }
+        expect(fromGun && aroundHit, true, "the strands leave the gun together and part by the spread at the hit");
+        const auto vertical = AimFeedback::BeamStrands(gun, Vector{0, 0, 200}, UseTarget::kStrandSpread);
+        expect(std::isfinite(vertical[0].second.x) && std::isfinite(vertical[2].second.y), true,
+               "a beam straight up or down still gets strands");
+    }
     expect(Haptics::EventPattern(Haptics::Event::UseHover).count == 1 &&
            Haptics::EventPattern(Haptics::Event::UseHover).pulses[0].amplitude < 0.3f, true,
            "the use-target tick is a single light pulse");

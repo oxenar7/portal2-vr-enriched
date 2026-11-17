@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include "sdk/vector.h"
 
 namespace AimFeedback {
@@ -143,6 +144,21 @@ inline std::optional<WorldAimGeometry> PrepareWorldAimGeometry(
         return std::nullopt;
 
     return WorldAimGeometry{target};
+}
+
+// Four lines around the beam that leave the gun together and part by `spread` radians,
+// so a one-pixel debug line reads as a band of roughly constant width on screen.
+inline std::array<std::pair<Vector, Vector>, 4> BeamStrands(const Vector &origin, const Vector &end, float spread)
+{
+    Vector direction = end - origin;
+    const float length = VectorNormalize(direction);
+    const Vector up = std::abs(direction.z) > 0.95f ? Vector{1, 0, 0} : Vector{0, 0, 1};
+    Vector side = CrossProduct(direction, up);
+    VectorNormalize(side);
+    const Vector lift = CrossProduct(side, direction);
+    const float offset = length * std::tan(spread);
+    return {{{origin, end + side * offset}, {origin, end - side * offset},
+             {origin, end + lift * offset}, {origin, end - lift * offset}}};
 }
 
 struct ScreenPoint

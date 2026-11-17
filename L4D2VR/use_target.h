@@ -11,10 +11,16 @@ struct Color {
     int r, g, b;
 };
 
+// Blue to Aperture orange: a hue swap that a one-pixel line still shows. A light green
+// beside the blue was too close in brightness to notice in the headset.
 inline Color LineColor(bool hasTarget)
 {
-    return hasTarget ? Color{96, 255, 128} : Color{64, 200, 255};
+    return hasTarget ? Color{255, 140, 0} : Color{64, 200, 255};
 }
+
+// On a target the line also widens: extra strands fan out from the gun by this angle
+// (radians), about 0.15 degrees, a few pixels wide anywhere along the beam.
+inline constexpr float kStrandSpread = 0.0025f;
 
 class Hover {
 public:

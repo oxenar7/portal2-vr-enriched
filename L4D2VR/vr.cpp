@@ -470,10 +470,11 @@ void VR::Update()
         if (motor.airborneCommands)
             Logger::Write("Roomscale: " + std::to_string(motor.airborneCommands) +
                 " walk requests held back while off the ground (funnel, jump or fall)");
-        if (m_ControllerUses) {
+        if (m_ControllerUses || m_ControllerUsesDropped) {
             Logger::Write("Controller use: " + std::to_string(m_ControllerUses) +
-                " targets picked with the gun's aim");
-            m_ControllerUses = 0;
+                " targets picked with the gun's aim, " + std::to_string(m_ControllerUsesDropped) +
+                " wide-search picks off the gun's line dropped");
+            m_ControllerUses = m_ControllerUsesDropped = 0;
         }
         if (m_Config.verboseDiagnostics &&
             (motor.requestedCommands || motor.manualCommands || motor.maximumErrorUnits > 0.5f))

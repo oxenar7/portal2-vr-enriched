@@ -133,6 +133,11 @@ public:
     // CPortal_Player::FindUseEntity(CPortal_Base2D **), the search PollForUseEntity runs after a
     // press. Called once a tick, not hooked, to show what a press would act on.
     Offset ServerFindUseEntity = { "server.dll", 0x36D890, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 81 EC 28 09 00 00 56 57 8D 85 44 FF FF FF 50 8B F1 6A 00 8D 4D B4 51 8B CE E8" };
+    // What FindUseEntity itself calls, to check its pick against the gun's ray: server
+    // UTIL_TraceLine(start, end, mask, ignore, collisionGroup, trace_t *) (cdecl) and
+    // CCollisionProperty::CalcNearestPoint(const Vector &, Vector *) (thiscall on entity+0xE8).
+    Offset ServerTraceLine = { "server.dll", 0x3C710, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 83 EC 6C 56 8B 43 08 8B 4B 0C F3 0F 10 18 F3 0F 10 60 04 F3 0F 10 01 F3 0F 10 49 04" };
+    Offset ServerCalcNearestPoint = { "server.dll", 0x11AC50, "55 8B EC 83 EC 18 56 8B F1 8B 4D 08 8D 45 F4 50 51 8B CE E8 ? ? ? ? 8D 55 E8 52 8D 45 F4 50 8D 4E 14 51 8D 56 08 52 E8 ? ? ? ? 8B 45 0C 83 C4 10 50 8D 4D E8 51 8B CE E8" };
 
     // For Portal gun VFX (do we really need all three??)
     Offset GetFOV = { "client.dll", 0x2772B0, "55 8B EC 51 56 8B F1 E8 ? ? ? ? D9 5D FC 8B 06 8B 90 ? ? ? ? 8B CE FF D2" };

@@ -121,6 +121,9 @@ typedef bool(__thiscall* tUpdateObjectVM)(void* thisptr, void* pPlayer, float fl
 typedef bool(__cdecl* tGetPreferredCarryAngles)(void* pObject, void* pPlayer, const void* localToWorld, void* outAngles);
 typedef void(__thiscall* tPollForUseEntity)(void* thisptr, bool basicUse, void** useEntity, void** usePortal);
 typedef void*(__thiscall* tFindUseEntity)(void* thisptr, void** usePortal);
+typedef void(__cdecl* tServerTraceLine)(const Vector &start, const Vector &end, unsigned int mask,
+	const void *ignore, int collisionGroup, void *trace);
+typedef void(__thiscall* tCalcNearestPoint)(void *collisionProperty, const Vector &point, Vector *nearest);
 typedef QAngle&(__thiscall* tEyeAngles)(void* thisptr);
 
 
@@ -224,6 +227,8 @@ public:
 	// The server player whose +use search is running with the gun as its eye.
 	static inline void *m_UseAimPlayer = nullptr;
 	static inline tFindUseEntity FindUseEntity = nullptr;
+	static inline tServerTraceLine ServerTraceLine = nullptr;
+	static inline tCalcNearestPoint CalcNearestPoint = nullptr;
 	static inline Hook<tEyeAngles> hkEyeAngles;
 
 	

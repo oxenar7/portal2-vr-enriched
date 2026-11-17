@@ -460,6 +460,8 @@ void Hooks::Initialize()
 		" client=" + (hkClientPollForUse.isEnabled ? "OK" : "MISSING") +
 		" eyePosition=" + (hkEyePosition.isEnabled ? "OK" : "MISSING") +
 		" hover=" + (m_Game->m_Offsets->ServerFindUseEntity.address ? "OK" : "MISSING") +
+		" precision=" + (m_Game->m_Offsets->ServerTraceLine.address &&
+			m_Game->m_Offsets->ServerCalcNearestPoint.address ? "OK" : "MISSING (the game's wide search stays)") +
 		(useAimReady ? "" : " (use keeps following the head)"));
 	if (m_VR->m_Config.experimentalHudOverlay &&
 		m_VR->m_HUDHandle != vr::k_ulOverlayHandleInvalid) {
@@ -773,6 +775,8 @@ int Hooks::initSourceHooks()
 	REGISTER_IF_RESOLVED(hkServerPollForUse, m_Game->m_Offsets->ServerPollForUse.address, dServerPollForUse);
 	REGISTER_IF_RESOLVED(hkClientPollForUse, m_Game->m_Offsets->ClientPollForUse.address, dClientPollForUse);
 	FindUseEntity = (tFindUseEntity)m_Game->m_Offsets->ServerFindUseEntity.address;
+	ServerTraceLine = (tServerTraceLine)m_Game->m_Offsets->ServerTraceLine.address;
+	CalcNearestPoint = (tCalcNearestPoint)m_Game->m_Offsets->ServerCalcNearestPoint.address;
 
 	// Haptics: optional, each one only disables its own vibration source.
 	REGISTER_IF_RESOLVED(hkRumbleEffect, m_Game->m_Offsets->RumbleEffect.address, dRumbleEffect);
@@ -1176,6 +1180,39 @@ Vector *Hooks::dEyePosition(void *ecx, void *edx, Vector *eyePos)
 	return result;
 }
 
+// FindUseEntity tries a straight trace first. When that hits nothing usable it sweeps ten
+// 32-unit hull traces from 45 degrees below to 45 degrees above the aim (72 units long), then
+// takes anything usable within 100 units whose nearest point lies in a 53 degree cone
+// (sv_player_use_cone_size 0.6). That suits a head looking at its target; from the gun it
+// reaches things far off the line. A pick stands only if the gun's ray hits it, or ends
+// within this many degrees of it.
+static constexpr float kUseAimToleranceDegrees = 8.0f;
+
+// Call only while dServerPollForUse has the gun answering for this player's eyes.
+static bool GunRayReaches(void *player, void *entity)
+{
+	if (!Hooks::ServerTraceLine || !Hooks::CalcNearestPoint || !player || !entity)
+		return true;
+	Vector eye;
+	if (!Hooks::dEyePosition(player, nullptr, &eye))
+		return true;
+	Vector forward, right, up;
+	QAngle::AngleVectors(Hooks::dEyeAngles(player, nullptr), &forward, &right, &up);
+	const Vector end = eye + forward * 1024.0f;
+	// trace_t: endpos at +0x0C, m_pEnt at +0x4C (as FindUseEntity reads them).
+	alignas(16) unsigned char trace[256]{};
+	Hooks::ServerTraceLine(eye, end, 0x600400B, player, 0, trace);
+	if (*reinterpret_cast<void **>(trace + 0x4C) == entity)
+		return true;
+	const Vector rayEnd = *reinterpret_cast<const Vector *>(trace + 0x0C);
+	Vector nearest;
+	Hooks::CalcNearestPoint(static_cast<unsigned char *>(entity) + 0xE8, rayEnd, &nearest);
+	Vector toward = nearest - eye;
+	if (VectorNormalize(toward) < 0.01f)
+		return true;
+	return DotProduct(toward, forward) >= std::cos(kUseAimToleranceDegrees * 3.14159265f / 180.0f);
+}
+
 // The search for the +use target reads EyePosition and EyeVectors, which answers through
 // EyeAngles. In this scope both answer with the gun, so use acts on what the gun points at.
 void __fastcall Hooks::dServerPollForUse(void* ecx, void* edx, bool basicUse, void** useEntity, void** usePortal)
@@ -1188,10 +1225,19 @@ void __fastcall Hooks::dServerPollForUse(void* ecx, void* edx, bool basicUse, vo
 	m_VR->m_OverrideEyeAngles = true;
 	m_UseAimPlayer = ecx;
 	hkServerPollForUse.fOriginal(ecx, basicUse, useEntity, usePortal);
+	// Picks through a portal keep the game's own search; the straight ray cannot judge them.
+	if (useEntity && *useEntity && !(usePortal && *usePortal) && !GunRayReaches(ecx, *useEntity)) {
+		*useEntity = nullptr;
+		if (IsLocalPlayerEntity(ecx))
+			m_VR->NoteControllerUseDropped();
+	}
 	if (FindUseEntity && IsLocalPlayerEntity(ecx)) {
 		// What a press would act on right now: the aim line and the gun hand show it.
 		void *portal = nullptr;
-		m_VR->NoteUseHover(useEntity && *useEntity ? *useEntity : FindUseEntity(ecx, &portal));
+		void *hover = useEntity && *useEntity ? *useEntity : FindUseEntity(ecx, &portal);
+		if (hover && !portal && !GunRayReaches(ecx, hover))
+			hover = nullptr;
+		m_VR->NoteUseHover(hover);
 	}
 	m_UseAimPlayer = previousPlayer;
 	if (!wasOverriding)

@@ -96,6 +96,7 @@ public:
 	std::chrono::steady_clock::time_point m_RumbleLogWindow{};
 	int m_RumbleLogLines = 0;
 	unsigned m_ControllerUses = 0;
+	unsigned m_ControllerUsesDropped = 0;
 	UseTarget::Hover m_UseHover;
 	bool m_PortalShotSupersededLogged = false;
 	bool m_HapticOutputsAvailable = false;
@@ -464,6 +465,8 @@ public:
 	bool ControllerUseWanted() const;
 	bool WorldMenuWanted() const;
 	void NoteControllerUse() { ++m_ControllerUses; }
+	// A press whose pick the gun's ray did not reach (the game's wide search found it).
+	void NoteControllerUseDropped() { ++m_ControllerUsesDropped; }
 	void NoteUseHover(void *entity);
 	void QueueNativeRumble(int slot, int index, int data, int flags);
 	void QueueHapticEvent(Haptics::Event event);

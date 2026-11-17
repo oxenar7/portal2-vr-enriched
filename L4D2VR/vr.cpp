@@ -468,6 +468,11 @@ void VR::Update()
         if (motor.airborneCommands)
             Logger::Write("Roomscale: " + std::to_string(motor.airborneCommands) +
                 " walk requests held back while off the ground (funnel, jump or fall)");
+        if (m_ControllerUses) {
+            Logger::Write("Controller use: " + std::to_string(m_ControllerUses) +
+                " targets picked with the gun's aim");
+            m_ControllerUses = 0;
+        }
         if (m_Config.verboseDiagnostics &&
             (motor.requestedCommands || motor.manualCommands || motor.maximumErrorUnits > 0.5f))
             Logger::Write("Roomscale active experimental: " + std::to_string(motor.requestedCommands) +
@@ -1804,6 +1809,12 @@ void VR::DispatchPortalShotHaptic(bool actionsReady)
             m_NextHapticErrorLog = now + std::chrono::seconds(5);
         }
     }
+}
+
+bool VR::ControllerUseWanted() const
+{
+    return m_Config.controllerAimedUse && m_IsVREnabled && m_TrackingOutputValid &&
+        m_RightControllerPose.valid;
 }
 
 bool VR::GameHapticsEnabled() const

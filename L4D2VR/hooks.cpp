@@ -44,6 +44,24 @@ static bool IsLocalPlayerEntity(void *entity)
     const int localIndex = Hooks::m_Game->m_EngineClient->GetLocalPlayer();
     return localIndex > 0 && Hooks::EntityIndex(entity) == localIndex;
 }
+// Whose gun aims +use for this server player: the local headset, a remote VR
+// player's networked controller, or nobody (the head, as in the flat game).
+enum class UseAim { Head, Local, Remote };
+
+static UseAim UseAimFor(void *serverPlayer)
+{
+    const VR *vr = Hooks::m_VR;
+    if (!serverPlayer || !Hooks::EntityIndex || !Hooks::m_Game->m_EngineClient ||
+        !vr->m_Config.controllerAimedUse)
+        return UseAim::Head;
+    const int index = Hooks::EntityIndex(serverPlayer);
+    if (!ValidPlayerSlot(Hooks::m_Game, index))
+        return UseAim::Head;
+    if (index == Hooks::m_Game->m_EngineClient->GetLocalPlayer())
+        return vr->m_IsVREnabled && vr->m_TrackingOutputValid && vr->m_RightControllerPose.valid ?
+            UseAim::Local : UseAim::Head;
+    return Hooks::m_Game->m_PlayersVRInfo[index].isUsingVR ? UseAim::Remote : UseAim::Head;
+}
 
 // Rebuilds the four movement key bits from the command's axes.
 static void SetMovementButtons(CUserCmd *cmd)
@@ -437,6 +455,11 @@ void Hooks::Initialize()
 		" PropButtonPress=" + (hkPropButtonPress.isEnabled ? "OK" : "MISSING") +
 		" FloorButtonPress=" + (hkFloorButtonPress.isEnabled ? "OK" : "MISSING") +
 		" FloorButtonUnpress=" + (hkFloorButtonUnpress.isEnabled ? "OK" : "MISSING"));
+	const bool useAimReady = hkServerPollForUse.isEnabled && hkClientPollForUse.isEnabled && hkEyePosition.isEnabled;
+	Logger::Write(std::string("Controller-aimed use: server=") + (hkServerPollForUse.isEnabled ? "OK" : "MISSING") +
+		" client=" + (hkClientPollForUse.isEnabled ? "OK" : "MISSING") +
+		" eyePosition=" + (hkEyePosition.isEnabled ? "OK" : "MISSING") +
+		(useAimReady ? "" : " (use keeps following the head)"));
 	if (m_VR->m_Config.experimentalHudOverlay &&
 		m_VR->m_HUDHandle != vr::k_ulOverlayHandleInvalid) {
 		const auto *offsets = m_Game->m_Offsets;
@@ -745,6 +768,9 @@ int Hooks::initSourceHooks()
 	REQUIRE_HOOK(hkEyeAngles, m_Game->m_Offsets->EyeAngles.address, dEyeAngles);
 	REGISTER_IF_RESOLVED(hkGetPreferredCarryAngles, m_Game->m_Offsets->m_HeldObjectLayout.preferredCarryAngles,
 		dGetPreferredCarryAngles);
+	// +use aimed with the gun. Without all three hooks +use keeps following the head.
+	REGISTER_IF_RESOLVED(hkServerPollForUse, m_Game->m_Offsets->ServerPollForUse.address, dServerPollForUse);
+	REGISTER_IF_RESOLVED(hkClientPollForUse, m_Game->m_Offsets->ClientPollForUse.address, dClientPollForUse);
 
 	// Haptics: optional, each one only disables its own vibration source.
 	REGISTER_IF_RESOLVED(hkRumbleEffect, m_Game->m_Offsets->RumbleEffect.address, dRumbleEffect);
@@ -1127,7 +1153,50 @@ int Hooks::dReadUsercmd(bf_read *buf, CUserCmd* move, CUserCmd* from)
 Vector *Hooks::dEyePosition(void *ecx, void *edx, Vector *eyePos)
 {
 	Vector *result = hkEyePosition.fOriginal(ecx, eyePos);
+	// Only inside dServerPollForUse, and only for the player it runs for.
+	if (!result || !m_UseAimPlayer || ecx != m_UseAimPlayer)
+		return result;
+	switch (UseAimFor(ecx)) {
+	case UseAim::Local:
+		*result = m_VR->GetRightControllerAbsPos();
+		break;
+	case UseAim::Remote:
+		*result = m_Game->m_PlayersVRInfo[EntityIndex(ecx)].controllerPos;
+		break;
+	case UseAim::Head:
+		break;
+	}
 	return result;
+}
+
+// The search for the +use target reads EyePosition and EyeVectors, which answers through
+// EyeAngles. In this scope both answer with the gun, so use acts on what the gun points at.
+void __fastcall Hooks::dServerPollForUse(void* ecx, void* edx, bool basicUse, void** useEntity, void** usePortal)
+{
+	if (!RuntimePublished() || !hkClientPollForUse.isEnabled || !hkEyePosition.isEnabled ||
+		UseAimFor(ecx) == UseAim::Head)
+		return hkServerPollForUse.fOriginal(ecx, basicUse, useEntity, usePortal);
+	const bool wasOverriding = m_VR->m_OverrideEyeAngles;
+	void *const previousPlayer = m_UseAimPlayer;
+	m_VR->m_OverrideEyeAngles = true;
+	m_UseAimPlayer = ecx;
+	hkServerPollForUse.fOriginal(ecx, basicUse, useEntity, usePortal);
+	m_UseAimPlayer = previousPlayer;
+	if (!wasOverriding)
+		m_VR->m_OverrideEyeAngles = false;
+	if (useEntity && *useEntity && IsLocalPlayerEntity(ecx))
+		m_VR->NoteControllerUse();
+}
+
+// The client names its own pick in the usercmd, made from the head, and the server searches
+// by itself only when the command names none. Naming none hands the choice to the server.
+void __fastcall Hooks::dClientPollForUse(void* ecx, void* edx, bool basicUse, void** useEntity, void** usePortal)
+{
+	if (RuntimePublished() && hkServerPollForUse.isEnabled && hkEyePosition.isEnabled &&
+		m_VR->ControllerUseWanted() &&
+		ecx == m_Game->GetClientEntity(m_Game->m_EngineClient->GetLocalPlayer()))
+		return;
+	hkClientPollForUse.fOriginal(ecx, basicUse, useEntity, usePortal);
 }
 
 void Hooks::dPushRenderTargetAndViewport(void *ecx, void *edx, ITexture *pTexture, ITexture *pDepthTexture, int nViewX, int nViewY, int nViewW, int nViewH)

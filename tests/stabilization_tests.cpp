@@ -1827,6 +1827,10 @@ int main()
     expect(heldConfig.value.heldObjectLog || heldConfig.value.laserCubeAimAssist ||
            heldConfig.value.heldObjectAnchor || !heldConfig.value.heldObjectColumn, false,
            "held object toggles parse");
+    expect(m2Defaults.controllerAimedUse, true, "use is aimed with the gun by default");
+    std::istringstream useOptions("ControllerAimedUse=false\n");
+    expect(ParseConfig(useOptions, m2Defaults).value.controllerAimedUse, false,
+           "head-aimed use can be restored");
     std::istringstream gameHapticBad("Haptics=on\nHapticsIntensity=1.5\n");
     const auto gameHapticFallback = ParseConfig(gameHapticBad, gameHaptics.value);
     expect(gameHapticFallback.errors.size() == 2, true, "invalid game haptic fields diagnosed");

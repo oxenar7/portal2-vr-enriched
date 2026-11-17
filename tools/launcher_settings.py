@@ -68,6 +68,8 @@ SETTINGS = (
             help="Steers a laser leaving a reflector cube onto a catcher, as in co-op."),
     Setting("HeldObjectAnchor", "Attach held objects to the gun", "Aiming", "true", ("false", "true"),
             help="Held objects move with the gun and turn with the wrist. Walls still stop them."),
+    Setting("ControllerAimedUse", "Use what the gun points at", "Aiming", "true", ("false", "true"),
+            help="Pick up, drop and press act on what the gun points at. Off acts on what you look at."),
     Setting("HeldObjectColumn", "Held object vertical plane", "Aiming", "false", ("false", "true"),
             help="Only with the gun attachment off. On is Portal 2's default."),
     Setting("ExperimentalViewmodelAlignment", "Controller-locked gun and effects", "Gun calibration", "false", ("false", "true")),
@@ -131,9 +133,11 @@ _HAPTICS_KEYS = frozenset(("Haptics", "HapticsIntensity", "HapticsNativeRumble",
 _CROUCH_KEYS = frozenset(("PhysicalCrouch", "PhysicalCrouchDropMeters"))
 _HELD_KEYS = frozenset(("LaserCubeAimAssist", "HeldObjectColumn"))
 _HELD_ANCHOR_KEYS = frozenset(("HeldObjectAnchor",))
+_USE_AIM_KEYS = frozenset(("ControllerAimedUse",))
 _ZOOM_KEYS = frozenset(("BinocularZoom", "ZoomMagnification", "ZoomWindowWidthMeters", "ZoomDistanceMeters"))
 # Key groups added after the first complete schema. A saved schema missing whole groups gains their defaults.
-_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS, _HELD_KEYS, _HELD_ANCHOR_KEYS, _ZOOM_KEYS)
+_ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS, _HELD_KEYS, _HELD_ANCHOR_KEYS, _ZOOM_KEYS,
+                     _USE_AIM_KEYS)
 
 
 # Options > VR in the game writes these keys to VR/ingame_settings.txt, which the mod

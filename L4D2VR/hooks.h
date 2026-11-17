@@ -119,6 +119,7 @@ typedef Vector* (__thiscall* tWeapon_ShootPosition)(void* thisptr, Vector* shoot
 typedef bool(__thiscall* tUpdateObject)(void* thisptr, void* pPlayer, float flError, bool bIsTeleport);
 typedef bool(__thiscall* tUpdateObjectVM)(void* thisptr, void* pPlayer, float flError);
 typedef bool(__cdecl* tGetPreferredCarryAngles)(void* pObject, void* pPlayer, const void* localToWorld, void* outAngles);
+typedef void(__thiscall* tPollForUseEntity)(void* thisptr, bool basicUse, void** useEntity, void** usePortal);
 typedef QAngle&(__thiscall* tEyeAngles)(void* thisptr);
 
 
@@ -217,6 +218,10 @@ public:
 	static inline Hook<tUpdateObject> hkUpdateObject;
 	static inline Hook<tUpdateObjectVM> hkUpdateObjectVM;
 	static inline Hook<tGetPreferredCarryAngles> hkGetPreferredCarryAngles;
+	static inline Hook<tPollForUseEntity> hkServerPollForUse;
+	static inline Hook<tPollForUseEntity> hkClientPollForUse;
+	// The server player whose +use search is running with the gun as its eye.
+	static inline void *m_UseAimPlayer = nullptr;
 	static inline Hook<tEyeAngles> hkEyeAngles;
 
 	
@@ -281,6 +286,8 @@ public:
 	static bool __fastcall dUpdateObject(void* ecx, void* edx, void* pPlayer, float flError, bool bIsTeleport = false);
 	static bool __fastcall dUpdateObjectVM(void* ecx, void* edx, void* pPlayer, float flError);
 	static bool __cdecl dGetPreferredCarryAngles(void* pObject, void* pPlayer, const void* localToWorld, void* outAngles);
+	static void __fastcall dServerPollForUse(void* ecx, void* edx, bool basicUse, void** useEntity, void** usePortal);
+	static void __fastcall dClientPollForUse(void* ecx, void* edx, bool basicUse, void** useEntity, void** usePortal);
 	static QAngle& __fastcall dEyeAngles(void* ecx, void* edx);
 
 	// Haptics

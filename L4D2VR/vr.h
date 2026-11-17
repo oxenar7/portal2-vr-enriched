@@ -93,6 +93,7 @@ public:
 	std::chrono::steady_clock::time_point m_NextHoldPulse{};
 	std::chrono::steady_clock::time_point m_RumbleLogWindow{};
 	int m_RumbleLogLines = 0;
+	unsigned m_ControllerUses = 0;
 	bool m_PortalShotSupersededLogged = false;
 	bool m_HapticOutputsAvailable = false;
 	bool m_NativeRumbleHookActive = false;
@@ -452,6 +453,8 @@ public:
 	void QueuePortalShotHaptic();
 	void DispatchPortalShotHaptic(bool actionsReady);
 	bool GameHapticsEnabled() const;
+	bool ControllerUseWanted() const;
+	void NoteControllerUse() { ++m_ControllerUses; }
 	void QueueNativeRumble(int slot, int index, int data, int flags);
 	void QueueHapticEvent(Haptics::Event event);
 	void NoteHeldObjectUpdate();

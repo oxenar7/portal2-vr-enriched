@@ -899,6 +899,43 @@ int main()
     motorView = motor.OnRender({500, 500, 64}, {0, 0, 0}, 4, 1, 43.2f, motorTime);
     expectNear(motorView.x, 0.0f, "explicit recenter clears visual compensation");
 
+    // A vertical funnel lifts the body and pulls it slowly to its axis while the
+    // head stays still. On the ground the same slow drift is walked back.
+    RoomscaleMotion::Motor groundDrift;
+    groundDrift.OnRender({0, 0, 64}, {0, 0, 0}, 1, 1, 43.2f, motorTime);
+    (void)groundDrift.OnCommand(1, {1, 0, 0}, false, motorTime);
+    int groundRequests = 0;
+    for (int frame = 1; frame <= 30; ++frame) {
+        groundDrift.OnRender({0.3f * frame, 0, 64}, {0, 0, 0}, 1 + frame, 1, 43.2f, motorTime);
+        if (groundDrift.OnCommand(1 + frame, {1, 0, 0}, false, motorTime)) ++groundRequests;
+    }
+    expect(groundRequests > 20, true, "slow drift on the ground is walked back");
+
+    RoomscaleMotion::Motor funnelMotor;
+    funnelMotor.OnRender({0, 0, 64}, {0, 0, 0}, 1, 1, 43.2f, motorTime);
+    (void)funnelMotor.OnCommand(1, {1, 0, 0}, false, motorTime);
+    int funnelRequests = 0;
+    Vector funnelView{0, 0, 0};
+    for (int frame = 1; frame <= 30; ++frame) {
+        funnelView = funnelMotor.OnRender({0.3f * frame, 0, 64.0f + 3.0f * frame}, {0, 0, 0},
+                                          1 + frame, 1, 43.2f, motorTime, true);
+        if (funnelMotor.OnCommand(1 + frame, {1, 0, 0}, false, motorTime)) ++funnelRequests;
+    }
+    expectInt(funnelRequests, 0, "a funnel's pull is never walked back");
+    expectNear(funnelView.x, 0.0f, "the camera rides with the body in a funnel");
+    expectInt(static_cast<int>(funnelMotor.TakeSummary().airborneCommands), 0,
+              "a still head leaves nothing pending in the air");
+    funnelView = funnelMotor.OnRender({9.3f, 0, 160}, {3, 0, 0}, 32, 1, 43.2f, motorTime, true);
+    expectNear(funnelView.x, 3.0f, "the view still follows the head in the air");
+    expect(funnelMotor.OnCommand(32, {1, 0, 0}, false, motorTime).has_value(), false,
+           "a head move in the air waits for the ground");
+    expectInt(static_cast<int>(funnelMotor.TakeSummary().airborneCommands), 1,
+              "held-back walk requests are counted for the log");
+    funnelMotor.OnRender({9.3f, 0, 160}, {3, 0, 0}, 33, 1, 43.2f, motorTime, false);
+    const auto landed = funnelMotor.OnCommand(33, {1, 0, 0}, false, motorTime);
+    expect(landed.has_value(), true, "after landing the body walks under the head");
+    if (landed) expectNear(landed->forward, 48.0f, "landing walks off only the head's own movement");
+
     RoomscaleMotion::Motor blockedMotor;
     blockedMotor.OnRender({0, 0, 64}, {0, 0, 0}, 1, 1, 43.2f, motorTime);
     blockedMotor.OnRender({0, 0, 64}, {10, 0, 0}, 2, 1, 43.2f, motorTime);

@@ -34,6 +34,7 @@ struct Eligibility {
 struct MotorSummary {
     std::uint64_t requestedCommands = 0;
     std::uint64_t manualCommands = 0;
+    std::uint64_t airborneCommands = 0; // walk requests held back off the ground
     float maximumErrorUnits = 0.0f;
 };
 
@@ -62,7 +63,7 @@ public:
 
     Vector OnRender(const Vector &sourceAnchor, const Vector &hmdOffset,
                     std::uint64_t poseSequence, std::uintptr_t playerKey,
-                    float scale, Clock::time_point now)
+                    float scale, Clock::time_point now, bool airborne = false)
     {
         std::lock_guard<std::mutex> lock(m_Mutex);
         if (!Finite(sourceAnchor) || !Finite(hmdOffset) || !poseSequence || !playerKey ||
@@ -88,6 +89,15 @@ public:
         const bool externalMotion = m_HasRender && !m_LastRequested &&
             HorizontalLength(sourceAnchor - m_SourceAnchor) > kDeadzoneUnits &&
             HorizontalLength(hmdOffset - m_HmdOffset) <= kDeadzoneUnits;
+
+        // Off the ground the body goes where the game takes it: a funnel, a
+        // fling, a fall. That travel is not an error to walk back, so the
+        // anchor rides along and only the head's own movement stays pending.
+        if (airborne && m_HasRender) {
+            m_OriginAnchor.x += sourceAnchor.x - m_SourceAnchor.x;
+            m_OriginAnchor.y += sourceAnchor.y - m_SourceAnchor.y;
+        }
+        m_Airborne = airborne;
 
         m_SourceAnchor = sourceAnchor;
         m_HmdOffset = hmdOffset;
@@ -145,6 +155,14 @@ public:
         }
         const auto heading = TrackingSpace::HorizontalDirection({true, viewForward});
         const float errorLength = HorizontalLength(m_Error);
+        if (m_Airborne) {
+            // Walking resumes on the ground. Inside a funnel the game reads a
+            // movement command as the player struggling against the beam.
+            if (std::isfinite(errorLength) && errorLength > kDeadzoneUnits)
+                ++m_Summary.airborneCommands;
+            m_LastRequested = false;
+            return std::nullopt;
+        }
         if (!heading || !std::isfinite(errorLength) || errorLength <= kDeadzoneUnits) {
             m_LastRequested = false;
             return std::nullopt;
@@ -218,6 +236,7 @@ private:
     bool m_HasPoseTime = false;
     bool m_ManualMovement = false;
     bool m_LastRequested = false;
+    bool m_Airborne = false;
     int m_LastCommand = 0;
     std::uint64_t m_PoseSequence = 0;
     std::uintptr_t m_PlayerKey = 0;

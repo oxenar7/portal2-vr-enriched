@@ -465,6 +465,9 @@ void VR::Update()
                 " physical intents, " + std::to_string(summary.distanceUnits) +
                 " requested Source units (not accepted movement)");
         const auto motor = m_RoomscaleMotor.TakeSummary();
+        if (motor.airborneCommands)
+            Logger::Write("Roomscale: " + std::to_string(motor.airborneCommands) +
+                " walk requests held back while off the ground (funnel, jump or fall)");
         if (m_Config.verboseDiagnostics &&
             (motor.requestedCommands || motor.manualCommands || motor.maximumErrorUnits > 0.5f))
             Logger::Write("Roomscale active experimental: " + std::to_string(motor.requestedCommands) +
@@ -3039,8 +3042,13 @@ void VR::UpdateRoomscaleRenderAnchor(const Vector &sourceAnchor)
     const int index = m_Game->m_EngineClient->GetLocalPlayer();
     auto *player = (C_BasePlayer*)m_Game->GetClientEntity(index);
     m_SetupOrigin = sourceAnchor;
+    // Without the verified flags field walking stays as it was: always on the ground.
+    constexpr int kOnGround = 1 << 0; // FL_ONGROUND
+    const auto flagsOffset = m_Game->m_Offsets->m_PlayerFields.flags;
+    const bool airborne = player && flagsOffset && !(*reinterpret_cast<const int *>(
+        reinterpret_cast<const std::uint8_t *>(player) + flagsOffset) & kOnGround);
     (void)m_RoomscaleMotor.OnRender(sourceAnchor, m_HmdPosRelative,
-        m_PoseFetchSequence, reinterpret_cast<std::uintptr_t>(player), m_VRScale, now);
+        m_PoseFetchSequence, reinterpret_cast<std::uintptr_t>(player), m_VRScale, now, airborne);
     // Rebuild the beam/trace after compensation, before either eye uses it.
     UpdateAimFeedback(player);
 }

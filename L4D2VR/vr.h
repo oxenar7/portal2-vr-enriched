@@ -407,7 +407,9 @@ public:
 	void PerfNoteCompiler(const PerfStats::CompilerCounts &counts);
 	// Surfaces this frame submits without a device drain (eyes, HUD, zoom), or
 	// 0 when the frame must drain: menus, MSAA eyes, GpuDrainEachFrame=true.
-	unsigned int FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[4]) const;
+	// Two eyes, HUD, zoom and the three in-world menu panels.
+	static constexpr unsigned int kMaxSubmitSurfaces = 8;
+	unsigned int FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[kMaxSubmitSurfaces]) const;
 	void PerfBeginFrame(std::chrono::steady_clock::time_point now);
 	void PerfReadCompositorTiming();
 	bool PerfReadCompositorCounts(PerfStats::CompositorCounts &counts);

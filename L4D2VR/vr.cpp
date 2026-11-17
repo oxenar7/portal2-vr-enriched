@@ -581,7 +581,7 @@ void VR::PerfNoteCompiler(const PerfStats::CompilerCounts &counts)
         m_PerfFrameCompilerBusy = true;
 }
 
-unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[4]) const
+unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[kMaxSubmitSurfaces]) const
 {
     // Menus submit the back buffer through an overlay and keep the device
     // drain. MSAA eyes go through the fast path too: the bridge transfers
@@ -596,6 +596,7 @@ unsigned int VR::FastSubmitSurfaces(IDirect3DSurface9 *(&surfaces)[4]) const
         surfaces[count++] = m_D9HUDSurface;
     if (m_ZoomRendered && m_ZoomMasked && m_D9ZoomSurface)
         surfaces[count++] = m_D9ZoomSurface;
+    count += m_WorldMenu.PendingSurfaces(surfaces + count, kMaxSubmitSurfaces - count);
     return count;
 }
 
@@ -798,6 +799,10 @@ bool VR::InvalidateD3DResources(bool deviceReset)
                     {static_cast<std::uint64_t>(hudError)}) != RenderConditionChange::None)
                 Logger::Write("VR HUD texture detach: error=" + std::to_string(hudError));
         }
+        {
+            const VRSubmissionScope queue(m_D3DVR);
+            m_WorldMenu.DetachTextures();
+        }
         if (m_OpenVRStarted && vr::VRCompositor()) {
             const VRSubmissionScope queue(m_D3DVR);
             vr::VRCompositor()->ClearLastSubmittedFrame();
@@ -821,6 +826,7 @@ bool VR::InvalidateD3DResources(bool deviceReset)
     releaseSurface(m_D9HUDSurface);
     releaseSurface(m_D9BlankSurface);
     releaseSurface(m_D9ZoomSurface);
+    m_WorldMenu.ReleaseTextures();
     m_VKLeftEye.m_VRTexture.handle = nullptr;
     m_VKRightEye.m_VRTexture.handle = nullptr;
     m_VKHUD.m_VRTexture.handle = nullptr;
@@ -1820,10 +1826,12 @@ void VR::DispatchPortalShotHaptic(bool actionsReady)
 
 // A game is paused with its menu up and the in-world panels carry it. RenderView keeps
 // drawing both eyes on the same answer, so the panels and the world switch together.
+// Only Portal 2's own pause screen counts: loading screens also show the cursor in game.
 bool VR::WorldMenuWanted() const
 {
     return m_Config.worldMenu && m_IsVREnabled && m_WorldMenu.Ready() && !m_WorldMenu.Classic() &&
-        m_Game->m_EngineClient->IsInGame() && m_Game->m_VguiSurface->IsCursorVisible();
+        m_Game->m_EngineClient->IsInGame() && m_Game->m_VguiSurface->IsCursorVisible() &&
+        m_OptionsMenu.PauseScreenShown();
 }
 
 bool VR::ControllerUseWanted() const

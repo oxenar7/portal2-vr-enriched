@@ -70,7 +70,7 @@ bool VrOptionsMenu::Initialize(VR *vr, void *surface, void *panel, void *schemeM
     std::string failure;
     if (!m_Api.Resolve(surface, panel, schemeManager, failure)) {
         Logger::Write("In-game VR options unavailable: unverified VGUI " + failure +
-            "; VR/config.txt remains the only settings source");
+            "; VR/config.txt remains the only settings source and the pause menu stays Portal 2's own");
         return false;
     }
     Logger::Write("In-game VR options: verified VGUI surface, panel and scheme ABI");
@@ -106,6 +106,7 @@ void VrOptionsMenu::Paint(VPANEL panel, bool paintPopups)
     if (!m_Api.Ready() || !paintPopups || !m_VR || !m_VR->m_IsVREnabled ||
         panel != m_Api.GetEmbeddedPanel())
         return;
+    ObservePauseScreen();
     const bool cursor = CursorVisible();
     if (cursor && !m_MenuPaintLogged) {
         m_MenuPaintLogged = true;
@@ -165,6 +166,29 @@ VPANEL VrOptionsMenu::Search(Match &&match, bool throughHidden)
         }
     }
     return 0;
+}
+
+void VrOptionsMenu::ObservePauseScreen()
+{
+    bool pause = false, loading = false;
+    if (m_Api.Ready() && CursorVisible() && m_VR->m_Game->m_EngineClient &&
+        m_VR->m_Game->m_EngineClient->IsInGame()) {
+        // Every visible panel: the loading screen can sit over a pause screen left visible.
+        Search([&](VPANEL panel) {
+            const char *name = m_Api.GetName(panel);
+            if (name && m_Api.IsVisible(panel)) {
+                if (std::strcmp(name, "InGameMainMenu") == 0) pause = true;
+                else if (std::strcmp(name, "LoadingProgress") == 0) loading = true;
+            }
+            return false;
+        });
+    }
+    if (pause && !m_PauseLogged) {
+        m_PauseLogged = true;
+        Logger::Write(std::string("In-world menu: Portal 2's pause screen found") +
+            (loading ? " under a loading screen" : ""));
+    }
+    m_PauseScreen.store(pause && !loading, std::memory_order_relaxed);
 }
 
 bool VrOptionsMenu::FindOptionsScreen()

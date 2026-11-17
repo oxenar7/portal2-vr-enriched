@@ -4580,7 +4580,7 @@ namespace dxvk {
     {
         // Stereo frames hand their eyes to OpenVR without waiting for the GPU
         // to go idle; menus and failures keep the device drain.
-        IDirect3DSurface9* submitSurfaces[4] = {};
+        IDirect3DSurface9* submitSurfaces[VR::kMaxSubmitSurfaces] = {};
         const UINT submitCount = SUCCEEDED(previousFrameResult) ?
           game->m_VR->FastSubmitSurfaces(submitSurfaces) : 0u;
         const auto drainStart = std::chrono::steady_clock::now();

@@ -847,6 +847,8 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
     }
 
 	// With the in-world menu the paused world stays in both eyes, without the gun and the HUD.
+	// The pause screen is looked up now, so the frame that pauses already goes this way.
+	m_VR->m_OptionsMenu.ObservePauseScreen();
 	const bool worldMenu = m_VR->WorldMenuWanted();
 	const int eyeDraw = worldMenu ? whatToDraw & ~(RENDERVIEW_DRAWVIEWMODEL | RENDERVIEW_DRAWHUD) : whatToDraw;
 	if (m_Game->m_VguiSurface->IsCursorVisible() && !worldMenu) {

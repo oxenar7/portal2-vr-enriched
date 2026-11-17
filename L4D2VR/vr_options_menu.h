@@ -7,6 +7,7 @@
 #include "portal2_vgui.h"
 #include "vr_settings.h"
 
+#include <atomic>
 #include <string>
 
 class VR;
@@ -32,6 +33,11 @@ public:
     bool Navigate(Nav nav);
     // Portal 2's menu sounds through the verified VGUI surface; silent while that is unverified.
     void PlayMenuSound(const char *file) const { if (m_Api.Ready()) Sound(file); }
+    // Looks for Portal 2's pause screen (BaseModUI's "InGameMainMenu") with no loading screen
+    // over it. On the game thread: from the menu paint and before RenderView decides.
+    void ObservePauseScreen();
+    // The last answer; false while the VGUI ABI is unverified.
+    bool PauseScreenShown() const { return m_PauseScreen.load(std::memory_order_relaxed); }
 
 private:
     bool CursorVisible() const;
@@ -104,6 +110,9 @@ private:
     bool m_FocusLogged = false;
     Portal2Vgui::VPANEL m_HiddenFooter = 0;
     bool m_FooterLogged = false;
+
+    std::atomic<bool> m_PauseScreen{false};
+    bool m_PauseLogged = false;
 
     bool m_PageOpen = false;
     int m_Page = 0;

@@ -30,6 +30,8 @@ public:
     void PointerLeave();
     bool Scroll(int delta);
     bool Navigate(Nav nav);
+    // Portal 2's menu sounds through the verified VGUI surface; silent while that is unverified.
+    void PlayMenuSound(const char *file) const { if (m_Api.Ready()) Sound(file); }
 
 private:
     bool CursorVisible() const;

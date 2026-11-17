@@ -24,6 +24,7 @@
 #include "vr_options_menu.h"
 #include "perf_stats.h"
 #include "use_target.h"
+#include "vr_world_menu.h"
 #include "eye_mask.h"
 #include <filesystem>
 
@@ -357,6 +358,9 @@ public:
 	std::chrono::steady_clock::time_point m_NextConfigCheck{};
 	// Options > VR writes VR/ingame_settings.txt, layered over config.txt.
 	VrOptionsMenu m_OptionsMenu;
+	WorldMenu m_WorldMenu;
+	bool m_PauseViewAnchored = false;
+	Vector m_PauseHmdOffset = { 0,0,0 };
 	VrSettings::Overrides m_SettingsOverrides;
 	std::filesystem::file_time_type m_SettingsLastModified{};
 
@@ -456,6 +460,7 @@ public:
 	void DispatchPortalShotHaptic(bool actionsReady);
 	bool GameHapticsEnabled() const;
 	bool ControllerUseWanted() const;
+	bool WorldMenuWanted() const;
 	void NoteControllerUse() { ++m_ControllerUses; }
 	void NoteUseHover(void *entity);
 	void QueueNativeRumble(int slot, int index, int data, int flags);

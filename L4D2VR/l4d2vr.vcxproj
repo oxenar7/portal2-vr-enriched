@@ -149,6 +149,7 @@
     <ClCompile Include="sdk\newbitbuf.cpp" />
     <ClCompile Include="vr.cpp" />
     <ClCompile Include="vr_options_menu.cpp" />
+    <ClCompile Include="vr_world_menu.cpp" />
     <ClCompile Include="..\dxvk\src\d3d9\d3d9_adapter.cpp" />
     <ClCompile Include="..\dxvk\src\d3d9\d3d9_annotation.cpp" />
     <ClCompile Include="..\dxvk\src\d3d9\d3d9_buffer.cpp" />

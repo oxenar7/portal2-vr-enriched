@@ -214,6 +214,7 @@ VR::VR(Game *game)
     if (m_Config.experimentalHudOverlay)
         CreateExperimentalHUDOverlay();
     CreateZoomOverlay();
+    m_WorldMenu.Create(m_Overlay);
 
     if (!UpdatePosesAndActions()) {
         Game::errorMsg("Initial OpenVR pose/action update failed.");
@@ -244,6 +245,7 @@ VR::~VR()
         if (result != vr::VROverlayError_None)
             Logger::Write("Binocular zoom overlay cleanup failed: " + std::to_string(result));
     }
+    m_WorldMenu.Destroy();
     if (m_Overlay && m_MainMenuHandle != vr::k_ulOverlayHandleInvalid) {
         const auto result = m_Overlay->DestroyOverlay(m_MainMenuHandle);
         if (result != vr::VROverlayError_None)
@@ -519,6 +521,7 @@ void VR::Update()
         m_PortalShotHapticGate.Clear();
         m_GameHapticQueue.Clear();
         m_HoldTracker.Suspend(std::chrono::steady_clock::now());
+        m_WorldMenu.Update(*this, WorldMenuWanted(), m_Game->m_VguiSurface->IsCursorVisible(), false);
         return;
     }
     if (!m_Game->m_VguiSurface->IsCursorVisible())
@@ -527,10 +530,14 @@ void VR::Update()
     DispatchPortalShotHaptic(actionsReady);
     DispatchGameHaptics(actionsReady);
 
-    if (m_Game->m_VguiSurface->IsCursorVisible()) {
+    const bool cursorVisible = m_Game->m_VguiSurface->IsCursorVisible();
+    m_WorldMenu.Update(*this, WorldMenuWanted(), cursorVisible, true);
+    if (cursorVisible) {
         m_PrevFrameTime = std::chrono::steady_clock::now();
         ReleaseHeldActions();
-        ProcessMenuInput();
+        // The panels take the pointer themselves; Portal 2's screen behind gets no input meanwhile.
+        if (m_WorldMenu.Showing()) ReleaseMenuMouse();
+        else ProcessMenuInput();
     } else {
         ReleaseMenuMouse();
         ProcessInput();
@@ -1811,6 +1818,14 @@ void VR::DispatchPortalShotHaptic(bool actionsReady)
     }
 }
 
+// A game is paused with its menu up and the in-world panels carry it. RenderView keeps
+// drawing both eyes on the same answer, so the panels and the world switch together.
+bool VR::WorldMenuWanted() const
+{
+    return m_Config.worldMenu && m_IsVREnabled && m_WorldMenu.Ready() && !m_WorldMenu.Classic() &&
+        m_Game->m_EngineClient->IsInGame() && m_Game->m_VguiSurface->IsCursorVisible();
+}
+
 bool VR::ControllerUseWanted() const
 {
     return m_Config.controllerAimedUse && m_IsVREnabled && m_TrackingOutputValid &&
@@ -3039,7 +3054,23 @@ void VR::ResetRoomscale(bool recenter, bool newCommandStream)
 
 Vector VR::GetHmdViewOffset()
 {
-    return RoomscaleEnabled() ? m_RoomscaleMotor.ViewOffset(m_HmdPosRelative) : m_HmdPosRelative;
+    if (!RoomscaleEnabled())
+        return m_HmdPosRelative;
+    Vector offset = m_RoomscaleMotor.ViewOffset(m_HmdPosRelative);
+    // Walking is suspended while a menu is up, which leaves the view where the motor last put
+    // it. With the paused world in the eyes the head still has to move through it, so the
+    // view follows the head from where it was when the menu opened.
+    if (WorldMenuWanted()) {
+        if (!m_PauseViewAnchored) {
+            m_PauseHmdOffset = m_HmdPosRelative;
+            m_PauseViewAnchored = true;
+        }
+        offset.x += m_HmdPosRelative.x - m_PauseHmdOffset.x;
+        offset.y += m_HmdPosRelative.y - m_PauseHmdOffset.y;
+    } else {
+        m_PauseViewAnchored = false;
+    }
+    return offset;
 }
 
 void VR::UpdateRoomscaleRenderAnchor(const Vector &sourceAnchor)
@@ -3584,13 +3615,11 @@ bool VR::ApplyMenuSetting(const std::string &key, const std::string &value)
     if (!WriteMenuSettings(next)) return false;
     ParseConfigFile();
     // ApplyRuntimeConfig keeps the previous value when a dependent setting is rejected.
-    for (const auto &page : VrSettings::Pages())
-        for (const auto &item : page.items)
-            if (item.key && key == item.key && item.read && item.read(m_Config) != value) {
-                Logger::Write("In-game VR options: " + key + "=" + value + " rejected; previous value kept");
-                if (WriteMenuSettings(previous)) ParseConfigFile();
-                return false;
-            }
+    if (const VrSettings::Item *item = VrSettings::FindItem(key); item && item->read && item->read(m_Config) != value) {
+        Logger::Write("In-game VR options: " + key + "=" + value + " rejected; previous value kept");
+        if (WriteMenuSettings(previous)) ParseConfigFile();
+        return false;
+    }
     Logger::Write("In-game VR options: " + key + "=" + value + " applied");
     return true;
 }

@@ -29,6 +29,7 @@
 #include "../L4D2VR/perf_stats.h"
 #include "../L4D2VR/logger.h"
 #include "../L4D2VR/use_target.h"
+#include "../L4D2VR/vr_menu_model.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -1832,6 +1833,131 @@ int main()
     std::istringstream useOptions("ControllerAimedUse=false\n");
     expect(ParseConfig(useOptions, m2Defaults).value.controllerAimedUse, false,
            "head-aimed use can be restored");
+    // In-world menu: game data.
+    expect(m2Defaults.worldMenu, true, "the pause menu hangs in the world by default");
+    expectInt(VrMenuData::ChapterOfMap("sp_a4_laser_platform"), 8, "a campaign map knows its chapter");
+    expectInt(VrMenuData::ChapterOfMap("sp_a2_bts3"), 5, "chapter 5 starts at the third backstage map");
+    expectInt(VrMenuData::ChapterOfMap("mp_coop_lobby_3"), 0, "maps outside the campaign have no chapter");
+    expect(VrMenuData::SafeSaveName("1794830356") && VrMenuData::SafeSaveName("autosave01"), true,
+           "the game's own save names are accepted");
+    expect(VrMenuData::SafeSaveName("a;quit") || VrMenuData::SafeSaveName("a b") || VrMenuData::SafeSaveName(""), false,
+           "a save name that is not one plain word never reaches a command");
+    expectText(VrMenuData::GameLanguage("\"UserConfig\"\n{\n\t\"language\"\t\t\"italian\"\n}"), "italian",
+               "the game language comes from the Steam manifest");
+    expectText(VrMenuData::GameLanguage("\"language\" \"../x\""), "english", "an odd language value falls back to English");
+    const auto menuTokens = VrMenuData::ParseTokens(L"\"lang\"\n{\n\"PORTAL2_SaveGame\"\t\t\"SAVE \\\"NOW\\\"\"\n// \"x\"\n\"L4D360UI_Back\" \"Back\"\n}");
+    expect(menuTokens.count("portal2_savegame") == 1 && menuTokens.at("portal2_savegame") == L"SAVE \"NOW\"" &&
+           menuTokens.at("l4d360ui_back") == L"Back", true, "localisation pairs are read with their escapes");
+    std::vector<char> saveBytes(20 + 8 + 144 + 80, '\0');
+    std::memcpy(saveBytes.data(), "JSAV", 4);
+    const std::uint32_t saveTokenBytes = 8;
+    std::memcpy(saveBytes.data() + 16, &saveTokenBytes, 4);
+    std::memcpy(saveBytes.data() + 28 + 12, "sp_a2_core", 10);
+    const char saveComment[] = "sp_a2_core                      125:07";
+    std::memcpy(saveBytes.data() + 28 + 144, saveComment, sizeof(saveComment));
+    std::string saveMap;
+    std::wstring savePlayed;
+    expect(VrMenuData::ParseSaveHeader(saveBytes, saveMap, savePlayed) && saveMap == "sp_a2_core" && savePlayed == L"2:05",
+           true, "a save file gives its map and time played");
+    saveBytes[1] = 'X';
+    expect(VrMenuData::ParseSaveHeader(saveBytes, saveMap, savePlayed), false, "a file that is not a save is refused");
+
+    // In-world menu: what the panels show and what a click does.
+    using MenuKind = VrMenu::Command::Kind;
+    expect(VrSettings::FindItem("ControllerAimedUse") != nullptr && VrSettings::IsMenuKey("ControllerAimedUse"), true,
+           "the in-world menu can change the aimed-use setting");
+    ConfigSnapshot menuConfig;
+    VrMenu::Model menu;
+    menu.Open();
+    expectInt(menu.Columns(), 1, "a fresh pause shows the first panel only");
+    expect(menu.Click(0, VrMenu::Model::RootResume, 0, -1, menuConfig).kind == MenuKind::Resume, true,
+           "the first row returns to the game");
+    menu.Click(0, VrMenu::Model::RootOptions, 0, -1, menuConfig);
+    expectInt(menu.Columns(), 2, "options open a second panel");
+    expectInt(static_cast<int>(menu.Panel(1, menuConfig).rows.size()), 4, "three option groups and the game's own options");
+    menu.Click(1, 0, 0, -1, menuConfig);
+    expectInt(menu.Columns(), 3, "a group opens its page in the third panel");
+    const auto comfort = menu.Panel(2, menuConfig);
+    expect(comfort.title == L"COMFORT" && comfort.rows.size() == 4 && comfort.rows[0].value == L"SMOOTH" &&
+           comfort.rows[1].label == L"TURN SPEED", true, "smooth turning hides the snap angle");
+    const auto menuTurn = menu.Click(2, 0, 0, -1, menuConfig);
+    expect(menuTurn.kind == MenuKind::Set && menuTurn.text == "SnapTurning" && menuTurn.value == "true", true,
+           "a click on a row changes its setting");
+    menuConfig.snapTurning = true;
+    expect(menu.Panel(2, menuConfig).rows[1].label == L"SNAP ANGLE", true, "snap turning shows its angle instead");
+    const auto menuAngle = menu.Click(2, 1, -1, -1, menuConfig);
+    expect(menuAngle.kind == MenuKind::Set && menuAngle.text == "SnapTurnAngle" && menuAngle.value == "30", true,
+           "the left stepper goes one step down");
+    expect(menu.Hover(2, 1, -1) && !menu.Hover(2, 1, -1), true, "the pointer repaints only when its target changes");
+    expectInt(menu.Panel(2, menuConfig).hovered, 1, "the row under the pointer is lit");
+    expect(menu.Back().kind == MenuKind::None && menu.Columns() == 2, true, "back closes the page first");
+    expect(menu.Back().kind == MenuKind::None && menu.Columns() == 1, true, "then the list");
+    expect(menu.Back().kind == MenuKind::Resume, true, "and from the first panel it resumes the game");
+
+    std::vector<VrMenuData::Save> menuSaves;
+    for (int i = 0; i < 8; ++i) {
+        VrMenuData::Save save;
+        save.name = i == 0 ? "autosave" : "17000000" + std::to_string(i);
+        save.map = "sp_a4_intro";
+        save.autosave = i == 0;
+        save.time = 100 - i;
+        menuSaves.push_back(save);
+    }
+    menu.SetSaves(menuSaves);
+    menu.Click(0, VrMenu::Model::RootLoad, 0, -1, menuConfig);
+    const auto loadList = menu.Panel(1, menuConfig);
+    expect(loadList.rows.size() == 5 && loadList.buttons.size() == 2 && loadList.buttons[1] == L"OLDER", true,
+           "the load list shows five saves and offers older ones");
+    menu.Click(1, 0, 0, -1, menuConfig);
+    const auto loadCommand = menu.Click(2, -1, 0, 1, menuConfig);
+    expect(loadCommand.kind == MenuKind::Load && loadCommand.text == "autosave", true, "the load button loads the chosen save");
+    menu.Click(0, VrMenu::Model::RootSave, 0, -1, menuConfig);
+    const auto saveList = menu.Panel(1, menuConfig);
+    expect(saveList.rows.size() == 6 && saveList.rows[0].label == L"NEW SAVE", true,
+           "the save list starts with a new save and leaves autosaves out");
+    expect(menu.Click(1, 0, 0, -1, menuConfig).kind == MenuKind::Save, true, "a new save is one click");
+    menu.Click(1, 1, 0, -1, menuConfig);
+    const auto overwrite = menu.Click(2, -1, 0, 1, menuConfig);
+    expect(overwrite.kind == MenuKind::Save && overwrite.text == "170000001", true, "saving over a game names that game");
+    menu.Click(0, VrMenu::Model::RootExit, 0, -1, menuConfig);
+    menu.Hover(1, 0, -1);
+    expectInt(menu.Panel(1, menuConfig).hovered, -1, "a row that only informs does not light up");
+    expect(menu.Click(1, 0, 0, -1, menuConfig).kind == MenuKind::None, true, "and does nothing when clicked");
+    expect(menu.Click(1, -1, 0, 1, menuConfig).kind == MenuKind::ExitToMainMenu, true, "leaving asks once, then exits");
+    VrMenu::Model cues;
+    cues.Open();
+    ConfigSnapshot cueConfig;
+    cues.Hover(0, VrMenu::Model::RootOptions, -1);
+    expect(cues.HoverLive(cueConfig), true, "a row that answers a click gets the focus tick");
+    cues.Click(0, VrMenu::Model::RootOptions, 0, -1, cueConfig);
+    expect(cues.TakeCue() == VrMenu::Cue::Accept && cues.TakeCue() == VrMenu::Cue::None, true,
+           "opening a panel confirms, once");
+    cues.Click(1, 0, 0, -1, cueConfig);
+    cues.TakeCue();
+    cueConfig.snapTurning = true;
+    cueConfig.snapTurnAngle = 90.0f;
+    expect(cues.Click(2, 1, 1, -1, cueConfig).kind == MenuKind::None && cues.TakeCue() == VrMenu::Cue::Invalid, true,
+           "a value already at its end refuses");
+    cues.Click(2, 1, -1, -1, cueConfig);
+    expect(cues.TakeCue() == VrMenu::Cue::Accept, true, "a changed value confirms");
+    cues.Click(2, -1, 0, 0, cueConfig);
+    expect(cues.TakeCue() == VrMenu::Cue::Back, true, "the back button sounds like going back");
+    cues.Click(1, 0, 0, -1, cueConfig);
+    cues.TakeCue();
+    cues.Click(1, 0, 0, -1, cueConfig);
+    expect(cues.TakeCue() == VrMenu::Cue::Back, true, "closing a page by its own row goes back too");
+    cues.Back();
+    expect(cues.TakeCue() == VrMenu::Cue::Back, true, "the back press sounds like going back");
+    cues.Click(0, VrMenu::Model::RootExit, 0, -1, cueConfig);
+    cues.TakeCue();
+    cues.Hover(1, 0, -1);
+    expect(cues.HoverLive(cueConfig), false, "an information row stays silent under the pointer");
+    cues.Click(1, 0, 0, -1, cueConfig);
+    expect(cues.TakeCue() == VrMenu::Cue::None, true, "and silent when clicked");
+    VrMenuPaint::Panel sheet;
+    sheet.rows.resize(3);
+    expect(VrMenuPaint::ContentHeight(sheet, 640) < VrMenuPaint::ContentHeight(menu.Panel(0, menuConfig), 640), true,
+           "a panel is as tall as its rows");
     const auto hoverStart = std::chrono::steady_clock::time_point{} + std::chrono::seconds(10);
     const auto hoverAt = [&](int milliseconds) { return hoverStart + std::chrono::milliseconds(milliseconds); };
     UseTarget::Hover hover;

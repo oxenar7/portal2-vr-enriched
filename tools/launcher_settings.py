@@ -70,6 +70,8 @@ SETTINGS = (
             help="Held objects move with the gun and turn with the wrist. Walls still stop them."),
     Setting("ControllerAimedUse", "Use what the gun points at", "Aiming", "true", ("false", "true"),
             help="Pick up, drop and press act on what the gun points at. Off acts on what you look at."),
+    Setting("WorldMenu", "Pause menu in the world", "Captions", "true", ("false", "true"),
+            help="The pause menu appears as panels floating in the paused world. Off shows Portal 2's own pause screen."),
     Setting("HeldObjectColumn", "Held object vertical plane", "Aiming", "false", ("false", "true"),
             help="Only with the gun attachment off. On is Portal 2's default."),
     Setting("ExperimentalViewmodelAlignment", "Controller-locked gun and effects", "Gun calibration", "false", ("false", "true")),
@@ -134,10 +136,11 @@ _CROUCH_KEYS = frozenset(("PhysicalCrouch", "PhysicalCrouchDropMeters"))
 _HELD_KEYS = frozenset(("LaserCubeAimAssist", "HeldObjectColumn"))
 _HELD_ANCHOR_KEYS = frozenset(("HeldObjectAnchor",))
 _USE_AIM_KEYS = frozenset(("ControllerAimedUse",))
+_WORLD_MENU_KEYS = frozenset(("WorldMenu",))
 _ZOOM_KEYS = frozenset(("BinocularZoom", "ZoomMagnification", "ZoomWindowWidthMeters", "ZoomDistanceMeters"))
 # Key groups added after the first complete schema. A saved schema missing whole groups gains their defaults.
 _ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS, _HELD_KEYS, _HELD_ANCHOR_KEYS, _ZOOM_KEYS,
-                     _USE_AIM_KEYS)
+                     _USE_AIM_KEYS, _WORLD_MENU_KEYS)
 
 
 # Options > VR in the game writes these keys to VR/ingame_settings.txt, which the mod
@@ -147,7 +150,8 @@ INGAME_KEYS = frozenset((
     "SnapTurning", "SnapTurnAngle", "TurnSpeed", "MovementDirection", "PhysicalCrouch", "LeftHanded",
     "Haptics", "HapticsIntensity", "ExperimentalWorldAimMarker", "6DOF", "ControllerPitchDegrees",
     "HeightOffsetMeters", "PhysicalCrouchDropMeters", "VRScale", "IPDScale", "HapticsNativeRumble", "HapticsHeldObject",
-    "HapticsButtons", "ReticleDistanceScaling", "LaserCubeAimAssist", "HeldObjectAnchor", "RenderWindow"))
+    "HapticsButtons", "ReticleDistanceScaling", "LaserCubeAimAssist", "HeldObjectAnchor", "RenderWindow",
+    "ControllerAimedUse"))
 
 
 def read_ingame_settings(game: Path) -> dict[str, str]:

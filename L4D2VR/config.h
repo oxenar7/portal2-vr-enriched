@@ -50,6 +50,7 @@ struct ConfigSnapshot {
     bool heldObjectColumn = false;
     bool heldObjectAnchor = true;
     bool controllerAimedUse = true;
+    bool worldMenu = true;
     float hudDistanceMeters = 1.3f;
     float hudWidthMeters = 1.4f;
     float hudVerticalOffsetMeters = -0.15f;
@@ -282,6 +283,7 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
     readBool("HeldObjectColumn", result.value.heldObjectColumn);
     readBool("HeldObjectAnchor", result.value.heldObjectAnchor);
     readBool("ControllerAimedUse", result.value.controllerAimedUse);
+    readBool("WorldMenu", result.value.worldMenu);
     readFloat("HUDDistanceMeters", result.value.hudDistanceMeters, 0.6f, 3.0f);
     readFloat("HUDWidthMeters", result.value.hudWidthMeters, 0.5f, 2.5f);
     readFloat("HUDVerticalOffsetMeters", result.value.hudVerticalOffsetMeters, -0.6f, 0.6f);

@@ -35,6 +35,7 @@ LaserCubeAimAssist=true # Steer a laser leaving a reflector cube onto a catcher,
 HeldObjectAnchor=true # Held objects stay attached to the gun and turn with the wrist; walls still stop them; false restores Portal 2's hold
 HeldObjectColumn=false # Only with HeldObjectAnchor=false; true is Portal 2's default, sliding held objects on a vertical plane in front of you
 ControllerAimedUse=true # Use (pick up, drop, press) acts on what the gun points at; false acts on what you look at, as in the flat game
+WorldMenu=true # Pause menu as panels floating in the paused world; false shows Portal 2's own pause screen
 HUDDistanceMeters=1.3 # 0.6-3.0; distance of the caption overlay from the HMD
 HUDWidthMeters=1.4 # 0.5-2.5
 HUDVerticalOffsetMeters=-0.15 # -0.6 to 0.6; negative is below eye level

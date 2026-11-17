@@ -15,6 +15,7 @@ CROUCH_DEFAULTS = {"PhysicalCrouch": "true", "PhysicalCrouchDropMeters": "0.25"}
 HELD_DEFAULTS = {"LaserCubeAimAssist": "true", "HeldObjectColumn": "false"}
 ANCHOR_DEFAULTS = {"HeldObjectAnchor": "true"}
 USE_AIM_DEFAULTS = {"ControllerAimedUse": "true"}
+WORLD_MENU_DEFAULTS = {"WorldMenu": "true"}
 ZOOM_DEFAULTS = {"BinocularZoom": "true", "ZoomMagnification": "3",
                  "ZoomWindowWidthMeters": "0.8", "ZoomDistanceMeters": "1"}
 
@@ -161,6 +162,16 @@ class EyeHudSettingsTests(unittest.TestCase):
             path.write_bytes(original)
             migrated = settings.load_preferences(path, {})
             self.assertEqual(migrated["values"], {**before, "SnapTurning": "true", **USE_AIM_DEFAULTS})
+            self.assertEqual(path.read_bytes(), original)
+    def test_preferences_saved_before_the_world_menu_gain_its_default(self):
+        before = {k: v for k, v in settings.recommended_settings().items() if k not in WORLD_MENU_DEFAULTS}
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original = json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                   "values": dict(before, SnapTurning="true")}).encode()
+            path.write_bytes(original)
+            migrated = settings.load_preferences(path, {})
+            self.assertEqual(migrated["values"], {**before, "SnapTurning": "true", **WORLD_MENU_DEFAULTS})
             self.assertEqual(path.read_bytes(), original)
 
     def test_pre_zoom_preferences_gain_zoom_defaults(self):

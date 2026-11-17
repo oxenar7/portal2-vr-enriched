@@ -846,7 +846,10 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
         return hkRenderView.fOriginal(ecx, setup, hudViewSetup, nClearFlags, whatToDraw);
     }
 
-	if (m_Game->m_VguiSurface->IsCursorVisible()) {
+	// With the in-world menu the paused world stays in both eyes, without the gun and the HUD.
+	const bool worldMenu = m_VR->WorldMenuWanted();
+	const int eyeDraw = worldMenu ? whatToDraw & ~(RENDERVIEW_DRAWVIEWMODEL | RENDERVIEW_DRAWHUD) : whatToDraw;
+	if (m_Game->m_VguiSurface->IsCursorVisible() && !worldMenu) {
         if (m_VR->m_RenderDiagnostics.First(RenderDiagnosticEvent::CursorBypass))
             Logger::Write("RenderView: stereo bypassed while VGUI cursor is visible");
 		return hkRenderView.fOriginal(ecx, setup, hudViewSetup, nClearFlags, whatToDraw);
@@ -936,7 +939,7 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 	m_ActiveAimEye = 1;
 	m_ActiveReticleScale = reticleScale;
 	auto eyeStart = std::chrono::steady_clock::now();
-	hkRenderView.fOriginal(ecx, leftEyeView, hudViewSetup, nClearFlags, whatToDraw);
+	hkRenderView.fOriginal(ecx, leftEyeView, hudViewSetup, nClearFlags, eyeDraw);
 	m_VR->PerfRecord(PerfStats::Metric::RenderLeft, PerfStats::ElapsedMs(eyeStart));
 	m_ActiveAimEyeView = previousAimEyeView;
 	m_ActiveAimEye = previousAimEye;
@@ -958,7 +961,7 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 	m_ActiveAimEye = 2;
 	m_ActiveReticleScale = reticleScale;
 	eyeStart = std::chrono::steady_clock::now();
-	hkRenderView.fOriginal(ecx, rightEyeView, hudViewSetup, nClearFlags, whatToDraw);
+	hkRenderView.fOriginal(ecx, rightEyeView, hudViewSetup, nClearFlags, eyeDraw);
 	m_VR->PerfRecord(PerfStats::Metric::RenderRight, PerfStats::ElapsedMs(eyeStart));
 	m_ActiveAimEyeView = previousAimEyeView;
 	m_ActiveAimEye = previousAimEye;
@@ -1013,7 +1016,7 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 	rndrContext->SetRenderTarget(NULL);
 	rndrContext->Release();*/
 
-	if (m_VR->m_RenderWindow) {
+	if (m_VR->m_RenderWindow && !worldMenu) {
 		setup.m_flAspectRatio = aspect;
 
 		//setup.width, setup.height

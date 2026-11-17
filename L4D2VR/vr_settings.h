@@ -191,12 +191,28 @@ inline const std::vector<Page> &Pages()
     return pages;
 }
 
-inline bool IsMenuKey(const std::string &key)
+// Settings only the in-world menu offers: the flat Advanced VR page has no row left for them.
+inline const std::vector<Item> &ExtraItems()
+{
+    static const std::vector<Item> items{
+        Toggle("ControllerAimedUse", "Use What The Gun Points At",
+               [](const ConfigSnapshot &c) { return Bool(c.controllerAimedUse); })};
+    return items;
+}
+
+inline const Item *FindItem(const std::string &key)
 {
     for (const auto &page : Pages())
         for (const auto &item : page.items)
-            if (item.key && key == item.key) return true;
-    return false;
+            if (item.key && key == item.key) return &item;
+    for (const auto &item : ExtraItems())
+        if (key == item.key) return &item;
+    return nullptr;
+}
+
+inline bool IsMenuKey(const std::string &key)
+{
+    return FindItem(key) != nullptr;
 }
 
 inline bool Enabled(const Item &item, const ConfigSnapshot &config)
@@ -322,6 +338,10 @@ inline std::string OverrideLines(const Overrides &overrides)
             const auto it = overrides.find(item.key);
             if (it != overrides.end()) text += it->first + "=" + it->second + "\n";
         }
+    for (const auto &item : ExtraItems()) {
+        const auto it = overrides.find(item.key);
+        if (it != overrides.end()) text += it->first + "=" + it->second + "\n";
+    }
     return text;
 }
 

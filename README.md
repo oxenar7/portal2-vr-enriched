@@ -22,6 +22,9 @@ This is an unofficial fan project, not affiliated with or endorsed by Valve. You
 - **Anti-aliasing at full frame rate:** with anti-aliasing on, stereo frames no longer wait for the GPU, and the parts of each eye image the headset never shows are not drawn. On the tested setup, 4x anti-aliasing went from 46 to a steady 90 fps.
 - **Smooth grates and sharp floors:** with anti-aliasing on, grate holes and railing cut-outs get smooth edges instead of crawling stair steps; 16x anisotropic filtering keeps floors and walls sharp at grazing angles.
 - **Aim through grates:** the aim line and reticle pass through grates and railings, like the portal shot itself.
+- **Use what the gun points at:** pick up, drop and press act on what the portal gun points at, not on what you look at. The aim line turns orange, and the gun hand gives a light pulse, when something usable is under it.
+- **Pause menu in the world:** pausing opens panels in Aperture style, floating in front of you over the paused level: resume, save, load, VR options and exit, picked with the controller laser and Portal 2's own menu sounds. Portal 2's own pause screen is one click away, or the default with **Pause menu in the world** off in the launcher.
+- **Steady funnels with roomscale:** walking in your room no longer fights the pull of an excursion funnel, so the view stays still while you float.
 - **A small, clean launcher** that finds Portal 2 and Steam by itself, and only needs the Python standard library when run from source.
 
 ## Install
@@ -55,12 +58,12 @@ Default bindings for Quest / Oculus Touch controllers:
 | Turn (smooth or snap) | Right stick |
 | Blue portal | Right trigger |
 | Orange portal | Right grip |
-| Use, pick up, drop | B |
+| Use, pick up, drop | B, on what the gun points at |
 | Jump | A |
 | Crouch | Left grip, or crouch for real |
 | Binocular zoom | Hold the right stick in |
 | Pause menu | Y |
-| Menus | Point and pull the trigger, or left stick with A and B |
+| Menus | Point and pull the trigger; Portal 2's own menus also take the left stick with A and B |
 
 Valve Index and Vive Cosmos controllers have their own default bindings. Other controllers can be bound in SteamVR: Settings > Controllers > Manage Controller Bindings. **Recenter** is in Options > VR > Advanced VR. Turning, movement direction, left-handed mode and vibration are in Options > VR.
 

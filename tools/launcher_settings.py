@@ -58,9 +58,8 @@ SETTINGS = (
             labels=("None", "Legacy crosshair", "Beam and crosshair")),
     Setting("ShowSourceCrosshair", "Show legacy flat crosshair", "Aiming", "true", ("false", "true"),
             help="Only with aim mode None or Legacy crosshair. Portal 2's portal status artwork stays visible."),
-    Setting("ExperimentalWorldAimMarker", "World aim line", "Aiming", "false", ("false", "true"),
-            help="A line from the gun to where the portal will land. Off falls back to Portal 2's own beam, "
-                 "which is currently invisible."),
+    Setting("ExperimentalWorldAimMarker", "Aim line", "Aiming", "false", ("false", "true"),
+            help="A line from the gun to where the portal will land. Off leaves only the reticle at the aim point."),
     Setting("ExperimentalStereoReticle", "Atlas reticle rollback", "Aiming", "false", ("false", "true"),
             help="Leave off to keep Portal 2's own crosshair artwork. On uses an older experimental crosshair."),
     Setting("ReticleDistanceScaling", "Gentle reticle distance scaling", "Aiming", "true", ("false", "true"),

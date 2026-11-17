@@ -62,7 +62,7 @@ class TestLauncher:
         selector.grid(row=2, column=1, sticky="ew", padx=8)
         ttk.Label(outer, text="Recommended aim: 'Native reticle + muzzle line (fallback)' "
                   "keeps the original Portal artwork/status and the line at the gun muzzle. "
-                  "The legacy particle beam remains a diagnostic test; it is not confirmed visible. "
+                  "'HUD reticle only, aim line off' removes the line for comparison. "
                   "'Stereo atlas + muzzle line (rollback)' is only the older reticle fallback. "
                   "All three preserve model, captions and active roomscale settings. "
                   "Active roomscale remains experimental movement; test small steps first. "

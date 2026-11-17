@@ -7,7 +7,6 @@
 #include "logger.h"
 #include "trace.h"
 #include "aim_feedback.h"
-#include "native_beam.h"
 #include "hud_capture.h"
 #include "sdk/ivdebugoverlay.h"
 #include <iostream>
@@ -453,6 +452,7 @@ void VR::Update()
             ParseConfigFile();
         }
         ApplyHeldObjectTuning();
+        CheckAddressSpace();
     }
     PerfBeginFrame(now);
     PollHeldTrace(now);
@@ -692,6 +692,20 @@ void VR::PerfFlush(std::chrono::steady_clock::time_point now)
     m_PerfCountsStart = countsNow;
     m_PerfHaveCounts = haveCounts;
     PerfAdvanceAb();
+}
+
+void VR::CheckAddressSpace()
+{
+    MEMORYSTATUSEX memory{};
+    memory.dwLength = sizeof(memory);
+    if (!GlobalMemoryStatusEx(&memory) ||
+        !m_AddressSpaceWatch.Observe(memory.ullTotalVirtual, memory.ullAvailVirtual))
+        return;
+    Logger::Write("Warning: Portal 2 is using " +
+        std::to_string((memory.ullTotalVirtual - memory.ullAvailVirtual) >> 20) + " of " +
+        std::to_string(memory.ullTotalVirtual >> 20) +
+        " MiB of its 32-bit address space and can close by itself when it fills up; "
+        "lower AntiAliasing or remove add-on texture packs if that happens");
 }
 
 void VR::PerfAdvanceAb()
@@ -2668,14 +2682,6 @@ void VR::UpdateTracking()
             }
         }
         m_HmdLostSinceLastValid = true;
-        if (m_Game->m_Offsets->m_LaserAvailable) {
-            const int index = m_Game->m_EngineClient->GetLocalPlayer();
-            C_Portal_Player* player = (C_Portal_Player*)m_Game->GetClientEntity(index);
-            if (player && player->m_PointLaser) {
-                player->m_PointLaser->StopEmission(false, true, false);
-                player->m_PointLaser = NULL;
-            }
-        }
         return;
     }
 
@@ -2770,14 +2776,6 @@ void VR::UpdateTracking()
         }
     }
 
-    if ((!m_RightControllerPose.valid || m_AimMode != 2) &&
-        m_Game->m_Offsets->m_LaserAvailable) {
-        C_Portal_Player* portalPlayer = (C_Portal_Player*)localPlayer;
-        if (portalPlayer->m_PointLaser) {
-            portalPlayer->m_PointLaser->StopEmission(false, true, false);
-            portalPlayer->m_PointLaser = NULL;
-        }
-    }
 
     // Check if camera is clipping inside wall
     /*CGameTrace trace;
@@ -2889,7 +2887,6 @@ void VR::UpdateTracking()
 void VR::ResetMuzzleSample()
 {
     m_MuzzleSample.Reset();
-    Hooks::m_NativeBeamRenderProbe.SetEffect(0);
 }
 
 void VR::CaptureViewmodelMuzzle(const Vector &world, const Vector &modelOrigin, const QAngle &modelAngles)
@@ -2924,7 +2921,6 @@ std::optional<Vector> VR::GetAimBeamOrigin()
 
 void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
 {
-    Hooks::m_NativeBeamRenderProbe.SetEffect(0);
     if (!localPlayer || !m_TrackingOutputValid || !m_RightControllerPose.valid) {
         ResetMuzzleSample();
         return;
@@ -2932,8 +2928,7 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
     bool aimTraceHit = false;
     m_AimPos = Trace((uint32_t*)localPlayer, aimTraceHit);
     if (AimFeedback::ShouldInspectActiveWeaponForAim(
-            m_AimMode, m_Game->m_Offsets->m_LaserAvailable,
-            m_Config.experimentalWorldAimMarker, m_Game->m_DebugOverlay != nullptr)) {
+            m_AimMode, m_Config.experimentalWorldAimMarker, m_Game->m_DebugOverlay != nullptr)) {
         C_Portal_Player* portalPlayer = (C_Portal_Player*)localPlayer;
         auto activeWeaponAddr = (*(int(__thiscall**)(void*))(*(uintptr_t*)portalPlayer + 968))(portalPlayer);
         const auto playerKey = reinterpret_cast<std::uintptr_t>(localPlayer);
@@ -2974,50 +2969,6 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
                     m_WorldAimMarkerCadenceLogged = true;
                 }
             }
-        }
-        const bool requestLaser = !worldMarker && beamOrigin && AimFeedback::ShouldRequestLaser(
-            m_AimMode, m_Game->m_Offsets->m_LaserAvailable,
-            m_RightControllerPose.valid, activeWeaponAddr != 0,
-            m_Game->m_VguiSurface->IsCursorVisible());
-        if (requestLaser) {
-            CWeaponPortalBase* activeWeapon = (CWeaponPortalBase*)activeWeaponAddr;
-            if (!portalPlayer->m_PointLaser) {
-                if (!m_LaserRequestLogged) {
-                    Logger::Write("Controller laser creation requested; crosshair paint state is no longer a prerequisite");
-                    m_LaserRequestLogged = true;
-                }
-                m_Game->m_Hooks->CreateNativeAimPointer(localPlayer, m_AimPos);
-            }
-            // Apply control points on the creation frame too. Source may use a
-            // player-owned ABSORIGIN branch: the native updater skips CP0 after
-            // initialization instead of replacing it with EyePosition each frame.
-            if (portalPlayer->m_PointLaser) {
-                Hooks::m_NativeBeamRenderProbe.SetEffect(
-                    reinterpret_cast<std::uintptr_t>(portalPlayer->m_PointLaser));
-                if (!m_LaserParticleObserved) {
-                    Logger::Write("Controller laser particle pointer observed; actual visibility unverified");
-                    m_LaserParticleObserved = true;
-                }
-                const auto portalColor = NativeBeam::ControlPointColor(activeWeapon->m_iLastFiredPortal,
-                    m_Game->m_singlePlayerPortalColors);
-                portalPlayer->m_PointLaser->SetControlPoint(0, *beamOrigin);
-                portalPlayer->m_PointLaser->SetControlPoint(1, m_AimPos);
-                portalPlayer->m_PointLaser->SetControlPoint(2, portalColor);
-                if (m_RenderDiagnostics.First(RenderDiagnosticEvent::LaserControlPoints)) {
-                    Logger::Write(std::string("Controller laser control points updated: originMode=") +
-                        (m_Config.aimFromViewmodelMuzzle ? "viewmodelMuzzle" : "controller") + " originCP0=" +
-                        std::to_string(beamOrigin->x) + "," + std::to_string(beamOrigin->y) +
-                        "," + std::to_string(beamOrigin->z) + " targetCP1=" +
-                        std::to_string(m_AimPos.x) + "," + std::to_string(m_AimPos.y) +
-                        "," + std::to_string(m_AimPos.z) +
-                        " colorCP2=" + std::to_string(portalColor.x) + "," +
-                        std::to_string(portalColor.y) + "," + std::to_string(portalColor.z) +
-                        "; originCP0 and targetCP1 updated; actual visibility unverified");
-                }
-            }
-        } else if (m_Game->m_Offsets->m_LaserAvailable && portalPlayer->m_PointLaser) {
-            portalPlayer->m_PointLaser->StopEmission(false, true, false);
-            portalPlayer->m_PointLaser = NULL;
         }
     } else {
         ResetMuzzleSample();
@@ -3520,7 +3471,7 @@ void VR::ParseConfigFile()
     }
     m_AimMode = m_Config.aimMode;
     if (m_Config.experimentalWorldAimMarker && !m_Game->m_DebugOverlay)
-        Logger::Write("Experimental world aim marker unavailable: VDebugOverlay004 missing; legacy particle retained");
+        Logger::Write("Aim line unavailable: VDebugOverlay004 missing; only the reticle is shown");
     m_AntiAliasing = m_Config.antiAliasing;
     m_RenderWindow = m_Config.renderWindow;
     m_ViewmodelPosCustomOffset = {m_Config.viewmodelPosOffset[0], m_Config.viewmodelPosOffset[1], m_Config.viewmodelPosOffset[2]};

@@ -255,6 +255,29 @@ inline std::string FormatAddressSpace(std::uint64_t totalBytes, std::uint64_t av
     return buffer;
 }
 
+// The game is a 32-bit process and its allocations start to fail before the
+// address space is full. Observe returns true when usage first reaches the
+// warning share, and again only after it has dropped below the re-arm share,
+// so a session that stays near the limit logs one line and not one a second.
+class AddressSpaceWatch {
+public:
+    static constexpr std::uint64_t kWarnPercent = 80;
+    static constexpr std::uint64_t kRearmPercent = 75;
+
+    bool Observe(std::uint64_t totalBytes, std::uint64_t availableBytes)
+    {
+        if (!totalBytes || availableBytes > totalBytes) return false;
+        const std::uint64_t used = totalBytes - availableBytes;
+        if (used < totalBytes / 100 * kRearmPercent) m_Warned = false;
+        if (m_Warned || used < totalBytes / 100 * kWarnPercent) return false;
+        m_Warned = true;
+        return true;
+    }
+
+private:
+    bool m_Warned = false;
+};
+
 // "name=avg/p95/max" in milliseconds, or nothing when the metric had no samples.
 inline std::string FormatMetric(Metric metric, const Summary &summary)
 {

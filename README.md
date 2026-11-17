@@ -84,7 +84,7 @@ The launcher default includes features confirmed during the maintainer's headset
 - Seated tracking with positional head movement; Standing is available in Settings.
 - Physical roomscale walking with player/body feedback, rather than moving only the camera away from the collision body. `RoomscaleMode=ActiveExperimental` uses guarded `CUserCmd` movement; `Off` and read-only `Observe` remain available.
 - LegacyYaw portal traversal, HMD-relative stick movement and smooth turning. Snap turning is selectable.
-- Controller-locked portal-gun model and glow, with current calibration offsets. The working **experimental world aim line** starts at the animated muzzle.
+- Controller-locked portal-gun model and glow, with current calibration offsets. The **aim line** starts at the animated muzzle.
 - The **original Portal reticle and dynamic blue/orange status** at the aim endpoint, not custom replacement artwork.
 - Readable subtitle overlay and pause/menu placement corrected after physical walking.
 - Portal-shot haptics, with bounded amplitude/duration and duplicate-event suppression.
@@ -102,7 +102,7 @@ Portal 2's own **Options** screen gains a **VR** entry under Controller. It open
 
 Changes are saved to `VR/ingame_settings.txt`, which overrides matching keys of `VR/config.txt`; **Use Defaults** deletes it. The launcher shows those values as unsaved edits on its next start and folds them into `config.txt` on Apply/Launch, then removes the file. The page draws only after every VGUI vtable slot it uses matches a prologue verified on the installed `vguimatsurface.dll`/`vgui2.dll`; otherwise it is skipped with a `bin/portal2vr.log` warning and `config.txt` keeps working.
 
-`Restore recommended` resets the form without changing installation paths or silently applying anything. Turning off **World aim line** selects the native particle beam for diagnosis; it is **not confirmed visible** and is not recommended.
+`Restore recommended` resets the form without changing installation paths or silently applying anything. Turning off **Aim line** leaves only the Portal reticle at the aim point.
 
 Before first installation the shared installer takes a hash-verified snapshot of any existing files it will replace. Later updates retain that first snapshot. **Restore original game files** restores pre-existing files and removes only files created by the launcher; backups remain available. Externally edited managed files, corrupted backups and concurrent installer operations are refused rather than overwritten.
 
@@ -123,14 +123,14 @@ Do not delete install state/backups to fix an error. If only user preferences ar
 - Shared tracking-space conversion, independent hand offsets, recenter/turn coherence, Standing height handling and selectable locomotion direction were added.
 - Experimental roomscale feedback includes replay guards, manual-input priority and portal/reset handling. Experimental 3D portal orientation modes are separate from recommended LegacyYaw.
 - VR startup/render-target readiness and menu placement were stabilized across the mod and modified DXVK.
-- Stereo aiming/HUD projection and native reticle clipping were corrected. Gun/effect alignment and animated muzzle sampling serve both beam paths; the world line is the launcher fallback for the still-invisible native particle beam.
+- Stereo aiming/HUD projection and native reticle clipping were corrected. Gun/effect alignment and animated muzzle sampling place the aim line. Portal 2's own particle beam never showed in the headset, so its code path was removed.
 - Subtitle capture/placement, roomscale pause-menu anchoring and menu click releases were improved; local portal-shot haptics were added.
 - DXVK and MinHook are ordinary pinned source files instead of submodules, retaining licenses/provenance in `THIRD_PARTY_SOURCES.txt`. DXVK is DXVK-GPLALL 2.6.8-2 carrying the VR hooks, not generic latest DXVK.
 - A user-facing launcher provides validated advanced settings, original backups, transactional staging/restore, config preview and diagnostic shortcuts. Pure-component C++ and offline Python installer/GUI tests cover reproducible behavior without the Source runtime.
 
 ## Known limitations
 
-- The original `robot_point_beam` particle laser remains invisible on the tested setup despite creation/control-point/draw fixes. Use the recommended world line and original Portal reticle.
+- Portal 2's own `robot_point_beam` particle laser is not used: it never showed in the headset. The aim line and the original Portal reticle take its place.
 - FullRotation, YawOnly and PreserveHorizon are manual experiments. FullRotation has limited wall-portal evidence; floor/ceiling comfort, recenter edge cases and broader traversal need testing. Active roomscale requires LegacyYaw and 6DOF.
 - Reticle distance scaling is modest (100% at 1 m to 80% at 10 m); a dedicated far-distance readability comparison remains outstanding.
 - Signatures, offsets, vtables and the 32-bit engine ABI remain compatibility risks. No universal compatibility, co-op, performance or 120 Hz frame-rate claim is made.
@@ -153,7 +153,7 @@ Advanced offers these optional legacy HUD controls:
 | `HUDInEyeCentered` | `false` | Centers in-game HUD panels within each eye. Requires `AimMode=0` or `1` and `ExperimentalHUDOverlay=false`. |
 | `HUDInEyeScale` | `0.45` | Width as a fraction of the eye target; allowed range `0.2` to `1`. Aspect is retained and the rectangle must fit inside the eye. |
 | `HUDInEyeVerticalOffset` | `0.05` | Vertical offset as a fraction of eye height; allowed range `-0.4` to `0.4`. Positive moves down. |
-| `ShowSourceCrosshair` | `true` | `false` hides recognized flat Source crosshair sprites in legacy VR eye rendering. It preserves native blue/orange Portal status, menus, desktop drawing, controller aiming and world aim lines. |
+| `ShowSourceCrosshair` | `true` | `false` hides recognized flat Source crosshair sprites in legacy VR eye rendering. It preserves native blue/orange Portal status, menus, desktop drawing, controller aiming and the aim line. |
 
 HUD centering changes only a validated eye viewport and restores the previous viewport on scope exit. It does not bind a different depth buffer. Mixed paint passes containing UI/cursor layers retain the original viewport. Incompatible centering settings are rejected by the launcher; the native parser falls back safely. The recommended native reticle/caption profile stays unchanged. Previously saved complete launcher preferences gain the new defaults without resetting existing values or paths; malformed/incomplete preferences remain errors.
 

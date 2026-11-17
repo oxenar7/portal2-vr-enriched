@@ -81,6 +81,21 @@ inline MoveAxes RebaseAnalogToView(float stickX, float stickY,
             worldMove.x * hmdRight.x + worldMove.y * hmdRight.y};
 }
 
+// The movement keys a command's axes stand for. Source's ComputeForwardMove and
+// ComputeSideMove add forwardmove for +forward and sidemove for +moveright, so
+// the key bits of a command must carry the same signs as its axes.
+struct MoveButtons {
+    bool forward = false;
+    bool back = false;
+    bool left = false;
+    bool right = false;
+};
+
+inline MoveButtons ButtonsForAxes(float forwardMove, float sideMove)
+{
+    return {forwardMove > 0.0f, forwardMove < 0.0f, sideMove < 0.0f, sideMove > 0.0f};
+}
+
 inline std::optional<float> EyeHeightUnits(float eyeZ, float originZ)
 {
     if (!std::isfinite(eyeZ) || !std::isfinite(originZ))

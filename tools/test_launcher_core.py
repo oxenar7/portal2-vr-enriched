@@ -100,10 +100,10 @@ PROFILES = {
     "mirror": Profile("M6 Mirror ON", {"RenderWindow": "1"}, True),
 }
 
-# A/B changes only the beam selector. Preserve the confirmed native reticle,
+# A/B turns only the aim line off. Preserve the confirmed native reticle,
 # model, captions and roomscale setup without duplicating its calibration.
 PROFILES["roomscale_active_native_aim"] = Profile(
-    "Legacy beam + HUD reticle (muzzle test)",
+    "HUD reticle only, aim line off",
     {**PROFILES["roomscale_active_experimental"].changes,
      "ExperimentalWorldAimMarker": "false"}, True)
 PROFILES["roomscale_active_stereo_aim"] = Profile(
@@ -122,7 +122,7 @@ CHECKLIST = (
     Check("M2", "m2_aim", "3D laser line follows the right-controller shot", "aim_marker"),
     Check("M2", "m2_portal_status", "Native blue/orange portal status appears at the laser endpoint", "combined"),
     Check("M2", "m2_model_alignment", "Compare portal-gun body/glow against aim-marker profile", "aim_model_alignment"),
-    Check("Aim A/B", "aim_native_muzzle", "DIAGNOSTIC: robot_point_beam starts at the gun muzzle and follows it", "roomscale_active_native_aim"),
+    Check("Aim A/B", "aim_native_muzzle", "Aim line off: only the Portal reticle shows at the aim point", "roomscale_active_native_aim"),
     Check("Aim A/B", "aim_native_hud", "Original HUD crosshair: visible, stable and dynamic blue/orange status", "roomscale_active_experimental"),
     Check("Aim A/B", "aim_stereo_muzzle", "RECOMMENDED: original HUD reticle + world line starts at the gun muzzle", "roomscale_active_experimental"),
     Check("Aim A/B", "aim_reticle_distance", "Native reticle: gently smaller on distant walls; portal status remains readable", "roomscale_active_experimental"),

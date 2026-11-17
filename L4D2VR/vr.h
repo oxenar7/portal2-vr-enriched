@@ -266,8 +266,6 @@ public:
 	bool m_HUDAlphaBoostLogged = false;
 	bool m_CreatedVRTextures = false;
     RenderTargetRetryState m_RenderTargetRetry;
-	bool m_LaserRequestLogged = false;
-	bool m_LaserParticleObserved = false;
 	TextureID m_CreatingTextureID = Texture_None;
 
 	bool m_PressedTurn = false;
@@ -388,6 +386,7 @@ public:
 	bool m_PerfFrameCompilerBusy = false;
 	std::uint32_t m_PerfLongBusyFrames = 0;
 	PerfStats::AbSchedule m_PerfAb;
+	PerfStats::AddressSpaceWatch m_AddressSpaceWatch;
 	// Explicit timing: SteamVR's GPU clock for a frame starts at this call,
 	// made just before the frame's first eye. Fixed at startup, as OpenVR wants
 	// the mode set before the first WaitGetPoses.
@@ -407,6 +406,7 @@ public:
 	bool PerfReadCompositorCounts(PerfStats::CompositorCounts &counts);
 	void PerfFlush(std::chrono::steady_clock::time_point now);
 	void PerfAdvanceAb();
+	void CheckAddressSpace();
 	void PerfReset();
 
 	VR() {};

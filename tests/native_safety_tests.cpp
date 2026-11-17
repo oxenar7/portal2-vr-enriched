@@ -97,28 +97,24 @@ int main()
     for (const char *name : warningOnly) {
         StartupSymbolStatus missing;
         InspectStartupSymbol(missing, name, 0);
-        Expect(missing.requiredAvailable && missing.laserAvailable &&
+        Expect(missing.requiredAvailable &&
                missing.warnings == std::vector<std::string>{name},
-               "each unresolved compatibility hook warns without blocking startup or laser");
+               "each unresolved compatibility hook warns without blocking startup");
         StartupSymbolStatus present;
         InspectStartupSymbol(present, name, 1);
-        Expect(present.requiredAvailable && present.laserAvailable && present.warnings.empty(),
+        Expect(present.requiredAvailable && present.warnings.empty(),
                "resolved compatibility hook emits no warning");
     }
     StartupSymbolStatus allMissing;
     for (const char *name : warningOnly) InspectStartupSymbol(allMissing, name, 0);
-    Expect(allMissing.requiredAvailable && allMissing.laserAvailable &&
+    Expect(allMissing.requiredAvailable &&
            allMissing.warnings == std::vector<std::string>{
                "EyePosition", "Weapon_ShootPosition", "GetViewModelFOV"},
-           "all unresolved compatibility hooks leave required startup and laser available");
+           "all unresolved compatibility hooks leave required startup available");
     StartupSymbolStatus requiredMissing;
     InspectStartupSymbol(requiredMissing, "RenderView", 0);
-    Expect(!requiredMissing.requiredAvailable && requiredMissing.laserAvailable &&
+    Expect(!requiredMissing.requiredAvailable &&
            requiredMissing.warnings.empty(), "unresolved required hook still blocks startup");
-    StartupSymbolStatus laserMissing;
-    InspectStartupSymbol(laserMissing, "CreatePingPointer", 0);
-    Expect(laserMissing.requiredAvailable && !laserMissing.laserAvailable &&
-           laserMissing.warnings.empty(), "unresolved laser symbol disables only laser");
 
     ConfigSnapshot prior;
     prior.turnSpeed = 0.25f;

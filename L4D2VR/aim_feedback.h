@@ -10,12 +10,6 @@
 
 namespace AimFeedback {
 
-inline bool ShouldRequestLaser(int aimMode, bool laserAvailable, bool controllerTracked,
-                               bool activeWeapon, bool cursorVisible)
-{
-    return aimMode == 2 && laserAvailable && controllerTracked &&
-        activeWeapon && !cursorVisible;
-}
 
 inline bool ShouldUseWorldAimMarker(int aimMode, bool enabled, bool overlayAvailable,
                                    bool controllerTracked, bool activeWeapon, bool cursorVisible)
@@ -24,10 +18,9 @@ inline bool ShouldUseWorldAimMarker(int aimMode, bool enabled, bool overlayAvail
            activeWeapon && !cursorVisible;
 }
 
-inline bool ShouldInspectActiveWeaponForAim(int aimMode, bool laserAvailable,
-                                            bool markerEnabled, bool overlayAvailable)
+inline bool ShouldInspectActiveWeaponForAim(int aimMode, bool markerEnabled, bool overlayAvailable)
 {
-    return aimMode == 2 && (laserAvailable || (markerEnabled && overlayAvailable));
+    return aimMode == 2 && markerEnabled && overlayAvailable;
 }
 
 struct WorldAimGeometry

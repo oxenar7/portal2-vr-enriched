@@ -22,12 +22,12 @@
 #include "../L4D2VR/viewmodel_alignment.h"
 #include "../L4D2VR/muzzle_origin.h"
 #include "../L4D2VR/native_reticle.h"
-#include "../L4D2VR/native_beam.h"
 #include "../L4D2VR/shared_runtime_session.h"
 #include "../L4D2VR/vr_settings.h"
 #include "../L4D2VR/portal2_vgui.h"
 #include "../L4D2VR/portal2_transition.h"
 #include "../L4D2VR/perf_stats.h"
+#include "../L4D2VR/logger.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -131,6 +131,24 @@ static void TestPerfStats()
                "main work is the frame minus GPU drain and pose wait");
     expectNear(static_cast<float>(PerfStats::MainWorkMs(10.0, 8.0, 4.0)), 0.0f,
                "main work never goes negative when waits overlap the boundary");
+
+    const std::uint64_t mib = 1ull << 20, space = 4095 * mib;
+    PerfStats::AddressSpaceWatch addressSpace;
+    expect(addressSpace.Observe(space, space - 2826 * mib), false, "address space at 69% stays quiet");
+    expect(addressSpace.Observe(space, space - 3300 * mib), true, "address space past 80% warns");
+    expect(addressSpace.Observe(space, space - 3400 * mib), false, "address space warns once while high");
+    expect(addressSpace.Observe(space, space - 3150 * mib), false, "address space above the re-arm share stays quiet");
+    expect(addressSpace.Observe(space, space - 3000 * mib), false, "address space below the re-arm share re-arms silently");
+    expect(addressSpace.Observe(space, space - 3300 * mib), true, "address space warns again after re-arming");
+    expect(PerfStats::AddressSpaceWatch().Observe(0, 0), false, "address space ignores an empty reading");
+    expect(PerfStats::AddressSpaceWatch().Observe(space, space + 1), false, "address space ignores an impossible reading");
+
+    expectText(Logger::RotatedPath("C:\\game\\bin\\portal2vr_perf.log"), "C:\\game\\bin\\portal2vr_perf.old.log",
+               "rotated log keeps its folder and extension");
+    expectText(Logger::RotatedPath("C:\\game.dir\\log"), "C:\\game.dir\\log.old",
+               "rotated log without an extension ignores dots in the folder");
+    expect(Logger::ShouldRotate(Logger::kRotateBytes - 1), false, "log under the limit is kept");
+    expect(Logger::ShouldRotate(Logger::kRotateBytes), true, "log at the limit rotates");
 
     PerfStats::Window window;
     window.Add(PerfStats::Metric::Frame, 11.0);
@@ -1214,14 +1232,10 @@ int main()
            "Source target push preserves original redirect strategy");
     expect(sourcePushRoute.AllowsRedirect(), true,
            "original redirect remains available when Source pushes a target");
-    expect(AimFeedback::ShouldRequestLaser(2, true, true, true, false), true,
-           "laser request does not depend on Source crosshair paint");
-    expect(AimFeedback::ShouldRequestLaser(1, true, true, true, false), false,
-           "head-aim mode does not request controller laser");
     expect(AimFeedback::ShouldUseWorldAimMarker(2, true, true, true, true, false), true,
            "opted-in world marker follows a tracked right controller with a weapon");
     expect(AimFeedback::ShouldUseWorldAimMarker(2, false, true, true, true, false), false,
-           "default controller aim does not change its legacy laser rendering");
+           "a disabled aim line draws nothing");
     expect(AimFeedback::ShouldUseWorldAimMarker(1, true, true, true, true, false), false,
            "head-aim mode does not draw a controller line");
     expect(AimFeedback::ShouldUseWorldAimMarker(2, true, false, true, true, false), false,
@@ -1232,14 +1246,14 @@ int main()
            "lost controller tracking removes the world marker");
     expect(AimFeedback::ShouldUseWorldAimMarker(2, true, true, true, true, true), false,
            "a visible game menu removes the world marker");
-    expect(AimFeedback::ShouldInspectActiveWeaponForAim(2, false, false, false), false,
-           "default aim skips weapon lookup when legacy laser symbols are absent");
-    expect(AimFeedback::ShouldInspectActiveWeaponForAim(2, true, false, false), true,
-           "legacy laser still inspects the active weapon when available");
-    expect(AimFeedback::ShouldInspectActiveWeaponForAim(2, false, true, true), true,
-           "enabled world marker inspects the active weapon with its overlay available");
-    expect(AimFeedback::ShouldInspectActiveWeaponForAim(2, false, true, false), false,
+    expect(AimFeedback::ShouldInspectActiveWeaponForAim(2, false, true), false,
+           "a disabled aim line skips the weapon lookup");
+    expect(AimFeedback::ShouldInspectActiveWeaponForAim(2, true, true), true,
+           "enabled aim line inspects the active weapon with its overlay available");
+    expect(AimFeedback::ShouldInspectActiveWeaponForAim(2, true, false), false,
            "missing overlay does not trigger an unsafe weapon lookup");
+    expect(AimFeedback::ShouldInspectActiveWeaponForAim(1, true, true), false,
+           "head-aim mode skips the weapon lookup");
     const auto wallAim = AimFeedback::PrepareWorldAimGeometry(
         Vector{10, 20, 30}, Vector{110, 20, 30});
     expect(wallAim.has_value(), true, "finite wall hit produces aim geometry");
@@ -1448,79 +1462,6 @@ int main()
     changedSurface.drawTexturedSubRect = 0x5000AB40;
     expect(NativeReticle::Supported(changedSurface), false,
            "different texture-draw ABI cannot use the native reticle fix");
-    std::uintptr_t beamLookupCaller = 0;
-    const Vector nativePortalColors[3] = {{255, 255, 255}, {64, 160, 255}, {255, 160, 32}};
-    expectVectorNear(NativeBeam::ControlPointColor(1, nativePortalColors), {64, 160, 255},
-                     "native beam color must not be silently halved before PCF remapping");
-    expectVectorNear(NativeBeam::ControlPointColor(2, nativePortalColors), {255, 160, 32},
-                     "orange beam retains native full-intensity RGB");
-    expectVectorNear(NativeBeam::ControlPointColor(-1, nativePortalColors), {255, 255, 255},
-                     "invalid negative portal color cannot index before the palette");
-    expectVectorNear(NativeBeam::ControlPointColor(100, nativePortalColors), {255, 160, 32},
-                     "invalid positive portal color cannot index past the palette");
-    expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x102808B3, "muzzle"), false,
-           "normal native attachment lookups are never changed");
-    {
-        NativeBeam::CreationScope scope(beamLookupCaller, 0x102808B3);
-        expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x102808B3, "muzzle"), true,
-               "only VR beam creation selects Source's player-owned fallback branch");
-        expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x1028095C, "muzzle"), false,
-               "nested model lookups retain normal muzzle attachments");
-        expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x102808B3, "light"), false,
-               "gun light attachments are never overridden");
-        expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x102808B3, nullptr), false,
-               "null attachment names are not dereferenced");
-        {
-            NativeBeam::CreationScope nested(beamLookupCaller, 0x102908B3);
-            expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x102908B3, "muzzle"), true,
-                   "nested scope selects its own native caller");
-        }
-        expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x102808B3, "muzzle"), true,
-               "nested creation restores the previous scope");
-    }
-    expect(NativeBeam::UsePlayerOwnedFallback(beamLookupCaller, 0x102808B3, "muzzle"), false,
-           "beam creation immediately restores normal attachment behavior");
-    expectInt(NativeBeam::FactoryAttachment(0x102808B3, 0x10280900, "robot_point_beam", 6, -1), 0,
-              "our beam must not retain the native eyes-follow CP0 binding");
-    expectInt(NativeBeam::FactoryAttachment(0, 0x10280900, "robot_point_beam", 6, -1), 6,
-              "native non-VR creation keeps its eyes-follow binding");
-    expectInt(NativeBeam::FactoryAttachment(0x102808B3, 0x10280901, "robot_point_beam", 6, -1), 6,
-              "unrelated particle creation callers are never changed");
-    expectInt(NativeBeam::FactoryAttachment(0x102808B3, 0x10280900, "portalgun_glow", 6, -1), 6,
-              "portal-gun glow and other systems retain their native attachments");
-    expectInt(NativeBeam::FactoryAttachment(0x102808B3, 0x10280900, nullptr, 6, -1), 6,
-              "null particle name cannot be dereferenced");
-    expectInt(NativeBeam::FactoryAttachment(0x102808B3, 0x10280900, "robot_point_beam", 5, 1), 5,
-              "normal point-follow effects cannot be changed by the CP0 policy");
-    expectInt(NativeBeam::FactoryAttachment(0x102808B3, 0x10280900, "robot_point_beam", 6, 0), 6,
-              "an unexpected attachment index cannot enable the manual CP0 route");
-    expectInt(NativeBeam::FactoryAttachment(UINTPTR_MAX, 0x4C, "robot_point_beam", 6, -1), 6,
-              "wrapped return-address arithmetic cannot admit unrelated creation");
-    NativeBeam::RenderProbe beamProbe;
-    expect(beamProbe.ObserveDraw(0x1008, 1), false, "unknown particle cannot be logged as our beam");
-    beamProbe.SetEffect(0x1000);
-    expect(beamProbe.ObserveDraw(0x1000, 1), false, "particle primary object is not its renderable subobject");
-    expect(beamProbe.ObserveDraw(0x1008, 1), true, "first beam draw in left-eye scope is recorded");
-    expect(beamProbe.ObserveDraw(0x1008, 1), false, "beam render diagnostic never logs every frame");
-    expect(beamProbe.ObserveDraw(0x1008, 2), true, "right-eye draw evidence is independent");
-    expect(beamProbe.ObserveDraw(0x1008, 0), true, "queued/outside-stereo draws are classified separately");
-    for (int i = 0; i < 119; ++i)
-        expect(beamProbe.StereoPairSummary().has_value(), false, "summary waits for a bounded render observation window");
-    const auto beamSummary = beamProbe.StereoPairSummary();
-    expect(beamSummary.has_value(), true, "beam render summary is emitted once after 120 stereo pairs");
-    if (beamSummary) expectInt(*beamSummary, 7, "summary retains left/right/outside-scope evidence");
-    expect(beamProbe.StereoPairSummary().has_value(), false, "beam render summaries are not periodic spam");
-    beamProbe.SetEffect(0);
-    expect(beamProbe.ObserveDraw(0x1008, 2), false, "cleared effect cannot identify reused particle storage");
-    NativeBeam::RenderProbe undrawnBeam;
-    expect(undrawnBeam.StereoPairSummary().has_value(), false, "no observation timeout before an effect exists");
-    undrawnBeam.SetEffect(UINTPTR_MAX);
-    expect(undrawnBeam.ObserveDraw(7, 1), false, "overflowed renderable offset cannot match a particle");
-    undrawnBeam.SetEffect(0x1000);
-    for (int i = 0; i < 119; ++i) (void)undrawnBeam.StereoPairSummary();
-    const auto missingDraw = undrawnBeam.StereoPairSummary();
-    expect(missingDraw.has_value(), true, "missing DrawModel is reported rather than hidden by the creation log");
-    if (missingDraw) expectInt(*missingDraw, 0, "unobserved native rendering is never reported as working");
     expect(AimFeedback::ClassifyReticleCanvas(1078, 1255, 56, 84, 1280, 720) ==
                AimFeedback::ReticleCanvasPosition::OutsideY, true,
            "eye-sized reticle below the reported Source canvas is diagnosed separately");
@@ -1568,10 +1509,6 @@ int main()
     expect(AimFeedback::ProjectedCrosshairPosition(false, 2800.0f, 100.0f,
         612, 318, 1280, 720, 2528, 2704).has_value(), false,
         "crosshair outside the VR viewport is not drawn at a misleading position");
-    expect(AimFeedback::ShouldRequestLaser(2, true, false, true, false), false,
-           "tracking loss stops controller laser requests");
-    expect(AimFeedback::ShouldRequestLaser(2, true, true, true, true), false,
-           "menus do not request controller laser");
 
     TrackingSpace::PlayspaceState turning;
     turning.scale = 50.0f;
@@ -1631,6 +1568,17 @@ int main()
                                                              leftDirection.forward, hmdDirection.forward);
     expectNear(leftAxes.forward, 0.25f, "left facing stick side becomes forward");
     expectNear(leftAxes.side, -0.8f, "left facing stick forward becomes side");
+    const auto rightKeys = TrackingSpace::ButtonsForAxes(0.0f, 100.0f);
+    expect(rightKeys.right && !rightKeys.left && !rightKeys.forward && !rightKeys.back, true,
+           "positive sidemove is the move-right key");
+    const auto leftKeys = TrackingSpace::ButtonsForAxes(0.0f, -100.0f);
+    expect(leftKeys.left && !leftKeys.right, true, "negative sidemove is the move-left key");
+    const auto backLeftKeys = TrackingSpace::ButtonsForAxes(-50.0f, -1.0f);
+    expect(backLeftKeys.back && backLeftKeys.left && !backLeftKeys.forward && !backLeftKeys.right, true,
+           "diagonal axes hold both keys");
+    const auto idleKeys = TrackingSpace::ButtonsForAxes(0.0f, 0.0f);
+    expect(idleKeys.forward || idleKeys.back || idleKeys.left || idleKeys.right, false,
+           "zero axes hold no movement key");
 
     DigitalButtonState attack;
     expectCommand(attack.HeldCommand(true, false, false, "+attack", "-attack"), nullptr, "released to released");

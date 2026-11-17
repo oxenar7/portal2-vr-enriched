@@ -195,9 +195,10 @@ void WorldMenu::Pointer(VR &vr)
         vr::VREvent_t event{};
         while (m_Overlay->PollNextOverlayEvent(handle, &event, sizeof(event))) {
             if (event.eventType == vr::VREvent_MouseMove) {
-                // Overlay mouse coordinates start at the bottom left.
+                // Overlay mouse coordinates are texture coordinates times the mouse scale,
+                // counted from the bottom of the whole texture, not of the shown part.
                 m_PointerX[column] = static_cast<int>(event.data.mouse.x);
-                m_PointerY[column] = m_Heights[column] - static_cast<int>(event.data.mouse.y);
+                m_PointerY[column] = m_Sheets[column].height - static_cast<int>(event.data.mouse.y);
             } else if (event.eventType == vr::VREvent_MouseButtonDown && pointed) {
                 const int x = m_PointerX[column], y = m_PointerY[column], row = layout.RowAt(x, y);
                 int direction = 0;
@@ -246,7 +247,8 @@ void WorldMenu::Submit(VR &vr, bool (&submitted)[kColumns])
         const auto handle = m_Handles[column];
         const int width = kWidthPixels[column], height = m_NextHeights[column];
         const vr::VRTextureBounds_t bounds{0.0f, 0.0f, 1.0f, static_cast<float>(height) / sheet.height};
-        const vr::HmdVector2_t mouse{static_cast<float>(width), static_cast<float>(height)};
+        // One mouse unit per texel over the whole texture (see Pointer).
+        const vr::HmdVector2_t mouse{static_cast<float>(width), static_cast<float>(sheet.height)};
         const auto boundsError = m_Overlay->SetOverlayTextureBounds(handle, &bounds);
         const auto textureError = m_Overlay->SetOverlayTexture(handle, &sheet.shared);
         m_Overlay->SetOverlayMouseScale(handle, &mouse);

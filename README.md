@@ -6,7 +6,7 @@ The name nods to the Aperture Science Enrichment Center and to what this fork ad
 
 This is an unofficial fan project, not affiliated with or endorsed by Valve. You need your own copy of Portal 2; no game files are included.
 
-**Tested setup:** it has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070). Other headsets and machines are untested, so logs from them are welcome. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
+**Tested setup:** the whole campaign has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070). A player reports hours of co-op running well with two Steam Frame headsets. Other headsets and machines are untested, so logs from them are welcome. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
 
 ## What's new in this fork
 
@@ -25,6 +25,7 @@ This is an unofficial fan project, not affiliated with or endorsed by Valve. You
 - **Use what the gun points at:** pick up, drop and press act on what the portal gun points at, not on what you look at. The aim line turns orange, and the gun hand gives a light pulse, when something usable is under it.
 - **Pause menu in the world:** pausing opens panels in Aperture style, floating in front of you over the paused level: resume, save, load, VR options and exit, picked with the controller laser and Portal 2's own menu sounds. Portal 2's own pause screen is one click away, or the default with **Pause menu in the world** off in the launcher.
 - **Steady funnels with roomscale:** walking in your room no longer fights the pull of an excursion funnel, so the view stays still while you float.
+- **Left-handed play:** left-handed mode moves the gun's buttons with it, and a separate option swaps the sticks.
 - **A small, clean launcher** that finds Portal 2 and Steam by itself, and only needs the Python standard library when run from source.
 
 ## Install
@@ -64,6 +65,8 @@ Default bindings for Quest / Oculus Touch controllers:
 | Binocular zoom | Hold the right stick in |
 | Pause menu | Y |
 | Menus | Point and pull the trigger; Portal 2's own menus also take the left stick with A and B |
+
+**Left-handed mode** puts the gun in the left hand, together with its buttons: blue portal on the left trigger, orange portal on the left grip, use on Y. Crouch moves to the right grip and the pause menu to B. **Swap sticks** is a separate option: move with the right stick, turn with the left, and hold the left stick in for binocular zoom. Both are in Options > VR and in the launcher.
 
 Valve Index and Vive Cosmos controllers have their own default bindings. Other controllers can be bound in SteamVR: Settings > Controllers > Manage Controller Bindings. **Recenter** is in Options > VR > Advanced VR. Turning, movement direction, left-handed mode and vibration are in Options > VR.
 
@@ -136,7 +139,7 @@ Do not delete install state/backups to fix an error. If only user preferences ar
 - Portal 2's own `robot_point_beam` particle laser is not used: it never showed in the headset. The aim line and the original Portal reticle take its place.
 - FullRotation, YawOnly and PreserveHorizon are manual experiments. FullRotation has limited wall-portal evidence; floor/ceiling comfort, recenter edge cases and broader traversal need testing. Active roomscale requires LegacyYaw and 6DOF.
 - Reticle distance scaling is modest (100% at 1 m to 80% at 10 m); a dedicated far-distance readability comparison remains outstanding.
-- Signatures, offsets, vtables and the 32-bit engine ABI remain compatibility risks. No universal compatibility, co-op, performance or 120 Hz frame-rate claim is made.
+- Signatures, offsets, vtables and the 32-bit engine ABI remain compatibility risks. No universal compatibility, performance or 120 Hz frame-rate claim is made. Co-op has not been tested by the developer; the only report so far, from a player on two Steam Frames, says it works well.
 - `EyePosition`, `Weapon_ShootPosition` and `GetViewModelFOV` use audited RVAs only after the DLL's SHA-256 and its loaded code/table references match the supported build. The shoot-origin override applies only to the verified `FirePortal` call, preserving other calls to the shared function. An unsupported DLL, failed verification or failed hook installation produces a warning in `bin/portal2vr.log` and skips that hook without blocking startup; Source's original shoot position or viewmodel FOV may be used. The user reported successful hardware testing on one current setup; other game builds and setups require separate validation.
 - No OpenXR backend, optimized desktop mirror, Portal Reloaded ThirdAttack support or complete HUD rewrite.
 - Controller haptics (`Haptics=true` by default) forward Portal 2's own rumble user message (portal shots, failed placement, fizzler, landings, physics impacts) through optional client/server hooks, and add pickup/drop/hold and pedestal/floor-button pulses. Each hook that fails to resolve is logged in `bin/portal2vr.log` and only disables its own vibration source. Every native effect is logged as `Native rumble: ...`. Pulse strengths are tuned for one Quest/Virtual Desktop setup.
@@ -198,6 +201,10 @@ python -m unittest discover -s tests -p test_*.py
 Output: `Release/d3d9.dll`. Building does not deploy unless `PORTAL2_DIR` is set; leave it empty when using the launcher so it owns backup/staging. Optional direct MSBuild deployment copies the DLL to `%PORTAL2_DIR%\bin` and **does not create a launcher backup**. No machine-specific Steam deployment path is embedded in the build.
 
 C++/Python suites validate isolated logic and fixture installations. GUI tests use temporary game files and intercept external Steam process invocation; they do not launch Portal 2 or validate a headset session. Existing Source SDK/DXVK compiler warnings remain; a successful build is not runtime VR proof.
+
+## Support
+
+The mod is free and stays free. If you enjoy it and want to say thanks, you can [buy me a coffee on Ko-fi](https://ko-fi.com/oxenar7). It is entirely optional and unlocks nothing.
 
 ## Credits
 

@@ -303,6 +303,19 @@ public:
 	vr::VRActionHandle_t m_ActionPrevItem;
 	vr::VRActionHandle_t m_ActionResetPosition;
 	vr::VRActionHandle_t m_ActionCrouch;
+	// Left-handed mode reads these instead: the same actions bound to the mirrored
+	// trigger and grip, so the portal buttons sit on the hand holding the gun.
+	vr::VRActionHandle_t m_ActionPrimaryAttackLeftHanded = vr::k_ulInvalidActionHandle;
+	vr::VRActionHandle_t m_ActionSecondaryAttackLeftHanded = vr::k_ulInvalidActionHandle;
+	vr::VRActionHandle_t m_ActionReloadLeftHanded = vr::k_ulInvalidActionHandle;
+	vr::VRActionHandle_t m_ActionCrouchLeftHanded = vr::k_ulInvalidActionHandle;
+	// Use moves to the gun hand's top button and Pause takes the right B.
+	vr::VRActionHandle_t m_ActionUseLeftHanded = vr::k_ulInvalidActionHandle;
+	vr::VRActionHandle_t m_PauseLeftHanded = vr::k_ulInvalidActionHandle;
+	// SwapSticks: the zoom click follows turning to the left stick.
+	vr::VRActionHandle_t m_ActionZoomSwappedSticks = vr::k_ulInvalidActionHandle;
+	int m_LeftHandedButtonsLogged = -1;
+	int m_SwapSticksLogged = -1;
 	vr::VRActionHandle_t m_ActionFlashlight;
 	vr::VRActionHandle_t m_ActionActivateVR;
 	vr::VRActionHandle_t m_MenuSelect;
@@ -347,6 +360,7 @@ public:
 	bool m_SnapTurning = false;
 	float m_SnapTurnAngle = 45.0f;
 	bool m_LeftHanded = false;
+	bool m_SwapSticks = false;
 	float m_VRScale = 43.2f;
 	float m_IpdScale = 1.0f;
 	bool m_6DOF = true;
@@ -518,7 +532,20 @@ public:
 	Vector GetViewOriginLeft(Vector setupOrigin);
 	Vector GetViewOriginRight(Vector setupOrigin);
 	bool PressedDigitalAction(vr::VRActionHandle_t &actionHandle, bool checkIfActionChanged = false);
-	bool GetAnalogActionData(vr::VRActionHandle_t &actionHandle, vr::InputAnalogActionData_t &analogDataOut);
+	vr::VRActionHandle_t AlternateAction(bool wanted, vr::VRActionHandle_t usual, vr::VRActionHandle_t alternate);
+	vr::VRActionHandle_t HandedAction(vr::VRActionHandle_t rightHanded, vr::VRActionHandle_t leftHanded)
+	{
+		return AlternateAction(m_LeftHanded, rightHanded, leftHanded);
+	}
+	vr::VRActionHandle_t PauseAction() { return HandedAction(m_Pause, m_PauseLeftHanded); }
+	// Back or Pause pressed in a menu; the press that opened the menu is ignored until released.
+	bool MenuBackPressed();
+	bool m_MenuBackLatched = false;
+	// SwapSticks reads each stick's action for the other job, so it follows custom bindings too.
+	vr::VRActionHandle_t WalkAction() const { return m_SwapSticks ? m_ActionTurn : m_ActionWalk; }
+	vr::VRActionHandle_t TurnAction() const { return m_SwapSticks ? m_ActionWalk : m_ActionTurn; }
+	vr::VRActionHandle_t ZoomAction() { return AlternateAction(m_SwapSticks, m_ActionZoom, m_ActionZoomSwappedSticks); }
+	bool GetAnalogActionData(vr::VRActionHandle_t actionHandle, vr::InputAnalogActionData_t &analogDataOut);
 	void ResetPosition();
 	void GetPoseData(vr::TrackedDevicePose_t &poseRaw, TrackedDevicePoseData &poseOut);
 	void ParseConfigFile();

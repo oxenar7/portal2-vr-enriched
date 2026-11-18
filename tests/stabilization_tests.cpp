@@ -1866,6 +1866,11 @@ int main()
     using MenuKind = VrMenu::Command::Kind;
     expect(VrSettings::FindItem("ControllerAimedUse") != nullptr && VrSettings::IsMenuKey("ControllerAimedUse"), true,
            "the in-world menu can change the aimed-use setting");
+    expect(VrSettings::FindItem("SwapSticks") != nullptr && VrSettings::IsMenuKey("SwapSticks"), true,
+           "the menus can swap the sticks");
+    expect(ConfigSnapshot{}.swapSticks, false, "sticks are not swapped by default");
+    std::istringstream swapOptions("SwapSticks=true\n");
+    expect(ParseConfig(swapOptions, ConfigSnapshot{}).value.swapSticks, true, "SwapSticks=true is read");
     ConfigSnapshot menuConfig;
     VrMenu::Model menu;
     menu.Open();

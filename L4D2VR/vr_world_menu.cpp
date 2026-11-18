@@ -221,9 +221,7 @@ void WorldMenu::Pointer(VR &vr)
         Play(vr, VrMenu::Cue::Focus);
     }
 
-    const bool back = vr.PressedDigitalAction(vr.m_MenuBack, true);
-    const bool pause = vr.PressedDigitalAction(vr.m_Pause, true);
-    if (back || pause) {
+    if (vr.MenuBackPressed()) {
         const VrMenu::Command command = m_Model.Back();
         Play(vr, m_Model.TakeCue());
         Run(vr, command);

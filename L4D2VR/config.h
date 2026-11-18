@@ -70,6 +70,7 @@ struct ConfigSnapshot {
     bool physicalCrouch = true;
     float physicalCrouchDropMeters = 0.25f;
     bool leftHanded = false;
+    bool swapSticks = false;
     float vrScale = 43.2f;
     float ipdScale = 1.0f;
     bool sixDof = true;
@@ -304,6 +305,7 @@ inline ConfigParseResult ParseConfig(std::istream &stream, const ConfigSnapshot 
     readBool("PhysicalCrouch", result.value.physicalCrouch);
     readFloat("PhysicalCrouchDropMeters", result.value.physicalCrouchDropMeters, 0.15f, 0.8f);
     readBool("LeftHanded", result.value.leftHanded);
+    readBool("SwapSticks", result.value.swapSticks);
     readFloat("VRScale", result.value.vrScale, 1.0f, 200.0f);
     readFloat("IPDScale", result.value.ipdScale, 0.5f, 1.5f);
     readBool("6DOF", result.value.sixDof);

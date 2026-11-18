@@ -1052,7 +1052,7 @@ bool __fastcall Hooks::dCreateMove(void *ecx, void *edx, float flInputSampleTime
 			cmd->buttons |= IN_DUCK;
 
 		vr::InputAnalogActionData_t analogActionData;
-		if (m_VR->GetAnalogActionData(m_VR->m_ActionWalk, analogActionData)) {
+		if (m_VR->GetAnalogActionData(m_VR->WalkAction(), analogActionData)) {
 			const auto movement = TrackingSpace::RebaseAnalogToView(
 				analogActionData.x, analogActionData.y, m_VR->GetMovementForward(), m_VR->m_HmdForward);
 			cmd->forwardmove += movement.forward * MAX_LINEAR_SPEED;

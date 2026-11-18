@@ -139,6 +139,41 @@
 			"name": "/actions/main/in/Zoom",
 			"type": "boolean",
 			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/PrimaryAttackLeftHanded",
+			"type": "boolean",
+			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/SecondaryAttackLeftHanded",
+			"type": "boolean",
+			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/ReloadLeftHanded",
+			"type": "boolean",
+			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/CrouchLeftHanded",
+			"type": "boolean",
+			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/UseLeftHanded",
+			"type": "boolean",
+			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/PauseLeftHanded",
+			"type": "boolean",
+			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/ZoomSwappedSticks",
+			"type": "boolean",
+			"requirement": "optional"
 		}
 	],
 
@@ -180,7 +215,14 @@
 			"/actions/main/in/Scoreboard" : "Show Scoreboard",
 			"/actions/main/in/ShowHUD" : "Show HUD",
 			"/actions/main/in/Pause" : "Pause",
-			"/actions/main/in/Zoom" : "Zoom (binoculars)"
+			"/actions/main/in/Zoom" : "Zoom (binoculars)",
+			"/actions/main/in/PrimaryAttackLeftHanded" : "Primary Attack (left-handed mode)",
+			"/actions/main/in/SecondaryAttackLeftHanded" : "Secondary Attack (left-handed mode)",
+			"/actions/main/in/ReloadLeftHanded" : "Reload (left-handed mode)",
+			"/actions/main/in/CrouchLeftHanded" : "Crouch (left-handed mode)",
+			"/actions/main/in/UseLeftHanded" : "Use (left-handed mode)",
+			"/actions/main/in/PauseLeftHanded" : "Pause (left-handed mode)",
+			"/actions/main/in/ZoomSwappedSticks" : "Zoom (sticks swapped)"
 		}
 	]
 }

@@ -359,6 +359,13 @@ bool VR::SetActionManifest(const char *fileName)
     GET_ACTION(m_ShowHUD, "ShowHUD");
     GET_ACTION(m_Pause, "Pause");
     GET_ACTION(m_ActionZoom, "Zoom");
+    GET_ACTION(m_ActionPrimaryAttackLeftHanded, "PrimaryAttackLeftHanded");
+    GET_ACTION(m_ActionSecondaryAttackLeftHanded, "SecondaryAttackLeftHanded");
+    GET_ACTION(m_ActionReloadLeftHanded, "ReloadLeftHanded");
+    GET_ACTION(m_ActionCrouchLeftHanded, "CrouchLeftHanded");
+    GET_ACTION(m_ActionUseLeftHanded, "UseLeftHanded");
+    GET_ACTION(m_PauseLeftHanded, "PauseLeftHanded");
+    GET_ACTION(m_ActionZoomSwappedSticks, "ZoomSwappedSticks");
 #undef GET_ACTION
 
     const auto setError = m_Input->GetActionSetHandle("/actions/main", &m_ActionSet);
@@ -1211,12 +1218,12 @@ std::optional<InstructorHints::Glyph> VR::HintGlyphForBinding(const char *bindin
     vr::VRActionHandle_t handle = vr::k_ulInvalidActionHandle;
     switch (action) {
     case Action::Jump: handle = m_ActionJump; break;
-    case Action::Use: handle = m_ActionUse; break;
-    case Action::Crouch: handle = m_ActionCrouch; break;
-    case Action::PrimaryAttack: handle = m_ActionPrimaryAttack; break;
-    case Action::SecondaryAttack: handle = m_ActionSecondaryAttack; break;
-    case Action::Reload: handle = m_ActionReload; break;
-    case Action::Zoom: handle = m_ActionZoom; break;
+    case Action::Use: handle = HandedAction(m_ActionUse, m_ActionUseLeftHanded); break;
+    case Action::Crouch: handle = HandedAction(m_ActionCrouch, m_ActionCrouchLeftHanded); break;
+    case Action::PrimaryAttack: handle = HandedAction(m_ActionPrimaryAttack, m_ActionPrimaryAttackLeftHanded); break;
+    case Action::SecondaryAttack: handle = HandedAction(m_ActionSecondaryAttack, m_ActionSecondaryAttackLeftHanded); break;
+    case Action::Reload: handle = HandedAction(m_ActionReload, m_ActionReloadLeftHanded); break;
+    case Action::Zoom: handle = ZoomAction(); break;
     default: return std::nullopt;
     }
     if (!m_IsVREnabled || !m_Input || handle == vr::k_ulInvalidActionHandle)
@@ -1541,12 +1548,13 @@ void VR::SubmitZoomOverlay()
 
 void VR::ProcessZoomInput()
 {
+    const vr::VRActionHandle_t zoomAction = ZoomAction();
     if (!m_ZoomBindingLogged) {
         // SteamVR bindings saved before this action existed leave it unbound.
         m_ZoomBindingLogged = true;
         vr::InputBindingInfo_t bindings[2]{};
         uint32_t count = 0;
-        const auto error = m_Input->GetActionBindingInfo(m_ActionZoom, bindings, sizeof(bindings[0]),
+        const auto error = m_Input->GetActionBindingInfo(zoomAction, bindings, sizeof(bindings[0]),
             static_cast<uint32_t>(std::size(bindings)), &count);
         std::string where;
         for (uint32_t i = 0; i < count && i < std::size(bindings); ++i)
@@ -1557,12 +1565,12 @@ void VR::ProcessZoomInput()
             (m_Config.binocularZoom ? "" : "; BinocularZoom=false"));
     }
     vr::InputDigitalActionData_t click{};
-    const auto clickError = m_Input->GetDigitalActionData(m_ActionZoom, &click, sizeof(click),
+    const auto clickError = m_Input->GetDigitalActionData(zoomAction, &click, sizeof(click),
         vr::k_ulInvalidInputValueHandle);
     const bool pressed = m_Config.binocularZoom && clickError == vr::VRInputError_None &&
         click.bActive && click.bState;
     vr::InputAnalogActionData_t stick{};
-    if (!GetAnalogActionData(m_ActionTurn, stick))
+    if (!GetAnalogActionData(TurnAction(), stick))
         stick = {};
     switch (m_ZoomHold.Update(pressed, stick.x, stick.y)) {
     case BinocularZoom::Hold::Change::Started:
@@ -1579,7 +1587,7 @@ void VR::ProcessZoomInput()
         break;
     case BinocularZoom::Hold::Change::Ignored:
         if (m_RenderDiagnostics.First(RenderDiagnosticEvent::ZoomClickWhileTurning))
-            Logger::Write("Binocular zoom: right stick click ignored while the stick is pushed to " +
+            Logger::Write("Binocular zoom: turning stick click ignored while the stick is pushed to " +
                 std::to_string(stick.x) + "," + std::to_string(stick.y) + " (turning); later ones are not logged");
         break;
     case BinocularZoom::Hold::Change::Ended:
@@ -2093,6 +2101,43 @@ bool VR::PressedDigitalAction(vr::VRActionHandle_t &actionHandle, bool checkIfAc
     return false;
 }
 
+// Left-handed mode and SwapSticks read the same actions bound to other buttons, so the
+// portal buttons and Use follow the gun to the left hand and zoom follows turning. A binding
+// set without them (an old custom binding, for example) keeps the usual buttons rather than
+// losing them.
+vr::VRActionHandle_t VR::AlternateAction(bool wanted, vr::VRActionHandle_t usual, vr::VRActionHandle_t alternate)
+{
+    if (!wanted || !m_Input || alternate == vr::k_ulInvalidActionHandle)
+        return usual;
+    vr::InputDigitalActionData_t data{};
+    const auto result = m_Input->GetDigitalActionData(alternate, &data, sizeof(data),
+                                                      vr::k_ulInvalidInputValueHandle);
+    if (result == vr::VRInputError_None && data.bActive)
+        return alternate;
+    // Nothing is active for a moment while SteamVR holds the input (a menu just closed, the
+    // dashboard): keep the alternate then, so the layout does not flip for a frame.
+    vr::InputDigitalActionData_t usualData{};
+    const auto usualResult = m_Input->GetDigitalActionData(usual, &usualData, sizeof(usualData),
+                                                           vr::k_ulInvalidInputValueHandle);
+    return usualResult == vr::VRInputError_None && usualData.bActive ? usual : alternate;
+}
+
+// In left-handed mode Pause and Back share B. Back is not read during play, so when the
+// menu that B just opened first reads it, the press can still come back as a fresh one and
+// close the menu at once. The press that opened a menu therefore counts only once released.
+bool VR::MenuBackPressed()
+{
+    auto pauseAction = PauseAction();
+    const bool back = PressedDigitalAction(m_MenuBack, true);
+    const bool pause = PressedDigitalAction(pauseAction, true);
+    if (m_MenuBackLatched) {
+        if (!PressedDigitalAction(m_MenuBack) && !PressedDigitalAction(pauseAction))
+            m_MenuBackLatched = false;
+        return false;
+    }
+    return back || pause;
+}
+
 void VR::ProcessHeldAction(vr::VRActionHandle_t actionHandle, DigitalButtonState &state,
                            const char *pressCommand, const char *releaseCommand)
 {
@@ -2147,7 +2192,7 @@ void VR::ReleaseHeldActions()
         EndZoom("menu or input lost");
 }
 
-bool VR::GetAnalogActionData(vr::VRActionHandle_t &actionHandle, vr::InputAnalogActionData_t &analogDataOut)
+bool VR::GetAnalogActionData(vr::VRActionHandle_t actionHandle, vr::InputAnalogActionData_t &analogDataOut)
 {
     vr::EVRInputError result = m_Input->GetAnalogActionData(actionHandle, &analogDataOut, sizeof(analogDataOut), vr::k_ulInvalidInputValueHandle);
 
@@ -2235,9 +2280,7 @@ void VR::ProcessMenuInput()
     if (m_OptionsMenu.PageOpen()) {
         // The VR page is modal: controller navigation never reaches the native menu.
         using Nav = VrOptionsMenu::Nav;
-        const bool back = PressedDigitalAction(m_MenuBack, true);
-        const bool pause = PressedDigitalAction(m_Pause, true);
-        if (back || pause) m_OptionsMenu.Navigate(Nav::Back);
+        if (MenuBackPressed()) m_OptionsMenu.Navigate(Nav::Back);
         if (hovering)
             return;
         if (PressedDigitalAction(m_MenuSelect, true)) m_OptionsMenu.Navigate(Nav::Select);
@@ -2267,9 +2310,7 @@ void VR::ProcessMenuInput()
         }
     };
     if (PressedDigitalAction(m_MenuSelect, true)) sendKey(VK_RETURN);
-    const bool back = PressedDigitalAction(m_MenuBack, true);
-    const bool pause = PressedDigitalAction(m_Pause, true);
-    if (back || pause) sendKey(VK_ESCAPE);
+    if (MenuBackPressed()) sendKey(VK_ESCAPE);
     if (PressedDigitalAction(m_MenuUp, true)) sendKey(VK_UP);
     if (PressedDigitalAction(m_MenuDown, true)) sendKey(VK_DOWN);
     if (PressedDigitalAction(m_MenuLeft, true)) sendKey(VK_LEFT);
@@ -2293,7 +2334,7 @@ void VR::ProcessViewActions()
         return;
 
     vr::InputAnalogActionData_t analogActionData{};
-    if (!GetAnalogActionData(m_ActionTurn, analogActionData))
+    if (!GetAnalogActionData(TurnAction(), analogActionData))
         return;
 
     float deltaYaw = 0.0f;
@@ -2333,12 +2374,39 @@ void VR::ProcessInput()
 
     //vr::VROverlay()->SetOverlayFlag(m_HUDHandle, vr::VROverlayFlags_MakeOverlaysInteractiveIfVisible, false);
 
-    ProcessHeldAction(m_ActionPrimaryAttack, m_PrimaryAttackState, "+attack", "-attack");
-    ProcessHeldAction(m_ActionSecondaryAttack, m_SecondaryAttackState, "+attack2", "-attack2");
+    const vr::VRActionHandle_t primaryAttack = HandedAction(m_ActionPrimaryAttack, m_ActionPrimaryAttackLeftHanded);
+    const int leftHandedButtons = !m_LeftHanded ? 0 : primaryAttack == m_ActionPrimaryAttack ? 1 : 2;
+    if (leftHandedButtons != m_LeftHandedButtonsLogged) {
+        // The buttons just moved to the other hand: a press held on the old ones would
+        // never see its release, so let go of everything first.
+        if (m_LeftHandedButtonsLogged >= 0)
+            ReleaseHeldActions();
+        m_LeftHandedButtonsLogged = leftHandedButtons;
+        if (leftHandedButtons == 2)
+            Logger::Write(std::string("Left-handed mode: portal trigger and grip on the left controller; use ") +
+                          (HandedAction(m_ActionUse, m_ActionUseLeftHanded) == m_ActionUse ? "stays on the right"
+                                                                                            : "on the left") +
+                          ", pause " + (PauseAction() == m_Pause ? "stays on the left" : "on the right"));
+        else if (leftHandedButtons == 1)
+            Logger::Write("Left-handed mode: the SteamVR bindings lack the left-handed trigger/grip actions; "
+                          "portal buttons stay on the right controller");
+    }
+    const int swapSticks = m_SwapSticks ? 1 : 0;
+    if (swapSticks != m_SwapSticksLogged) {
+        m_SwapSticksLogged = swapSticks;
+        Logger::Write(swapSticks ? std::string("Sticks swapped: move with the right stick, turn with the left; zoom ") +
+                                       (ZoomAction() == m_ActionZoom ? "unbound on the left stick, stays on the right"
+                                                                     : "on the left stick click")
+                                 : std::string("Sticks: move with the left stick, turn with the right"));
+    }
+
+    ProcessHeldAction(primaryAttack, m_PrimaryAttackState, "+attack", "-attack");
+    ProcessHeldAction(HandedAction(m_ActionSecondaryAttack, m_ActionSecondaryAttackLeftHanded),
+                      m_SecondaryAttackState, "+attack2", "-attack2");
     ProcessHeldAction(m_ActionJump, m_JumpState, "+jump", "-jump");
-    ProcessHeldAction(m_ActionCrouch, m_CrouchState, "+duck", "-duck");
-    ProcessHeldAction(m_ActionUse, m_UseState, "+use", "-use");
-    ProcessHeldAction(m_ActionReload, m_ReloadState, "+reload", "-reload");
+    ProcessHeldAction(HandedAction(m_ActionCrouch, m_ActionCrouchLeftHanded), m_CrouchState, "+duck", "-duck");
+    ProcessHeldAction(HandedAction(m_ActionUse, m_ActionUseLeftHanded), m_UseState, "+use", "-use");
+    ProcessHeldAction(HandedAction(m_ActionReload, m_ActionReloadLeftHanded), m_ReloadState, "+reload", "-reload");
     ProcessZoomInput();
 
     if (PressedDigitalAction(m_ActionPrevItem, true))
@@ -2381,10 +2449,16 @@ void VR::ProcessInput()
 
     m_RenderedHud = false;
 
-    if (PressedDigitalAction(m_Pause, true))
+    auto pauseAction = PauseAction();
+    if (PressedDigitalAction(pauseAction, true))
     {
+        m_MenuBackLatched = true;
         m_MenuOverlayPlacement.Invalidate();
         m_Game->ClientCmd_Unrestricted("gameui_activate");
+    }
+    else if (m_MenuBackLatched && !PressedDigitalAction(pauseAction) && !PressedDigitalAction(m_MenuBack))
+    {
+        m_MenuBackLatched = false; // let go before any menu showed
     }
 }
 
@@ -3524,6 +3598,7 @@ void VR::ParseConfigFile()
         m_PhysicalCrouch.Reset();
     m_TurnSpeed = m_Config.turnSpeed;
     m_LeftHanded = m_Config.leftHanded;
+    m_SwapSticks = m_Config.swapSticks;
     if (!m_IsInitialized)
         m_VRScale = m_Config.vrScale;
     if (!m_IsInitialized) {

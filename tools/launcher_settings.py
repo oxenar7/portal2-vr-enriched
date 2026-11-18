@@ -47,7 +47,9 @@ SETTINGS = (
             help="Standing only; applied when recentering."),
     Setting("ControllerPitchDegrees", "Controller pitch correction (degrees)", "Tracking", "-30", bounds=(-60, 60)),
     Setting("LeftHanded", "Left-handed controls", "Tracking", "false", ("false", "true"),
-            help="Swaps the hands: the gun goes in the left hand. Not tested yet."),
+            help="The gun goes in the left hand with its buttons: portal trigger and grip, use on Y. Pause moves to B."),
+    Setting("SwapSticks", "Swap sticks", "Tracking", "false", ("false", "true"),
+            help="Move with the right stick, turn with the left. Binocular zoom follows the turning stick."),
     Setting("VRScale", "Source units per real-world metre", "Tracking", "43.2", bounds=(1, 200)),
     Setting("IPDScale", "Interpupillary distance multiplier", "Tracking", "1", bounds=(.5, 1.5)),
     Setting("PortalOrientationMode", "Portal orientation", "Portals", "LegacyYaw",
@@ -137,17 +139,18 @@ _HELD_KEYS = frozenset(("LaserCubeAimAssist", "HeldObjectColumn"))
 _HELD_ANCHOR_KEYS = frozenset(("HeldObjectAnchor",))
 _USE_AIM_KEYS = frozenset(("ControllerAimedUse",))
 _WORLD_MENU_KEYS = frozenset(("WorldMenu",))
+_SWAP_STICKS_KEYS = frozenset(("SwapSticks",))
 _ZOOM_KEYS = frozenset(("BinocularZoom", "ZoomMagnification", "ZoomWindowWidthMeters", "ZoomDistanceMeters"))
 # Key groups added after the first complete schema. A saved schema missing whole groups gains their defaults.
 _ADDED_KEY_GROUPS = (_EYE_HUD_KEYS, _HAPTICS_KEYS, _CROUCH_KEYS, _HELD_KEYS, _HELD_ANCHOR_KEYS, _ZOOM_KEYS,
-                     _USE_AIM_KEYS, _WORLD_MENU_KEYS)
+                     _USE_AIM_KEYS, _WORLD_MENU_KEYS, _SWAP_STICKS_KEYS)
 
 
 # Options > VR in the game writes these keys to VR/ingame_settings.txt, which the mod
 # layers over config.txt. Match VrSettings::Pages() in L4D2VR/vr_settings.h.
 INGAME_SETTINGS = "VR/ingame_settings.txt"
 INGAME_KEYS = frozenset((
-    "SnapTurning", "SnapTurnAngle", "TurnSpeed", "MovementDirection", "PhysicalCrouch", "LeftHanded",
+    "SnapTurning", "SnapTurnAngle", "TurnSpeed", "MovementDirection", "PhysicalCrouch", "LeftHanded", "SwapSticks",
     "Haptics", "HapticsIntensity", "ExperimentalWorldAimMarker", "6DOF", "ControllerPitchDegrees",
     "HeightOffsetMeters", "PhysicalCrouchDropMeters", "VRScale", "IPDScale", "HapticsNativeRumble", "HapticsHeldObject",
     "HapticsButtons", "ReticleDistanceScaling", "LaserCubeAimAssist", "HeldObjectAnchor", "RenderWindow",

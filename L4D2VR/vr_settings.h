@@ -132,6 +132,7 @@ inline const std::vector<Page> &Pages()
             Toggle("PhysicalCrouch", "Physical Crouch", [](const ConfigSnapshot &c) { return Bool(c.physicalCrouch); },
                    [](const ConfigSnapshot &c) { return c.sixDof; }),
             Toggle("LeftHanded", "Left-Handed Mode", [](const ConfigSnapshot &c) { return Bool(c.leftHanded); }),
+            Toggle("SwapSticks", "Swap Sticks", [](const ConfigSnapshot &c) { return Bool(c.swapSticks); }),
             Toggle("Haptics", "Controller Vibration", [](const ConfigSnapshot &c) { return Bool(c.haptics); }),
             Numeric("HapticsIntensity", "Vibration Strength",
                     [](const ConfigSnapshot &c) { return Number(c.hapticsIntensity); },

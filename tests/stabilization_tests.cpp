@@ -273,6 +273,15 @@ static void TestVrOptions()
               "second call is GetTransitionEffectPanel");
     expectInt(static_cast<int>(callTarget(Portal2Transition::kMarkCall)), 0x10307FF0,
               "third call is MarkTileAt");
+    // GetTransitionEffectPanel: add ecx,<handle>; jmp PHandle::Get (Portal 2 +0x460, AAK +0x45C).
+    const std::uint8_t portal2Panel[] = {0x81, 0xC1, 0x60, 0x04, 0x00, 0x00, 0xE9};
+    const std::uint8_t aakPanel[] = {0x81, 0xC1, 0x5C, 0x04, 0x00, 0x00, 0xE9};
+    const std::uint8_t otherPanel[] = {0x81, 0xC1, 0x5C, 0x05, 0x00, 0x00, 0xE9};
+    expect(Portal2Vgui::MatchesSignature(portal2Panel, Portal2Transition::kGetPanelSignature) &&
+               Portal2Vgui::MatchesSignature(aakPanel, Portal2Transition::kGetPanelSignature),
+           true, "transition panel accessor matches both builds");
+    expect(Portal2Vgui::MatchesSignature(otherPanel, Portal2Transition::kGetPanelSignature), false,
+           "transition panel accessor rejects a handle outside the BaseModPanel range");
 
     ConfigSnapshot config;
     expect(Step(MenuItem("SnapTurning"), config, 1) == std::optional<std::string>("true"), true,

@@ -79,8 +79,10 @@ static std::optional<PortalOrientation::Rotation> ReadPortalRotation(const void*
 {
     if (!portal)
         return std::nullopt;
-    // The existing CPortal_Base2D accessor uses this ABI-specific field.
-    constexpr std::uintptr_t kMatrixOffset = 0x4C4;
+    // C_Portal_Base2D::m_matrixThisToLinked: FIELD_VMATRIX at +0xDBC in the client datamap of
+    // both Portal 2 and Alive & Kicking, and the field C_Portal_Player::PlayerPortalled itself
+    // copies (lea ecx, [esi+0xDBC]). FromVMatrix still rejects anything that is not a rotation.
+    constexpr std::uintptr_t kMatrixOffset = 0xDBC;
     const auto base = reinterpret_cast<std::uintptr_t>(portal);
     if (base > UINTPTR_MAX - kMatrixOffset - sizeof(VMatrix))
         return std::nullopt;

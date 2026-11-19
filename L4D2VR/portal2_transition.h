@@ -35,8 +35,9 @@ inline constexpr std::size_t kPanelCall = 18;
 inline constexpr std::size_t kMarkCall = 25;
 // mov eax,ds:[singleton]; ret
 inline constexpr const char *kGetSingletonSignature = "A1 ? ? ? ? C3";
-// add ecx,460h; jmp vgui::PHandle::Get
-inline constexpr const char *kGetPanelSignature = "81 C1 60 04 00 00 E9";
+// add ecx,<handle field>; jmp vgui::PHandle::Get. The field is +0x460 in Portal 2 and +0x45C
+// in Alive & Kicking; the mod calls the accessor, so only its shape is pinned.
+inline constexpr const char *kGetPanelSignature = "81 C1 ? 04 00 00 E9";
 inline constexpr const char *kHandleGetSignature = "8B 01 56 83 F8 FF 74";
 // MarkTileAt(x, y, windowType, bool): effect-enabled check, then the grid tile under (x, y).
 inline constexpr const char *kMarkTileAtSignature =

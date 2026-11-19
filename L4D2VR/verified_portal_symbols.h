@@ -24,14 +24,14 @@ struct Result {
     std::uintptr_t shootCaller = 0;
 };
 
-// C_BasePlayer field offsets; zero when the loaded client.dll is not the verified build.
+// C_BasePlayer field offsets; zero when the loaded client.dll is not a verified build.
 struct PlayerFields {
     std::uint32_t viewOffsetZ = 0; // float m_vecViewOffset.z
     std::uint32_t flags = 0;       // int m_fFlags
 };
 
 // Addresses behind the held-object log and options; all zero unless server.dll and client.dll
-// are both the verified build.
+// are both verified builds of the same game.
 struct HeldObjectLayout {
     std::uintptr_t entityList = 0;           // global pointer to the entity slots
     std::uintptr_t laserAutoaimCvar = 0;     // server sv_laser_cube_autoaim
@@ -50,14 +50,122 @@ struct Build {
     std::uint32_t size;
 };
 
-inline constexpr Build server{L"server.dll",
-    "deb9fc303fdf4b0b0edcf58c4e1b17fbf20276f047728180f7ba7c8bf510f6b6",
-    0x6AA0746Au, 0x978000u};
-inline constexpr Build client{L"client.dll",
-    "1b22a5008c10c91215f5c66061ff24dd84e3afb626d60b9d74c600974536f66d",
-    0x6AA07473u, 0xFF3000u};
+// Every RVA below was read from one exact build and is accepted only with that build's
+// SHA-256 and with all of its witnesses. The two games differ in addresses, not in layout:
+// the struct offsets checked by the witnesses are the same in both.
+struct ServerLayout {
+    Build build;
+    std::uint32_t eyePosition;        // CPortal_Player::EyePosition
+    std::uint32_t eyeAngles;          // CBasePlayer::EyeAngles
+    std::uint32_t shootWrapper;       // EarPosition / Weapon_ShootPosition wrapper
+    std::uint32_t portalPlayerVtable; // CPortal_Player
+    std::uint32_t basePlayerVtable;   // CBasePlayer
+    std::uint32_t fireOwnerCall;      // CWeaponPortalgun::FirePortal: mov edi,ecx ... call GetOwner
+    std::array<std::uint8_t, 12> fireOwnerBytes;
+    std::uint32_t fireShootCall;      // FirePortal: virtual Weapon_ShootPosition on the owner
+    std::uint32_t grabDistanceOffset; // CGrabController datamap: m_flDistanceOffset fieldOffset
+    std::uint32_t laserName, columnName, modelName;
+    std::uint32_t laserCtor, columnCtor; // word holding the name in each ConVar constructor
+    std::uint32_t laserCvar, columnCvar;
+    std::uint32_t laserReader;        // mov eax,[parent]; cmp dword [eax+30h],0 at +5
+    std::uint32_t columnReader;       // mov edx,[parent]; cmp dword [edx+30h],0 at columnReaderCheck
+    std::uint32_t columnReaderCheck;
+    std::uint32_t entityListSite;     // UpdateObject resolving m_attachedEntity
+    std::uint32_t entityList;
+    std::uint32_t holdShootCall;      // UpdateObject: virtual Weapon_ShootPosition, call ends at +0x13
+    std::array<std::uint8_t, 19> holdShootBytes;
+    std::uint32_t carryAngles;        // Pickup_GetPreferredCarryAngles
+    std::uint32_t carryAnglesBody;
+    std::uint32_t carryAnglesCall;
+    std::array<std::uint8_t, 5> carryAnglesCallBytes;
+    std::uint32_t overheadReader1, overheadReader2; // the only readers of m_bAllowObjectOverhead
+    std::uint32_t classnameCompare;   // cmp [esi+60h] (m_iClassname)
+    std::uint32_t modelNameField;     // datamap word naming m_ModelName; its offset 0xAC at +10
+    std::uint32_t radiusSite, absOriginSite, absAnglesSite;
+};
 
-inline const Build &For(Symbol symbol) { return symbol == Symbol::ViewModelFov ? client : server; }
+struct ClientLayout {
+    Build build;
+    std::uint32_t fovFunction;        // ClientModePortalNormal::GetViewModelFOV
+    std::uint32_t fovCvarParent;      // cl_viewmodelfov parent pointer the function reads
+    std::uint32_t normalVtable, fullscreenVtable;
+    std::uint32_t fovName, fovCtor, fovCvar;
+    std::uint32_t viewOffsetName, viewOffsetPush; // RecvPropFloat("m_vecViewOffset[2]", 0x104)
+    std::uint32_t flagsName, flagsPush;           // RecvPropInt("m_fFlags", 0xF8)
+    std::uint32_t columnName, columnCtor, columnCvar;
+    std::uint32_t columnReader;       // mov edx,[parent]; cmp dword [edx+30h],0 at +6
+};
+
+// Portal 2, Windows build of 2026 (server/client dated 2026-09-08).
+inline constexpr ServerLayout portal2Server{
+    {L"server.dll", "deb9fc303fdf4b0b0edcf58c4e1b17fbf20276f047728180f7ba7c8bf510f6b6",
+        0x6AA0746Au, 0x978000u},
+    0x369A70, 0x104590, 0x368270, 0x670B2C, 0x6166AC,
+    0x40141E, {0x8B,0xF9,0x89,0x7D,0xEC,0xE8,0xD8,0x67,0xCD,0xFF,0x8B,0xF0},
+    0x40160C, 0x7965CC,
+    0x67F0A8, 0x689EC8, 0x5BB468,
+    0x572EBB, 0x574000, 0x8562D0, 0x858ED8,
+    0x3B1EEF, 0x3CAA34, 0x3CAA3D,
+    0x3CA207, 0x7339F8,
+    0x3CA5D4, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x83,0xC4,0x10,0x8D,0x45,0xB4,0x50,0x8B,0xCE,0xFF,0xD2},
+    0x3C4BA0, 0x3C4BD8, 0x3CB332, {0xE8,0x69,0x98,0xFF,0xFF},
+    0x3CA57B, 0x3CB0FC,
+    0x3B1EA2, 0xF038F,
+    0x3CA91D, 0x3CA404, 0x311B5};
+
+inline constexpr ClientLayout portal2Client{
+    {L"client.dll", "1b22a5008c10c91215f5c66061ff24dd84e3afb626d60b9d74c600974536f66d",
+        0x6AA07473u, 0xFF3000u},
+    0x28AD20, 0xA08F84, 0x7C03D4, 0x7C0944,
+    0x78C010, 0x6FE500, 0xA08F68,
+    0x74C1A8, 0x8F8E9, 0x742218, 0x92CA4,
+    0x81A3F0, 0x704EF0, 0xA228D0, 0x3B9B85};
+
+// Portal: Alive & Kicking (Steam app 270470), build 25291273 (server/client dated 2024-03-12).
+inline constexpr ServerLayout aakServer{
+    {L"server.dll", "a9f7cbf8716b4568118184e8090794a0d2627ac70fee04f0680ca6daa3b17b15",
+        0x65EFB6A1u, 0x971000u},
+    0x362EB0, 0x100DE0, 0xF11D0, 0x669944, 0x60E984,
+    0x3F95DE, {0x8B,0xF9,0x89,0x7D,0xEC,0xE8,0x18,0xAF,0xCD,0xFF,0x8B,0xF0},
+    0x3F97CC, 0x78FE14,
+    0x677ED8, 0x683090, 0x5B3980,
+    0x56A4EB, 0x56B6E0, 0x84F920, 0x8526D0,
+    0x3AA84F, 0x3C300C, 0x3C3012,
+    0x3C27D7, 0x72CE18,
+    0x3C2BA4, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x83,0xC4,0x10,0x8D,0x45,0xC0,0x50,0x8B,0xCE,0xFF,0xD2},
+    0x3BCF90, 0x3BCFC8, 0x3C38FF, {0xE8,0x8C,0x96,0xFF,0xFF},
+    0x3C2B4B, 0x3C36D6,
+    0x3AA802, 0xECB5F,
+    0x3C2EED, 0x3C29D4, 0x2F155};
+
+inline constexpr ClientLayout aakClient{
+    {L"client.dll", "e238fc755a326b6599c73436e04212279b31da1af0dcb62e02a897cea255ee60",
+        0x65EFAED9u, 0xFEF000u},
+    0x283530, 0xA051FC, 0x7B62EC, 0x7B685C,
+    0x781E40, 0x6F49B0, 0xA051E0,
+    0x742200, 0x8C969, 0x7382E0, 0x8FB24,
+    0x80FCE0, 0x6FB360, 0xA1EAC0, 0x3AFE35};
+
+inline constexpr const ServerLayout *serverLayouts[] = {&portal2Server, &aakServer};
+inline constexpr const ClientLayout *clientLayouts[] = {&portal2Client, &aakClient};
+
+// Kept for callers that name the Portal 2 builds directly.
+inline constexpr const Build &server = portal2Server.build;
+inline constexpr const Build &client = portal2Client.build;
+
+inline const ServerLayout *ServerFor(std::string_view sha256)
+{
+    for (const auto *layout : serverLayouts)
+        if (layout->build.sha256 == sha256) return layout;
+    return nullptr;
+}
+
+inline const ClientLayout *ClientFor(std::string_view sha256)
+{
+    for (const auto *layout : clientLayouts)
+        if (layout->build.sha256 == sha256) return layout;
+    return nullptr;
+}
 
 inline bool Readable(const void *address, std::size_t length, bool executable)
 {
@@ -146,11 +254,23 @@ struct Image {
 
     std::uintptr_t At(std::uint32_t rva) const { return reinterpret_cast<std::uintptr_t>(bytes) + rva; }
 
+    bool Match(std::uint32_t rva, const std::uint8_t *expected, std::size_t length,
+               bool executable = true) const
+    {
+        return Span(rva, length, executable) && std::memcmp(bytes + rva, expected, length) == 0;
+    }
+
     bool Match(std::uint32_t rva, std::initializer_list<std::uint8_t> expected,
                bool executable = true) const
     {
-        return Span(rva, expected.size(), executable) &&
-            std::memcmp(bytes + rva, expected.begin(), expected.size()) == 0;
+        return Match(rva, expected.begin(), expected.size(), executable);
+    }
+
+    template <std::size_t N>
+    bool Match(std::uint32_t rva, const std::array<std::uint8_t, N> &expected,
+               bool executable = true) const
+    {
+        return Match(rva, expected.data(), N, executable);
     }
 
     bool Word(std::uint32_t rva, std::uintptr_t expected, bool executable = false) const
@@ -160,68 +280,71 @@ struct Image {
         std::memcpy(&actual, bytes + rva, 4);
         return actual == expected;
     }
+
+    bool Text(std::uint32_t rva, const char *text, std::size_t length) const
+    {
+        return Span(rva, length) && std::memcmp(bytes + rva, text, length) == 0;
+    }
 };
 
-inline bool EyeWitness(const Image &image)
+inline bool EyeWitness(const Image &image, const ServerLayout &l)
 {
     // CPortal_Player overrides the generic EyePosition implementation.
-    return image.Match(0x369A70, {0x55,0x8B,0xEC,0x83,0xEC,0x18,0x56,0x8B,0xF1,
+    return image.Match(l.eyePosition, {0x55,0x8B,0xEC,0x83,0xEC,0x18,0x56,0x8B,0xF1,
         0x8B,0x86,0x14,0x15,0,0,0x8B,0x16,0xF3,0x0F,0x7E,0x86,0x0C,0x15,0,0}) &&
-        image.Word(0x670B2C + 128*4, image.At(0x369A70)) &&
-        image.Word(0x670B2C + 129*4, image.At(0x104590)) &&
-        image.Word(0x670B2C + 131*4, image.At(0x368270));
+        image.Word(l.portalPlayerVtable + 128*4, image.At(l.eyePosition)) &&
+        image.Word(l.portalPlayerVtable + 129*4, image.At(l.eyeAngles)) &&
+        image.Word(l.portalPlayerVtable + 131*4, image.At(l.shootWrapper));
 }
 
-inline bool ShootWitness(const Image &image)
+inline bool ShootWitness(const Image &image, const ServerLayout &l)
 {
     // Both EarPosition and Weapon_ShootPosition slots use this wrapper.
     // Only the verified FirePortal caller is eligible for shoot override.
-    return image.Match(0x368270, {0x55,0x8B,0xEC,0x8B,0x01,0x8B,0x90,0,0x02,0,0,
+    return image.Match(l.shootWrapper, {0x55,0x8B,0xEC,0x8B,0x01,0x8B,0x90,0,0x02,0,0,
         0x56,0x8B,0x75,0x08,0x56,0xFF,0xD2,0x8B,0xC6,0x5E,0x5D,0xC2,0x04,0}) &&
-        image.Word(0x670B2C + 131*4, image.At(0x368270)) &&
-        image.Word(0x670B2C + 289*4, image.At(0x368270)) &&
-        image.Word(0x6166AC + 131*4, image.At(0x368270)) &&
-        image.Word(0x6166AC + 289*4, image.At(0x368270)) &&
-        image.Match(0x40141E, {0x8B,0xF9,0x89,0x7D,0xEC,0xE8,0xD8,0x67,0xCD,0xFF,0x8B,0xF0}) &&
-        image.Match(0x40160C, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x8D,0x45,0xF0,
+        image.Word(l.portalPlayerVtable + 131*4, image.At(l.shootWrapper)) &&
+        image.Word(l.portalPlayerVtable + 289*4, image.At(l.shootWrapper)) &&
+        image.Word(l.basePlayerVtable + 131*4, image.At(l.shootWrapper)) &&
+        image.Word(l.basePlayerVtable + 289*4, image.At(l.shootWrapper)) &&
+        image.Match(l.fireOwnerCall, l.fireOwnerBytes) &&
+        image.Match(l.fireShootCall, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x8D,0x45,0xF0,
             0x50,0x8B,0xCE,0xFF,0xD2,0xF3,0x0F,0x10,0x08});
 }
 
-inline bool FovWitness(const Image &image)
+inline bool FovWitness(const Image &image, const ClientLayout &l)
 {
     constexpr char name[] = "cl_viewmodelfov";
-    return image.Match(0x28AD20, {0xA1}) &&
-        image.Word(0x28AD21, image.At(0xA08F84), true) &&
-        image.Match(0x28AD25, {0xD9,0x40,0x2C,0xC3}) &&
-        image.Word(0x7C03D4 + 35*4, image.At(0x28AD20)) &&
-        image.Word(0x7C0944 + 35*4, image.At(0x28AD20)) &&
-        image.Span(0x78C010, sizeof(name)) &&
-        std::memcmp(image.bytes + 0x78C010, name, sizeof(name)) == 0 &&
-        image.Match(0x6FE500, {0x6A,0x02,0x68}) &&
-        image.Match(0x6FE507, {0x68}) &&
-        image.Word(0x6FE508, image.At(0x78C010), true) &&
-        image.Match(0x6FE50C, {0xB9}) &&
-        image.Word(0x6FE50D, image.At(0xA08F68), true) &&
-        image.Match(0x6FE511, {0xE8});
+    return image.Match(l.fovFunction, {0xA1}) &&
+        image.Word(l.fovFunction + 1, image.At(l.fovCvarParent), true) &&
+        image.Match(l.fovFunction + 5, {0xD9,0x40,0x2C,0xC3}) &&
+        l.fovCvarParent == l.fovCvar + 0x1C &&
+        image.Word(l.normalVtable + 35*4, image.At(l.fovFunction)) &&
+        image.Word(l.fullscreenVtable + 35*4, image.At(l.fovFunction)) &&
+        image.Text(l.fovName, name, sizeof(name)) &&
+        image.Match(l.fovCtor, {0x6A,0x02,0x68}) &&
+        image.Match(l.fovCtor + 7, {0x68}) &&
+        image.Word(l.fovCtor + 8, image.At(l.fovName), true) &&
+        image.Match(l.fovCtor + 12, {0xB9}) &&
+        image.Word(l.fovCtor + 13, image.At(l.fovCvar), true) &&
+        image.Match(l.fovCtor + 17, {0xE8});
 }
 
-inline bool PlayerFieldWitness(const Image &image)
+inline bool PlayerFieldWitness(const Image &image, const ClientLayout &l)
 {
     // RecvPropFloat("m_vecViewOffset[2]", 0x104, ...) in DT_LocalPlayerExclusive and
     // RecvPropInt("m_fFlags", 0xF8, ...): push offset immediately before push name.
     constexpr char viewOffsetName[] = "m_vecViewOffset[2]";
     constexpr char flagsName[] = "m_fFlags";
-    return image.Span(0x74C1A8, sizeof(viewOffsetName)) &&
-        std::memcmp(image.bytes + 0x74C1A8, viewOffsetName, sizeof(viewOffsetName)) == 0 &&
-        image.Match(0x8F8E9, {0x68,0x04,0x01,0,0,0x68}) &&
-        image.Word(0x8F8EF, image.At(0x74C1A8), true) &&
-        image.Span(0x742218, sizeof(flagsName)) &&
-        std::memcmp(image.bytes + 0x742218, flagsName, sizeof(flagsName)) == 0 &&
-        image.Match(0x92CA4, {0x68,0xF8,0,0,0,0x68}) &&
-        image.Word(0x92CAA, image.At(0x742218), true);
+    return image.Text(l.viewOffsetName, viewOffsetName, sizeof(viewOffsetName)) &&
+        image.Match(l.viewOffsetPush, {0x68,0x04,0x01,0,0,0x68}) &&
+        image.Word(l.viewOffsetPush + 6, image.At(l.viewOffsetName), true) &&
+        image.Text(l.flagsName, flagsName, sizeof(flagsName)) &&
+        image.Match(l.flagsPush, {0x68,0xF8,0,0,0,0x68}) &&
+        image.Word(l.flagsPush + 6, image.At(l.flagsName), true);
 }
 
-inline bool HeldObjectWitness(const Image &image)
+inline bool HeldObjectWitness(const Image &image, const ServerLayout &l)
 {
     constexpr char laserName[] = "sv_laser_cube_autoaim";
     constexpr char columnName[] = "player_hold_object_in_column";
@@ -231,63 +354,58 @@ inline bool HeldObjectWitness(const Image &image)
         {-14, 0x4}, {-11, 0x203C}, {-7, 0x204C}, {-5, 0x2049}, {-4, 0x2054}, {-3, 0x2044},
         {-2, 0x2058}, {-1, 0x2064}, {0, 0x2068}, {1, 0x206C}, {3, 0x2088}};
     for (const auto &field : grabFields)
-        if (!image.Word(static_cast<std::uint32_t>(0x7965CC + field.index * 0x3C), field.offset))
+        if (!image.Word(static_cast<std::uint32_t>(l.grabDistanceOffset + field.index * 0x3C), field.offset))
             return false;
-    return image.Span(0x67F0A8, sizeof(laserName)) &&
-        std::memcmp(image.bytes + 0x67F0A8, laserName, sizeof(laserName)) == 0 &&
-        image.Span(0x689EC8, sizeof(columnName)) &&
-        std::memcmp(image.bytes + 0x689EC8, columnName, sizeof(columnName)) == 0 &&
-        image.Span(0x5BB468, sizeof(modelName)) &&
-        std::memcmp(image.bytes + 0x5BB468, modelName, sizeof(modelName)) == 0 &&
+    return image.Text(l.laserName, laserName, sizeof(laserName)) &&
+        image.Text(l.columnName, columnName, sizeof(columnName)) &&
+        image.Text(l.modelName, modelName, sizeof(modelName)) &&
         // ConVar constructors tie each name to its object.
-        image.Word(0x572EBB, image.At(0x67F0A8), true) &&
-        image.Match(0x572EBF, {0xB9}) &&
-        image.Word(0x572EC0, image.At(0x8562D0), true) &&
-        image.Word(0x574000, image.At(0x689EC8), true) &&
-        image.Match(0x574004, {0xB9}) &&
-        image.Word(0x574005, image.At(0x858ED8), true) &&
+        image.Word(l.laserCtor, image.At(l.laserName), true) &&
+        image.Match(l.laserCtor + 4, {0xB9}) &&
+        image.Word(l.laserCtor + 5, image.At(l.laserCvar), true) &&
+        image.Word(l.columnCtor, image.At(l.columnName), true) &&
+        image.Match(l.columnCtor + 4, {0xB9}) &&
+        image.Word(l.columnCtor + 5, image.At(l.columnCvar), true) &&
         // Game readers: parent pointer at +0x1C, int value at +0x30.
-        image.Match(0x3B1EEF, {0xA1}) &&
-        image.Word(0x3B1EF0, image.At(0x8562EC), true) &&
-        image.Match(0x3B1EF4, {0x83,0x78,0x30,0}) &&
-        image.Match(0x3CAA34, {0x8B,0x15}) &&
-        image.Word(0x3CAA36, image.At(0x858EF4), true) &&
-        image.Match(0x3CAA3D, {0x83,0x7A,0x30,0}) &&
+        image.Match(l.laserReader, {0xA1}) &&
+        image.Word(l.laserReader + 1, image.At(l.laserCvar + 0x1C), true) &&
+        image.Match(l.laserReader + 5, {0x83,0x78,0x30,0}) &&
+        image.Match(l.columnReader, {0x8B,0x15}) &&
+        image.Word(l.columnReader + 2, image.At(l.columnCvar + 0x1C), true) &&
+        image.Match(l.columnReaderCheck, {0x83,0x7A,0x30,0}) &&
         // UpdateObject resolving m_attachedEntity through the entity list.
-        image.Match(0x3CA207, {0x8B,0x15}) &&
-        image.Word(0x3CA209, image.At(0x7339F8), true) &&
-        image.Match(0x3CA20D, {0x8B,0xC8,0x81,0xE1,0xFF,0xFF,0,0,0x8D,0x0C,0x49,
+        image.Match(l.entityListSite, {0x8B,0x15}) &&
+        image.Word(l.entityListSite + 2, image.At(l.entityList), true) &&
+        image.Match(l.entityListSite + 6, {0x8B,0xC8,0x81,0xE1,0xFF,0xFF,0,0,0x8D,0x0C,0x49,
             0x8D,0x4C,0xCA,0x04,0xC1,0xE8,0x10,0x39,0x41,0x04}) &&
         // UpdateObject's ray origin: virtual Weapon_ShootPosition on the player.
-        image.Match(0x3CA5D4, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x83,0xC4,0x10,
-            0x8D,0x45,0xB4,0x50,0x8B,0xCE,0xFF,0xD2}) &&
+        image.Match(l.holdShootCall, l.holdShootBytes) &&
         // Pickup_GetPreferredCarryAngles, UpdateObject's call and its PreferredCarryAngles slot.
-        image.Match(0x3C4BA0, {0x55,0x8B,0xEC,0x8B,0x45,0x08,0x83,0xEC,0x18,0x56,0x6A,0x00}) &&
-        image.Match(0x3C4BD8, {0x8B,0x45,0x10,0x8B,0x16,0x8B,0x52,0x14,0x50}) &&
-        image.Match(0x3CB332, {0xE8,0x69,0x98,0xFF,0xFF}) &&
+        image.Match(l.carryAngles, {0x55,0x8B,0xEC,0x8B,0x45,0x08,0x83,0xEC,0x18,0x56,0x6A,0x00}) &&
+        image.Match(l.carryAnglesBody, {0x8B,0x45,0x10,0x8B,0x16,0x8B,0x52,0x14,0x50}) &&
+        image.Match(l.carryAnglesCall, l.carryAnglesCallBytes) &&
         // The only two readers of m_bAllowObjectOverhead: pitch clamp and player box clamp.
-        image.Match(0x3CA57B, {0x80,0xBF,0x88,0x20,0,0,0}) &&
-        image.Match(0x3CB0FC, {0x80,0xBF,0x88,0x20,0,0,0}) &&
+        image.Match(l.overheadReader1, {0x80,0xBF,0x88,0x20,0,0,0}) &&
+        image.Match(l.overheadReader2, {0x80,0xBF,0x88,0x20,0,0,0}) &&
         // CBaseEntity: m_iClassname, m_ModelName, collision radius, abs origin and angles.
-        image.Match(0x3B1EA2, {0x81,0x7E,0x60}) &&
-        image.Word(0xF038F, image.At(0x5BB468), true) &&
-        image.Word(0xF0399, 0xAC, true) &&
-        image.Match(0x3CA91D, {0x8B,0x45,0xDC,0xD9,0x80,0x0C,0x01,0,0}) &&
-        image.Match(0x3CA404, {0x8D,0x86,0xCC,1,0,0}) &&
-        image.Match(0x311B5, {0x8D,0x86,0xD8,1,0,0});
+        image.Match(l.classnameCompare, {0x81,0x7E,0x60}) &&
+        image.Word(l.modelNameField, image.At(l.modelName), true) &&
+        image.Word(l.modelNameField + 10, 0xAC, true) &&
+        image.Match(l.radiusSite, {0x8B,0x45,0xDC,0xD9,0x80,0x0C,0x01,0,0}) &&
+        image.Match(l.absOriginSite, {0x8D,0x86,0xCC,1,0,0}) &&
+        image.Match(l.absAnglesSite, {0x8D,0x86,0xD8,1,0,0});
 }
 
-inline bool ClientHeldColumnWitness(const Image &image)
+inline bool ClientHeldColumnWitness(const Image &image, const ClientLayout &l)
 {
     constexpr char name[] = "player_hold_object_in_column";
-    return image.Span(0x81A3F0, sizeof(name)) &&
-        std::memcmp(image.bytes + 0x81A3F0, name, sizeof(name)) == 0 &&
-        image.Word(0x704EF0, image.At(0x81A3F0), true) &&
-        image.Match(0x704EF4, {0xB9}) &&
-        image.Word(0x704EF5, image.At(0xA228D0), true) &&
-        image.Match(0x3B9B85, {0x8B,0x15}) &&
-        image.Word(0x3B9B87, image.At(0xA228EC), true) &&
-        image.Match(0x3B9B8B, {0x83,0x7A,0x30,0});
+    return image.Text(l.columnName, name, sizeof(name)) &&
+        image.Word(l.columnCtor, image.At(l.columnName), true) &&
+        image.Match(l.columnCtor + 4, {0xB9}) &&
+        image.Word(l.columnCtor + 5, image.At(l.columnCvar), true) &&
+        image.Match(l.columnReader, {0x8B,0x15}) &&
+        image.Word(l.columnReader + 2, image.At(l.columnCvar + 0x1C), true) &&
+        image.Match(l.columnReader + 6, {0x83,0x7A,0x30,0});
 }
 
 } // namespace Detail
@@ -333,30 +451,29 @@ inline bool HashFileSha256(const wchar_t *path, char (&hex)[65])
 inline Result ResolveImage(const std::uint8_t *source, std::size_t imageSize,
                            std::string_view sha256, Symbol symbol)
 {
-    if (symbol != Symbol::EyePosition && symbol != Symbol::WeaponShootPosition &&
-        symbol != Symbol::ViewModelFov) return {};
-    const auto &build = Detail::For(symbol);
-    if (sha256 != build.sha256) return {};
-    Detail::Image image;
-    if (!image.Open(source, imageSize, build)) return {};
-    switch (symbol) {
-    case Symbol::EyePosition:
-        return Detail::EyeWitness(image) ? Result{image.At(0x369A70), 0} : Result{};
-    case Symbol::WeaponShootPosition:
-        return Detail::ShootWitness(image) ?
-            Result{image.At(0x368270), image.At(0x40161C)} : Result{};
-    case Symbol::ViewModelFov:
-        return Detail::FovWitness(image) ? Result{image.At(0x28AD20), 0} : Result{};
+    if (symbol == Symbol::ViewModelFov) {
+        const auto *layout = Detail::ClientFor(sha256);
+        Detail::Image image;
+        if (!layout || !image.Open(source, imageSize, layout->build)) return {};
+        return Detail::FovWitness(image, *layout) ? Result{image.At(layout->fovFunction), 0} : Result{};
     }
-    return {};
+    if (symbol != Symbol::EyePosition && symbol != Symbol::WeaponShootPosition) return {};
+    const auto *layout = Detail::ServerFor(sha256);
+    Detail::Image image;
+    if (!layout || !image.Open(source, imageSize, layout->build)) return {};
+    if (symbol == Symbol::EyePosition)
+        return Detail::EyeWitness(image, *layout) ? Result{image.At(layout->eyePosition), 0} : Result{};
+    return Detail::ShootWitness(image, *layout) ?
+        Result{image.At(layout->shootWrapper), image.At(layout->fireShootCall + 0x10)} : Result{};
 }
 
 inline PlayerFields ResolvePlayerFieldsImage(const std::uint8_t *source, std::size_t imageSize,
                                              std::string_view sha256)
 {
-    if (sha256 != Detail::client.sha256) return {};
+    const auto *layout = Detail::ClientFor(sha256);
     Detail::Image image;
-    if (!image.Open(source, imageSize, Detail::client) || !Detail::PlayerFieldWitness(image))
+    if (!layout || !image.Open(source, imageSize, layout->build) ||
+        !Detail::PlayerFieldWitness(image, *layout))
         return {};
     return {0x104, 0xF8};
 }
@@ -365,26 +482,35 @@ inline HeldObjectLayout ResolveHeldObjectLayoutImage(
     const std::uint8_t *server, std::size_t serverSize, std::string_view serverSha256,
     const std::uint8_t *client, std::size_t clientSize, std::string_view clientSha256)
 {
-    if (serverSha256 != Detail::server.sha256 || clientSha256 != Detail::client.sha256) return {};
+    const auto *serverLayout = Detail::ServerFor(serverSha256);
+    const auto *clientLayout = Detail::ClientFor(clientSha256);
+    // Both halves must come from the same game: the index pairs the tables.
+    if (!serverLayout || !clientLayout) return {};
+    std::size_t serverIndex = 0, clientIndex = 0;
+    while (Detail::serverLayouts[serverIndex] != serverLayout) ++serverIndex;
+    while (Detail::clientLayouts[clientIndex] != clientLayout) ++clientIndex;
+    if (serverIndex != clientIndex) return {};
     Detail::Image serverImage, clientImage;
-    if (!serverImage.Open(server, serverSize, Detail::server) ||
-        !clientImage.Open(client, clientSize, Detail::client) ||
-        !Detail::HeldObjectWitness(serverImage) || !Detail::ClientHeldColumnWitness(clientImage))
+    if (!serverImage.Open(server, serverSize, serverLayout->build) ||
+        !clientImage.Open(client, clientSize, clientLayout->build) ||
+        !Detail::HeldObjectWitness(serverImage, *serverLayout) ||
+        !Detail::ClientHeldColumnWitness(clientImage, *clientLayout))
         return {};
-    return {serverImage.At(0x7339F8), serverImage.At(0x8562D0), serverImage.At(0x858ED8),
-        clientImage.At(0xA228D0), serverImage.At(0x3CA5E7), serverImage.At(0x3C4BA0)};
+    return {serverImage.At(serverLayout->entityList), serverImage.At(serverLayout->laserCvar),
+        serverImage.At(serverLayout->columnCvar), clientImage.At(clientLayout->columnCvar),
+        serverImage.At(serverLayout->holdShootCall + 0x13), serverImage.At(serverLayout->carryAngles)};
 }
 
 namespace Detail {
 
 // The loaded module's image and the SHA-256 of the file it was loaded from.
-inline bool LoadedImage(const Build &build, const std::uint8_t *&bytes, std::size_t &size,
+inline bool LoadedImage(const wchar_t *moduleName, const std::uint8_t *&bytes, std::size_t &size,
                         char (&digest)[65])
 {
-    HMODULE module = GetModuleHandleW(build.module);
+    HMODULE module = GetModuleHandleW(moduleName);
     MODULEINFO info{};
     if (!module || !GetModuleInformation(GetCurrentProcess(), module, &info, sizeof(info)) ||
-        info.lpBaseOfDll != module || info.SizeOfImage != build.size) return false;
+        info.lpBaseOfDll != module) return false;
     std::vector<wchar_t> path(MAX_PATH);
     for (;;) {
         const DWORD count = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
@@ -408,7 +534,8 @@ inline Result ResolveLoaded(Symbol symbol)
     const std::uint8_t *bytes = nullptr;
     std::size_t size = 0;
     char digest[65]{};
-    if (!Detail::LoadedImage(Detail::For(symbol), bytes, size, digest)) return {};
+    if (!Detail::LoadedImage(symbol == Symbol::ViewModelFov ? L"client.dll" : L"server.dll",
+            bytes, size, digest)) return {};
     return ResolveImage(bytes, size, digest, symbol);
 }
 
@@ -417,7 +544,7 @@ inline PlayerFields ResolveLoadedPlayerFields()
     const std::uint8_t *bytes = nullptr;
     std::size_t size = 0;
     char digest[65]{};
-    if (!Detail::LoadedImage(Detail::client, bytes, size, digest)) return {};
+    if (!Detail::LoadedImage(L"client.dll", bytes, size, digest)) return {};
     return ResolvePlayerFieldsImage(bytes, size, digest);
 }
 
@@ -426,8 +553,8 @@ inline HeldObjectLayout ResolveLoadedHeldObjectLayout()
     const std::uint8_t *server = nullptr, *client = nullptr;
     std::size_t serverSize = 0, clientSize = 0;
     char serverDigest[65]{}, clientDigest[65]{};
-    if (!Detail::LoadedImage(Detail::server, server, serverSize, serverDigest) ||
-        !Detail::LoadedImage(Detail::client, client, clientSize, clientDigest)) return {};
+    if (!Detail::LoadedImage(L"server.dll", server, serverSize, serverDigest) ||
+        !Detail::LoadedImage(L"client.dll", client, clientSize, clientDigest)) return {};
     return ResolveHeldObjectLayoutImage(server, serverSize, serverDigest,
                                         client, clientSize, clientDigest);
 }

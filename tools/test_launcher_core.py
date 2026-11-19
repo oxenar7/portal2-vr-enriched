@@ -16,6 +16,8 @@ if os.name == "nt":
 else:
     import fcntl
 
+from . import games
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -337,7 +339,7 @@ def plan_install(repo: Path, game: Path, profile: str, *,
         from .launcher_settings import validate_settings
         config_values = validate_settings(config_values)
     if not (game / "portal2.exe").is_file() or not (game / "bin").is_dir():
-        raise FileNotFoundError(f"Not a Portal 2 installation: {game}")
+        raise FileNotFoundError(f"Not a Portal 2 or Alive & Kicking installation: {game}")
     planned: dict[Path, bytes] = {}
     for source_relative, target_relative in SOURCE_TO_TARGET:
         source = repo / source_relative
@@ -348,8 +350,23 @@ def plan_install(repo: Path, game: Path, profile: str, *,
             template = payload.decode("utf-8")
             payload = (render_config(template, profile) if config_values is None else
                        apply_config_values(template, config_values)).encode("utf-8")
+        elif target_relative == "VR/manifest.vrmanifest":
+            payload = manifest_for_game(payload, games.detect(game))
         planned[_safe_target(game, target_relative)] = payload
     return planned
+
+
+def manifest_for_game(payload: bytes, game: games.Game) -> bytes:
+    """SteamVR keys the registration by Steam app: point it at the game being installed."""
+    if game == games.PORTAL2:
+        return payload
+    text = payload.decode("utf-8")
+    for old, new in (('"steam.app.620"', f'"steam.app.{game.app_id}"'),
+                     ('"steam://launch/620/VR"', f'"steam://launch/{game.app_id}/VR"')):
+        if text.count(old) != 1:
+            raise ValueError(f"Unexpected SteamVR manifest: {old} not found once")
+        text = text.replace(old, new)
+    return text.encode("utf-8")
 
 
 def validate_launch_paths(repo: Path, game: Path, steam: Path) -> None:
@@ -358,8 +375,11 @@ def validate_launch_paths(repo: Path, game: Path, steam: Path) -> None:
     plan_install(repo, game, "baseline")
 
 
-def build_steam_command(steam: Path) -> list[str]:
-    return [str(steam), "-applaunch", "620", "-insecure", "-window", "-novid",
+def build_steam_command(steam: Path, app_id: str = "620") -> list[str]:
+    """Steam starts the game by its app id: 620 for Portal 2, 270470 for Alive & Kicking."""
+    if not app_id.isdigit():
+        raise ValueError(f"Invalid Steam app id: {app_id}")
+    return [str(steam), "-applaunch", app_id, "-insecure", "-window", "-novid",
             "+mat_motion_blur_percent_of_screen_max", "0", "+mat_queue_mode", "0",
             "+mat_vsync", "0", "+mat_antialias", "0",
             "+mat_grain_scale_override", "0", "-width", "1280", "-height", "720"]

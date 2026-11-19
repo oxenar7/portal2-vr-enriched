@@ -29,6 +29,12 @@ struct Offset
     }
 
     Offset(std::string moduleName, int currentOffset, std::string signature, int sigOffset = 0)
+        : Offset(std::move(moduleName), currentOffset, std::move(signature), {}, sigOffset) {}
+
+    // A function whose code differs between the games keeps one signature per build:
+    // the first that matches uniquely wins, each under the same unique-match rule.
+    Offset(std::string moduleName, int currentOffset, std::string signature,
+           std::vector<std::string> alternates, int sigOffset = 0)
     {
         this->moduleName = moduleName;
         this->offset = currentOffset;
@@ -36,11 +42,18 @@ struct Offset
         this->sigOffset = sigOffset;
 
         int newOffset = SigScanner::VerifyOffset(moduleName, currentOffset, signature, sigOffset);
+        for (const auto &alternate : alternates) {
+            if (newOffset != -1)
+                break;
+            newOffset = SigScanner::VerifyOffset(moduleName, currentOffset, alternate, sigOffset);
+            if (newOffset != -1)
+                this->signature = alternate;
+        }
         if (newOffset > 0)
         {
             this->offset = newOffset;
         }
-            
+
         if (newOffset == -1)
             return;
 
@@ -128,11 +141,13 @@ public:
     // +use: CPortal_Player::PollForUseEntity(bool, CBaseEntity **, CPortal_Base2D **) and its client
     // twin. The client's pick travels in the usercmd and the server searches by itself only when
     // none came (PlayerUse, server 0x35F895). Both read EyePosition and EyeVectors.
-    Offset ServerPollForUse = { "server.dll", 0x370FE0, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 83 EC 28 56 8B F1 80 BE ? ? ? ? 00 57 0F 85 ? ? ? ? A1 ? ? ? ? F3 0F 10 86" };
-    Offset ClientPollForUse = { "client.dll", 0x2B0DF0, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 83 EC 28 56 8B F1 8B 8E ? ? ? ? 57 83 F9 FF 74 1F 8B 15 ? ? ? ? 8B C1" };
+    // The frame size and the player fields they test differ in Alive & Kicking, hence the
+    // wildcards; the arguments and the stack cleanup (ret 0Ch) are the same.
+    Offset ServerPollForUse = { "server.dll", 0x370FE0, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 83 EC ? 56 8B F1 80 BE ? ? ? ? 00 57 0F 85 ? ? ? ? A1 ? ? ? ? F3 0F 10 86" };
+    Offset ClientPollForUse = { "client.dll", 0x2B0DF0, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 83 EC ? 56 8B F1 8B 8E ? ? ? ? 57 83 F9 FF 74 1F 8B 15 ? ? ? ? 8B C1" };
     // CPortal_Player::FindUseEntity(CPortal_Base2D **), the search PollForUseEntity runs after a
     // press. Called once a tick, not hooked, to show what a press would act on.
-    Offset ServerFindUseEntity = { "server.dll", 0x36D890, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 81 EC 28 09 00 00 56 57 8D 85 44 FF FF FF 50 8B F1 6A 00 8D 4D B4 51 8B CE E8" };
+    Offset ServerFindUseEntity = { "server.dll", 0x36D890, "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 81 EC 28 09 00 00 56 57 8D 85 44 FF FF FF 50 8B F1 6A 00 8D 4D ? 51 8B CE E8" };
     // What FindUseEntity itself calls, to check its pick against the gun's ray: server
     // UTIL_TraceLine(start, end, mask, ignore, collisionGroup, trace_t *) (cdecl) and
     // CCollisionProperty::CalcNearestPoint(const Vector &, Vector *) (thiscall on entity+0xE8).
@@ -166,7 +181,9 @@ public:
     Offset LocatorHudSize = { "client.dll", 0x1CC3B0, "55 8B EC 8B 55 0C 8B 0D ? ? ? ? 8B 01 8B 80 A8 00 00 00 52 8B 55 08 52 FF D0 5D C3" };
     Offset GetVectorInScreenSpace = { "client.dll", 0xDA1D0, "55 8B EC 8B 45 1C 83 EC 20 85 C0 74 2C F3 0F 10 00 F3 0F 58 45 08" };
     Offset LocatorSetBinding = { "client.dll", 0x149710, "55 8B EC 81 EC 60 01 00 00 53 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 0D" };
-    Offset LocatorUseBindingImage = { "client.dll", 0x147C20, "55 8B EC 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 4E 38 8B F8 85 C9 7F 20" };
+    // Alive & Kicking's build checks the binding count before querying the input system.
+    Offset LocatorUseBindingImage = { "client.dll", 0x147C20, "55 8B EC 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 4E 38 8B F8 85 C9 7F 20",
+        {"55 8B EC 56 8B 71 38 85 F6 7F ? 8B 45 0C 8B 4D 08 50 68 ? ? ? ? 51 E8 ? ? ? ? 83 C4 0C B8 ? ? ? ? 5E 5D C2 08 00 8B 41 2C 99 F7 FE"} };
 
     // Multiplayer
     Offset GetOwner = { "server.dll", 0xD7550, "8B 81 ? ? ? ? 83 F8 FF 74 23 8B 15 ? ? ? ?" };

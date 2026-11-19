@@ -260,7 +260,7 @@ def fixture_install(root: Path) -> tuple[Path, Path, Path]:
         "Release/d3d9.dll": b"test-d3d9",
         "thirdparty/openvr/bin/win32/openvr_api.dll": b"test-openvr",
         "L4D2VR/config.txt": TEMPLATE.encode("utf-8"),
-        "L4D2VR/manifest.vrmanifest": b"{}",
+        "L4D2VR/manifest.vrmanifest": b'{"app_key": "steam.app.620", "url": "steam://launch/620/VR"}',
         "L4D2VR/portal2vr_capsule_main.png": b"test-image",
         "L4D2VR/SteamVRActionManifest/action_manifest.json": b"{}",
         "L4D2VR/SteamVRActionManifest/bindings_knuckles.json": b"{}",
@@ -456,6 +456,25 @@ class InstallTests(unittest.TestCase):
                           "+mat_motion_blur_percent_of_screen_max", "0", "+mat_queue_mode", "0",
                           "+mat_vsync", "0", "+mat_antialias", "0",
                           "+mat_grain_scale_override", "0", "-width", "1280", "-height", "720"])
+
+    def test_steam_launch_command_names_the_chosen_game(self):
+        steam = Path(r"C:\Program Files (x86)\Steam\steam.exe")
+        command = core.build_steam_command(steam, "270470")
+        self.assertEqual(command[:3], [str(steam), "-applaunch", "270470"])
+        self.assertEqual(command[3:], core.build_steam_command(steam)[3:])
+        with self.assertRaises(ValueError):
+            core.build_steam_command(steam, "620 -console")
+
+    def test_alive_and_kicking_gets_its_own_steamvr_app_key(self):
+        from tools import games
+        source = (Path(core.__file__).resolve().parents[1] / "L4D2VR/manifest.vrmanifest").read_bytes()
+        self.assertEqual(core.manifest_for_game(source, games.PORTAL2), source)
+        aak = core.manifest_for_game(source, games.ALIVE_AND_KICKING).decode("utf-8")
+        self.assertIn('"steam.app.270470"', aak)
+        self.assertIn('"steam://launch/270470/VR"', aak)
+        self.assertNotIn("620", aak)
+        with self.assertRaises(ValueError):
+            core.manifest_for_game(b"{}", games.ALIVE_AND_KICKING)
 
     def test_failed_stage_rolls_back_new_files(self):
         with TemporaryDirectory() as temporary:

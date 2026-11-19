@@ -1,7 +1,9 @@
 #pragma once
 
-// What the in-world menu reads from the game folder: Portal 2's own localised texts
+// What the in-world menu reads from the game folder: the game's own localised texts
 // and the player's save files. File access only; no engine calls.
+
+#include "game_profile.h"
 
 #include <Windows.h>
 #include <algorithm>
@@ -55,7 +57,7 @@ inline std::map<std::string, std::wstring> ParseTokens(const std::wstring &text)
         for (; i < lineEnd && text[i] != L'"'; ++i) {
             if (text[i] == L'\\' && i + 1 < lineEnd) {
                 ++i;
-                out += text[i] == L'n' ? L' ' : text[i];
+                out += text[i] == L'n' ? L'\n' : text[i];
             } else {
                 out += text[i];
             }
@@ -88,7 +90,7 @@ inline std::wstring ReadUtf16(const std::string &path)
     return text;
 }
 
-// The language Steam runs Portal 2 in, from its app manifest; English when unknown.
+// The language Steam runs the game in, from its app manifest; English when unknown.
 inline std::string GameLanguage(const std::string &manifestText)
 {
     const std::size_t key = manifestText.find("\"language\"");
@@ -104,26 +106,44 @@ inline std::string GameLanguage(const std::string &manifestText)
 
 class Strings {
 public:
-    // gameRoot is the Portal 2 folder with a trailing separator, or empty for the working directory.
-    void Load(const std::string &gameRoot)
+    // gameRoot is the install folder (Portal 2, Alive and Kicking) with a trailing separator,
+    // or empty for the working directory.
+    void Load(const std::string &gameRoot, const GameProfile::Profile &profile = GameProfile::kPortal2)
     {
-        const std::vector<char> manifest = ReadFile(gameRoot + "..\\..\\appmanifest_620.acf", 1u << 16);
+        const std::vector<char> manifest =
+            ReadFile(gameRoot + "..\\..\\appmanifest_" + profile.appId + ".acf", 1u << 16);
         m_Language = GameLanguage(std::string(manifest.begin(), manifest.end()));
         m_Tokens.clear();
-        for (const char *file : {"basemodui_", "portal2_"}) {
-            auto tokens = ParseTokens(ReadUtf16(gameRoot + "portal2\\resource\\" + file + m_Language + ".txt"));
+        const std::string resource = gameRoot + profile.folder + "\\resource\\";
+        for (const char *file : {"basemodui_", profile.gameStrings}) {
+            auto tokens = ParseTokens(ReadUtf16(resource + file + m_Language + ".txt"));
             if (tokens.empty() && m_Language != "english")
-                tokens = ParseTokens(ReadUtf16(gameRoot + "portal2\\resource\\" + file + "english.txt"));
+                tokens = ParseTokens(ReadUtf16(resource + file + "english.txt"));
             m_Tokens.insert(tokens.begin(), tokens.end());
         }
     }
 
+    // The text in upper case, its line breaks as spaces.
     std::wstring Get(const char *token, const wchar_t *fallback) const
+    {
+        std::wstring text = Line(token, -1, fallback);
+        std::replace(text.begin(), text.end(), L'\n', L' ');
+        return text;
+    }
+
+    // One line of a text that holds several ("title\nsubtitle"), counted from 0; all of it for -1.
+    std::wstring Line(const char *token, int line, const wchar_t *fallback) const
     {
         std::string key = token;
         std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         const auto found = m_Tokens.find(key);
-        return Upper(found != m_Tokens.end() && !found->second.empty() ? found->second : std::wstring(fallback));
+        std::wstring text = found != m_Tokens.end() && !found->second.empty() ? found->second : std::wstring(fallback);
+        for (int skip = 0; skip < line; ++skip) {
+            const std::size_t at = text.find(L'\n');
+            text = at == std::wstring::npos ? std::wstring() : text.substr(at + 1);
+        }
+        if (line >= 0) text = text.substr(0, text.find(L'\n'));
+        return Upper(text);
     }
 
     const std::string &Language() const { return m_Language; }
@@ -134,27 +154,14 @@ private:
     std::map<std::string, std::wstring> m_Tokens;
 };
 
-// Single-player maps in campaign order, by chapter. Unknown maps (community, co-op) are chapter 0.
-inline int ChapterOfMap(const std::string &map)
+// The chapter of a single-player map, counted from 1. Unknown maps (community, co-op) are chapter 0.
+inline int ChapterOfMap(const std::string &map, const GameProfile::Profile &profile = GameProfile::kPortal2)
 {
-    static const std::pair<int, const char *> chapters[] = {
-        {1, "sp_a1_intro1 sp_a1_intro2 sp_a1_intro3 sp_a1_intro4 sp_a1_intro5 sp_a1_intro6 sp_a1_intro7 sp_a1_wakeup"},
-        {2, "sp_a2_intro sp_a2_laser_intro sp_a2_laser_stairs sp_a2_dual_lasers sp_a2_laser_over_goo sp_a2_catapult_intro "
-            "sp_a2_trust_fling sp_a2_pit_flings sp_a2_fizzler_intro"},
-        {3, "sp_a2_sphere_peek sp_a2_ricochet sp_a2_bridge_intro sp_a2_bridge_the_gap sp_a2_turret_intro "
-            "sp_a2_laser_relays sp_a2_turret_blocker sp_a2_laser_vs_turret sp_a2_pull_the_rug"},
-        {4, "sp_a2_column_blocker sp_a2_laser_chaining sp_a2_triple_laser sp_a2_bts1 sp_a2_bts2"},
-        {5, "sp_a2_bts3 sp_a2_bts4 sp_a2_bts5 sp_a2_bts6 sp_a2_core"},
-        {6, "sp_a3_00 sp_a3_01 sp_a3_03 sp_a3_jump_intro sp_a3_bomb_flings sp_a3_crazy_box sp_a3_transition01"},
-        {7, "sp_a3_speed_ramp sp_a3_speed_flings sp_a3_portal_intro sp_a3_end"},
-        {8, "sp_a4_intro sp_a4_tb_intro sp_a4_tb_trust_drop sp_a4_tb_wall_button sp_a4_tb_polarity sp_a4_tb_catch "
-            "sp_a4_stop_the_box sp_a4_laser_catapult sp_a4_laser_platform sp_a4_speed_tb_catch sp_a4_jump_polarity"},
-        {9, "sp_a4_finale1 sp_a4_finale2 sp_a4_finale3 sp_a4_finale4"},
-        {10, "sp_a5_credits"}};
     if (map.empty()) return 0;
     const std::string needle = " " + map + " ";
-    for (const auto &chapter : chapters)
-        if ((" " + std::string(chapter.second) + " ").find(needle) != std::string::npos) return chapter.first;
+    for (int chapter = 0; chapter < profile.chapterCount; ++chapter)
+        if ((" " + std::string(profile.chapterMaps[chapter]) + " ").find(needle) != std::string::npos)
+            return chapter + 1;
     return 0;
 }
 
@@ -217,9 +224,10 @@ inline std::wstring LocalDateTime(const FILETIME &utc)
 }
 
 // The saves of the Steam user who played last, newest first.
-inline std::vector<Save> ListSaves(const std::string &gameRoot)
+inline std::vector<Save> ListSaves(const std::string &gameRoot,
+                                   const GameProfile::Profile &profile = GameProfile::kPortal2)
 {
-    const std::string root = gameRoot + "portal2\\SAVE\\";
+    const std::string root = gameRoot + profile.folder + "\\SAVE\\";
     std::vector<std::string> folders{root};
     WIN32_FIND_DATAA entry{};
     HANDLE find = FindFirstFileA((root + "*").c_str(), &entry);

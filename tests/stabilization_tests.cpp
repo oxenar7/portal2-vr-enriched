@@ -1407,6 +1407,23 @@ int main()
     changedEngineBuild.timestamp = 0x6A4466CBu;
     expect(Portal2MaterialAbi::Classify(changedEngineBuild) == Portal2MaterialAbi::Kind::Unsupported,
            true, "unknown material-system build disables direct atlas rendering");
+    const Portal2MaterialAbi::Probe aakQueuedContext{
+        0x50000000u, 0x65D40926u, 0x14C000u,
+        0x50099E2Cu, 0x500274F0u, 0x50024F70u, 0x50027A20u};
+    expect(Portal2MaterialAbi::Classify(aakQueuedContext) == Portal2MaterialAbi::Kind::Queued,
+           true, "Alive & Kicking queued context permits the stereo atlas draw");
+    const Portal2MaterialAbi::Probe aakImmediateContext{
+        0x50000000u, 0x65D40926u, 0x14C000u,
+        0x5009CC84u, 0x5002D560u, 0x5002C7A0u, 0x5002A1E0u};
+    expect(Portal2MaterialAbi::Classify(aakImmediateContext) == Portal2MaterialAbi::Kind::Immediate,
+           true, "Alive & Kicking immediate context permits the stereo atlas draw");
+    auto crossedBuild = aakQueuedContext;
+    crossedBuild.vtable = 0x5009BEF4u;
+    crossedBuild.viewport = 0x50027710u;
+    crossedBuild.getViewport = 0x50025190u;
+    crossedBuild.drawScreenSpaceRectangle = 0x50027C40u;
+    expect(Portal2MaterialAbi::Classify(crossedBuild) == Portal2MaterialAbi::Kind::Unsupported,
+           true, "Portal 2 slot addresses are not accepted in the Alive & Kicking build");
     const auto stereoReticle = AimFeedback::ProjectReticleSpriteToEye(
         Vector{10, 0, 0}, Vector{0, 0.1f, 0}, eyeForward, eyeRight, eyeUp,
         90.0f, 1.0f, 1000, 1000, 612, 318, 56, 84, 1280, 720);
@@ -1501,6 +1518,14 @@ int main()
     changedSurface.drawTexturedSubRect = 0x5000AB40;
     expect(NativeReticle::Supported(changedSurface), false,
            "different texture-draw ABI cannot use the native reticle fix");
+    const NativeReticle::SurfaceProbe aakSurface{
+        0x50000000, 0x65D4091C, 0x197000, 0x500C4ED4, 0x5000A950, 0x5000B7B0};
+    expect(NativeReticle::Match(aakSurface) == &NativeReticle::kSurfaceBuilds[1], true,
+           "Alive & Kicking surface build selects its own clip rect global");
+    changedSurface = aakSurface;
+    changedSurface.drawTexturedSubRect = 0x5000AA10;
+    expect(NativeReticle::Supported(changedSurface), false,
+           "Portal 2 slot address is not accepted in the Alive & Kicking surface build");
     expect(AimFeedback::ClassifyReticleCanvas(1078, 1255, 56, 84, 1280, 720) ==
                AimFeedback::ReticleCanvasPosition::OutsideY, true,
            "eye-sized reticle below the reported Source canvas is diagnosed separately");
@@ -1838,6 +1863,28 @@ int main()
     expectInt(VrMenuData::ChapterOfMap("sp_a4_laser_platform"), 8, "a campaign map knows its chapter");
     expectInt(VrMenuData::ChapterOfMap("sp_a2_bts3"), 5, "chapter 5 starts at the third backstage map");
     expectInt(VrMenuData::ChapterOfMap("mp_coop_lobby_3"), 0, "maps outside the campaign have no chapter");
+    const auto &aak = GameProfile::kAliveAndKicking;
+    expectInt(VrMenuData::ChapterOfMap("sp_a51_chamb02", aak), 1, "Alive & Kicking chamber 02 is in chapter 1");
+    expectInt(VrMenuData::ChapterOfMap("sp_a52_chamb12", aak), 4, "Alive & Kicking chapter 4 runs to chamber 12");
+    expectInt(VrMenuData::ChapterOfMap("sp_a54_escape02", aak), 11, "the escape belongs to the last chapter");
+    expectInt(VrMenuData::ChapterOfMap("sp_a56_adv13", aak), 0, "advanced chambers have no chapter");
+    expectInt(VrMenuData::ChapterOfMap("sp_a2_core", aak), 0, "Portal 2 maps are not Alive & Kicking chapters");
+    expectInt(VrMenuData::ChapterOfMap("sp_a50_chamb00"), 0, "Alive & Kicking maps are not Portal 2 chapters");
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Alive and Kicking\\AAK\\bin\\client.dll") == &aak, true,
+           "client.dll under the AAK folder selects Alive & Kicking");
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Portal 2\\portal2\\bin\\client.dll") == &GameProfile::kPortal2, true,
+           "client.dll under the portal2 folder selects Portal 2");
+    expect(&GameProfile::ForClientPath(L"client.dll") == &GameProfile::kPortal2, true,
+           "a bare module name falls back to Portal 2");
+    VrMenuData::Strings aakStrings;
+    aakStrings.Load("C:\\nowhere\\", aak);
+    expectInt(static_cast<int>(aakStrings.Count()), 0, "missing localisation files leave no texts");
+    VrMenu::Texts aakTexts;
+    aakTexts.Load(aakStrings, aak);
+    expect(aakTexts.chapterTitle[11] == L"CHAPTER 11" && aakTexts.chapterSubtitle[11].empty() &&
+           aakTexts.profile == &aak, true, "the eleventh chapter has a fallback title");
     expect(VrMenuData::SafeSaveName("1794830356") && VrMenuData::SafeSaveName("autosave01"), true,
            "the game's own save names are accepted");
     expect(VrMenuData::SafeSaveName("a;quit") || VrMenuData::SafeSaveName("a b") || VrMenuData::SafeSaveName(""), false,
@@ -1848,6 +1895,10 @@ int main()
     const auto menuTokens = VrMenuData::ParseTokens(L"\"lang\"\n{\n\"PORTAL2_SaveGame\"\t\t\"SAVE \\\"NOW\\\"\"\n// \"x\"\n\"L4D360UI_Back\" \"Back\"\n}");
     expect(menuTokens.count("portal2_savegame") == 1 && menuTokens.at("portal2_savegame") == L"SAVE \"NOW\"" &&
            menuTokens.at("l4d360ui_back") == L"Back", true, "localisation pairs are read with their escapes");
+    const auto lineTokens = VrMenuData::ParseTokens(L"\"SP_PRESENCE_TEXT_CH2\" \"Chapter 2\\nTest Chamber 04\"\n");
+    expect(lineTokens.count("sp_presence_text_ch2") == 1 &&
+           lineTokens.at("sp_presence_text_ch2") == L"Chapter 2\nTest Chamber 04", true,
+           "an escaped line break is kept as a line break");
     std::vector<char> saveBytes(20 + 8 + 144 + 80, '\0');
     std::memcpy(saveBytes.data(), "JSAV", 4);
     const std::uint32_t saveTokenBytes = 8;

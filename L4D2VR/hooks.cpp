@@ -14,6 +14,7 @@
 #include "reticle_telemetry.h"
 #include "native_reticle.h"
 #include "eye_hud.h"
+#include "game_profile.h"
 #include <Windows.h>
 #include <intrin.h>
 #include <algorithm>
@@ -201,9 +202,11 @@ static std::optional<NativeReticleSurface> PrepareNativeReticleSurface(ISurface 
         return std::nullopt;
     static thread_local std::uintptr_t checkedTable = 0;
     static thread_local std::uintptr_t checkedModule = 0;
+    static thread_local const NativeReticle::SurfaceBuild *checkedBuild = nullptr;
     if (table != checkedTable) {
         checkedTable = table;
         checkedModule = 0;
+        checkedBuild = nullptr;
         const auto module = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(L"vguimatsurface.dll"));
         IMAGE_DOS_HEADER dos{};
         IMAGE_NT_HEADERS32 nt{};
@@ -212,31 +215,42 @@ static std::optional<NativeReticleSurface> PrepareNativeReticleSurface(ISurface 
             !read(module + dos.e_lfanew, &nt, sizeof(nt)) || nt.Signature != IMAGE_NT_SIGNATURE ||
             nt.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
             return std::nullopt;
+        const auto *known = NativeReticle::FindSurfaceBuild(nt.FileHeader.TimeDateStamp,
+            nt.OptionalHeader.SizeOfImage);
         NativeReticle::SurfaceProbe probe{module, nt.FileHeader.TimeDateStamp,
             nt.OptionalHeader.SizeOfImage, table, 0, 0};
         // Read slots only from the recognized table, not an arbitrary vptr.
-        if (table != module + 0xC4ED4 ||
+        if (!known || table != module + known->vtable ||
             !read(table + NativeReticle::kDrawTexturedSubRectSlot * sizeof(void *),
                 &probe.drawTexturedSubRect, sizeof(probe.drawTexturedSubRect)) ||
             !read(table + NativeReticle::kGetScreenSizeSlot * sizeof(void *),
-                &probe.getScreenSize, sizeof(probe.getScreenSize)) || !NativeReticle::Supported(probe))
+                &probe.getScreenSize, sizeof(probe.getScreenSize)) || NativeReticle::Match(probe) != known)
             return std::nullopt;
         constexpr std::array<std::uint8_t, 12> clipPrefix{
             0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08, 0x8B, 0x4D, 0x14, 0x8B, 0x55, 0x10};
         std::array<std::uint8_t, clipPrefix.size()> actual{};
-        if (!read(module + NativeReticle::kClipSetterRva, actual.data(), actual.size()) || actual != clipPrefix)
+        std::array<std::uint8_t, 6> rectCompare{};
+        std::uint32_t comparedRect = 0;
+        if (!read(module + known->clipSetter, actual.data(), actual.size()) || actual != clipPrefix ||
+            !read(module + known->clipSetter + NativeReticle::kClipSetterRectCompare,
+                rectCompare.data(), rectCompare.size()) ||
+            rectCompare[0] != 0x39 || rectCompare[1] != 0x05)
+            return std::nullopt;
+        std::memcpy(&comparedRect, rectCompare.data() + 2, sizeof(comparedRect));
+        if (comparedRect != module + known->clipRect)
             return std::nullopt;
         checkedModule = module;
+        checkedBuild = known;
     }
-    if (!checkedModule)
+    if (!checkedModule || !checkedBuild)
         return std::nullopt;
     NativeReticleSurface result;
-    if (!read(checkedModule + NativeReticle::kClipRectRva, &result.previous, sizeof(result.previous)) ||
+    if (!read(checkedModule + checkedBuild->clipRect, &result.previous, sizeof(result.previous)) ||
         !read(reinterpret_cast<std::uintptr_t>(surface) + NativeReticle::kSurfaceTranslationOffset,
             result.translation.data(), sizeof(result.translation)))
         return std::nullopt;
     result.setter = reinterpret_cast<NativeReticleSurface::ClipSetter>(
-        checkedModule + NativeReticle::kClipSetterRva);
+        checkedModule + checkedBuild->clipSetter);
     return result;
 }
 
@@ -267,11 +281,11 @@ static Portal2MaterialAbi::Kind CheckRenderContextAbi(IMatRenderContext *context
         !read(reinterpret_cast<const void *>(module + dos.e_lfanew), &nt, sizeof(nt)) ||
         nt.Signature != IMAGE_NT_SIGNATURE ||
         nt.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
-        nt.FileHeader.TimeDateStamp != 0x6A4466CAu ||
-        nt.OptionalHeader.SizeOfImage != 0x14D000u ||
         module > UINTPTR_MAX - nt.OptionalHeader.SizeOfImage)
         return checkedKind;
-    if (vtable != module + 0x9BEF4u && vtable != module + 0x9ED4Cu)
+    const auto *build = Portal2MaterialAbi::FindBuild(nt.FileHeader.TimeDateStamp,
+        nt.OptionalHeader.SizeOfImage);
+    if (!build || !Portal2MaterialAbi::KnownVtable(*build, module, vtable))
         return checkedKind;
     Portal2MaterialAbi::Probe probe{module, nt.FileHeader.TimeDateStamp,
         nt.OptionalHeader.SizeOfImage, vtable, 0, 0, 0};
@@ -2070,12 +2084,13 @@ void __fastcall Hooks::dLocatorDrawTarget(void *ecx, void *edx, void *target)
 	const std::uint32_t draws = s_HintCanvas.active ? s_HintTargets.CountDraw(target) : 0;
 	if (draws != 1 && draws != 120)
 		return;
-	// CLocatorTarget fields as CLocatorPanel::DrawTarget leaves them in this
-	// client.dll: icon centre +0xCC/+0xD0, icon size +0xD4, effect flags +0x13C.
+	// CLocatorTarget fields as CLocatorPanel::DrawTarget leaves them in this game's
+	// client.dll: icon centre x/y and size, then the effect flags.
+	const auto &game = GameProfile::Current();
 	std::int32_t fields[4]{};
 	const auto *base = static_cast<const std::uint8_t *>(target);
-	std::memcpy(&fields[0], base + 0xCC, 3 * sizeof(std::int32_t));
-	std::memcpy(&fields[3], base + 0x13C, sizeof(std::int32_t));
+	std::memcpy(&fields[0], base + game.locatorCentre, 3 * sizeof(std::int32_t));
+	std::memcpy(&fields[3], base + game.locatorFlags, sizeof(std::int32_t));
 	const char *binding = s_HintTargets.Binding(target);
 	Logger::Write(std::string(draws == 1 ? "Instructor hint drawn: " : "Instructor hint settled: ") +
 		(binding && *binding ? binding : "no binding") +

@@ -521,6 +521,47 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(values["SnapTurning"], "true")
         self.assertEqual(values["ExperimentalWorldAimMarker"], "true")
 
+    def make_aak(self):
+        aak = self.folder / "Alive and Kicking"
+        (aak / "bin").mkdir(parents=True)
+        (aak / "AAK").mkdir()
+        (aak / "portal2.exe").write_bytes(b"fixture")
+        (aak / "AAK/gameinfo.txt").write_text('"GameInfo" {}', encoding="utf-8")
+        return aak
+
+    def test_alive_and_kicking_installs_with_its_own_record_and_app_id(self):
+        from tools import games
+        self.app.apply()
+        self.assertTrue(self.app.installed)
+        portal_state = self.state_path.read_bytes()
+        aak = self.make_aak()
+        self.app.game_var.set(str(aak))
+        self.assertFalse(self.app.installed, "Alive & Kicking has no install yet")
+        observed = []
+        with patch.object(self.launcher.subprocess, "Popen", side_effect=lambda command, **_: observed.append(command)):
+            self.app.launch()
+        self.assertEqual(observed, [core.build_steam_command(self.steam, "270470")])
+        self.assertTrue((aak / "bin/d3d9.dll").is_file())
+        self.assertEqual(self.state_path.read_bytes(), portal_state, "Portal 2's record is untouched")
+        aak_state = games.state_path(self.state_path, games.ALIVE_AND_KICKING)
+        self.assertEqual(core.load_state(aak_state)["installed_game_dir"], str(aak.resolve()))
+        self.assertTrue(self.app.installed)
+        self.app.restore()
+        self.assertFalse((aak / "bin/d3d9.dll").exists())
+        self.app.game_var.set(str(self.game))
+        self.assertTrue(self.app.installed, "Portal 2 stays installed")
+
+    def test_switch_game_finds_the_other_game_in_the_steam_libraries(self):
+        from tools import games
+        aak = self.make_aak()
+        with patch.object(self.launcher, "find_game", return_value=aak) as find:
+            self.app.switch_game()
+        find.assert_called_once_with(self.steam.parent, games.ALIVE_AND_KICKING)
+        self.assertEqual(self.app.game_var.get(), str(aak))
+        with patch.object(self.launcher, "find_game", return_value=None):
+            self.app.switch_game()
+        self.assertEqual(self.app.game_var.get(), str(aak), "nothing found keeps the folder")
+
     def test_running_game_blocks_apply_without_writes(self):
         with patch.object(self.launcher, "game_is_running", return_value=True):
             self.app.apply()

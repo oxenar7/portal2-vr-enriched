@@ -7,6 +7,7 @@
 #include "offsets.h"
 #include "sigscanner.h"
 #include "logger.h"
+#include "game_profile.h"
 #include <vector>
 #include <winver.h>
 
@@ -71,6 +72,8 @@ bool Game::Initialize()
     GetModuleFileNameA(GetModuleHandleA("vguimatsurface.dll"), surfacePath, MAX_PATH);
     Logger::Write(std::string("Loaded vguimatsurface.dll: ") + surfacePath +
                   " (" + ModuleVersion(surfacePath) + ")");
+    const auto &game = GameProfile::Current();
+    Logger::Write(std::string("Game: ") + game.name + " (folder " + game.folder + ", Steam app " + game.appId + ")");
 
     m_ClientEntityList = (IClientEntityList *)GetInterface("client.dll", "VClientEntityList003");
     m_EngineTrace = (IEngineTrace *)GetInterface("engine.dll", "EngineTraceClient004");

@@ -9,15 +9,15 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from tools import launcher_art as art, launcher_settings as settings, test_launcher_core as core
+    from tools import games, launcher_art as art, launcher_settings as settings, test_launcher_core as core
     from tools.test_launcher import game_is_running
     from tools.launcher_paths import application_root, prepare_frozen_process
-    from tools.steam_paths import find_installation
+    from tools.steam_paths import find_game, find_installation
 else:
-    from . import launcher_art as art, launcher_settings as settings, test_launcher_core as core
+    from . import games, launcher_art as art, launcher_settings as settings, test_launcher_core as core
     from .test_launcher import game_is_running
     from .launcher_paths import application_root, prepare_frozen_process
-    from .steam_paths import find_installation
+    from .steam_paths import find_game, find_installation
 
 
 REPO = application_root()
@@ -308,8 +308,8 @@ class Launcher:
                 prefs = {**prefs, "game_dir": game_dir, "steam_exe": steam_exe}
                 found = f"Found {' and '.join(names)} automatically."
         self.saved = prefs
-        self.installed = bool(legacy["managed_files"])
         self.game_var = tk.StringVar(root, prefs["game_dir"])
+        self.installed = self._read_installed()
         self.steam_var = tk.StringVar(root, prefs["steam_exe"])
         # Options > VR changes made in the game show up here as unsaved edits.
         self.ingame = settings.read_ingame_settings(Path(prefs["game_dir"]))
@@ -343,6 +343,7 @@ class Launcher:
         self._build(width, height)
         for var in (*self.vars.values(), self.game_var, self.steam_var):
             var.trace_add("write", self._changed)
+        self.game_var.trace_add("write", self._game_changed)
         self.status_var.trace_add("write", self._status_changed)
         self._changed()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -428,7 +429,9 @@ class Launcher:
 
     def _build_setup(self, page):
         c = page.canvas
-        self.game_actions = (CanvasButton(self, c, "Open", self.open_game, surface=CARD),
+        self.switch_button = CanvasButton(self, c, "Switch game", self.switch_game, surface=CARD)
+        self.game_actions = (self.switch_button,
+                             CanvasButton(self, c, "Open", self.open_game, surface=CARD),
                              CanvasButton(self, c, "Change", self.browse_game, surface=CARD))
         self.steam_actions = (CanvasButton(self, c, "Change", self.browse_steam, surface=CARD),)
         self.restore_button = CanvasButton(self, c, "Restore original game files", self.restore, "link", CARD)
@@ -671,9 +674,11 @@ class Launcher:
         c = page.canvas
         c.delete("layout")
         game_found, steam_found = self._paths_found()
-        y = self._setup_card(c, 0, width, "ok" if game_found else "warn", "Portal 2",
+        game = self._game()
+        self.switch_button.text = (games.ALIVE_AND_KICKING if game == games.PORTAL2 else games.PORTAL2).name
+        y = self._setup_card(c, 0, width, "ok" if game_found else "warn", game.name,
                              str(Path(self.game_var.get())) if game_found else
-                             "portal2.exe is not in this folder. Choose your Portal 2 folder.",
+                             "portal2.exe is not in this folder. Choose your Portal 2 or Alive & Kicking folder.",
                              self.game_actions, path=game_found)
         y = self._setup_card(c, y, width, "ok" if steam_found else "warn", "Steam",
                              str(Path(self.steam_var.get())) if steam_found else
@@ -825,8 +830,8 @@ class Launcher:
         if launch:
             core.validate_launch_paths(self.repo, game, steam)
         core.plan_install(self.repo, game, "baseline", config_values=prefs["values"])
-        core.recover_pending_transaction(self.install_state_path)
-        state = core.load_state(self.install_state_path)
+        core.recover_pending_transaction(self._state_path())
+        state = core.load_state(self._state_path())
         if not state["managed_files"] and not messagebox.askyesno(
                 "Install Portal 2 VR Enriched", f"Install the mod in:\n{game}\n\n"
                 "Existing files will be backed up first. You can restore them from this launcher.", parent=self.root):
@@ -836,7 +841,7 @@ class Launcher:
     def _stage(self, prefs):
         settings.save_preferences(self.preferences_path, prefs)
         self.saved = prefs
-        core.stage_install(self.repo, Path(prefs["game_dir"]), self.install_state_path,
+        core.stage_install(self.repo, Path(prefs["game_dir"]), self._state_path(),
                            "baseline", config_values=prefs["values"])
         # config.txt now carries the imported in-game values; an unretired file would
         # override later launcher edits.
@@ -845,9 +850,29 @@ class Launcher:
         self._refresh_install()
         self._changed()
 
+    def _game(self):
+        return games.detect(Path(self.game_var.get().strip()))
+
+    def _state_path(self):
+        """Each game keeps its own install record and backups."""
+        return games.state_path(self.install_state_path, self._game())
+
+    def _read_installed(self):
+        try:
+            return bool(core.load_state(self._state_path())["managed_files"])
+        except (OSError, ValueError, RuntimeError):
+            return False
+
+    def _game_changed(self, *_):
+        installed = self._read_installed()
+        if installed != self.installed:
+            self.installed = installed
+            self._paint_header()
+            self.pages["Setup"].relayout()
+
     def _refresh_install(self):
         try:
-            self.installed = bool(core.load_state(self.install_state_path)["managed_files"])
+            self.installed = bool(core.load_state(self._state_path())["managed_files"])
         except (OSError, ValueError, RuntimeError):
             return
         self.restore_button._set("normal")  # Restoring removes the link from under the pointer.
@@ -873,8 +898,9 @@ class Launcher:
             self._stage(prefs)
             staged = True
             steam = Path(prefs["steam_exe"])
-            subprocess.Popen(core.build_steam_command(steam), cwd=str(steam.parent))
-            self.status_var.set("Portal 2 is starting through Steam; SteamVR opens with it.")
+            game = self._game()
+            subprocess.Popen(core.build_steam_command(steam, game.app_id), cwd=str(steam.parent))
+            self.status_var.set(f"{game.name} is starting through Steam; SteamVR opens with it.")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             if staged:
                 error = RuntimeError(f"Steam launch failed: {error}. Mod files and backups are retained; retry or use Restore original game files.")
@@ -884,10 +910,11 @@ class Launcher:
         try:
             if game_is_running():
                 raise RuntimeError("Close Portal 2 before restoring game files.")
-            recovered = core.recover_pending_transaction(self.install_state_path)
-            state = core.load_state(self.install_state_path)
+            state_path = self._state_path()
+            recovered = core.recover_pending_transaction(state_path)
+            state = core.load_state(state_path)
             if not state["managed_files"]:
-                core.restore_install(Path(state["game_dir"]), self.install_state_path)
+                core.restore_install(Path(state["game_dir"]), state_path)
                 self.status_var.set("Interrupted operation recovered; original files restored." if recovered else
                                     "No files are currently managed by the launcher.")
                 return
@@ -895,7 +922,7 @@ class Launcher:
             if not messagebox.askyesno("Restore originals", f"Restore pre-install files in:\n{game}\n\n"
                                       "Your settings and backup snapshot will be kept.", parent=self.root):
                 return
-            core.restore_install(game, self.install_state_path)
+            core.restore_install(game, state_path)
             self.status_var.set("Original files restored. Settings and backup snapshot retained.")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             self._error(error)
@@ -903,10 +930,26 @@ class Launcher:
             self._refresh_install()
 
     def browse_game(self):
-        path = filedialog.askdirectory(parent=self.root, title="Select the folder containing portal2.exe",
+        path = filedialog.askdirectory(parent=self.root, title="Select the game folder containing portal2.exe",
                                        initialdir=self.game_var.get())
         if path:
             self.game_var.set(path)
+
+    def switch_game(self):
+        """Point the launcher at the other game's folder, found in the chosen Steam client."""
+        other = games.ALIVE_AND_KICKING if self._game() == games.PORTAL2 else games.PORTAL2
+        steam = Path(self.steam_var.get().strip())
+        try:
+            folder = find_game(steam.parent, other) if steam.is_file() else None
+        except (OSError, ValueError):
+            folder = None
+        if folder is None:
+            self._error(FileNotFoundError(f"{other.name} was not found in this Steam client's libraries. "
+                                          "Use Change to choose its folder."))
+            return
+        self.game_var.set(str(folder))
+        self.status_var.set(f"Switched to {other.name}. Launch installs the mod there too; "
+                            "each game keeps its own backup.")
 
     def browse_steam(self):
         path = filedialog.askopenfilename(parent=self.root, title="Select Steam.exe",
@@ -930,7 +973,7 @@ class Launcher:
         self._open(Path(self.game_var.get()) / "bin/portal2vr.log")
 
     def open_backups(self):
-        self._open(self.install_state_path.parent / ".launcher-backups")
+        self._open(self._state_path().parent / ".launcher-backups")
 
     def about(self):
         messagebox.showinfo("About Portal 2 VR Enriched", "Unofficial fan project, not affiliated with Valve.\n"

@@ -1,16 +1,21 @@
-"""Find the Steam client and its Portal 2 installation so players need not browse.
+"""Find the Steam client and its Portal 2 (or Alive & Kicking) installation so players need not browse.
 
 Steam records its folder in the registry and its game libraries in
 steamapps/libraryfolders.vdf; each installed game has an appmanifest_<appid>.acf
 whose installdir names its folder under steamapps/common. Only paths that
-actually contain steam.exe or portal2.exe are ever returned.
+actually contain steam.exe or the game's portal2.exe are ever returned.
 """
 import os
 from pathlib import Path
 import re
 import sys
 
-PORTAL2_APPID = "620"
+if not __package__:
+    from tools import games
+else:
+    from . import games
+
+PORTAL2_APPID = games.PORTAL2.app_id
 _TOKENS = re.compile(r'\s+|//[^\r\n]*|"((?:[^"\\]|\\.)*)"|([{}])|([^\s{}"]+)')
 _ESCAPES = {"n": "\n", "t": "\t", "\\": "\\", '"': '"'}
 
@@ -101,8 +106,8 @@ def registry_steam_exe() -> Path | None:
     return None
 
 
-def library_folders(steam_root: Path) -> list[Path]:
-    """Steam's libraries, the ones listing Portal 2 first, the Steam folder itself included."""
+def library_folders(steam_root: Path, app_id: str = PORTAL2_APPID) -> list[Path]:
+    """Steam's libraries, the ones listing the app first, the Steam folder itself included."""
     entries = _read_keyvalues(steam_root / "steamapps" / "libraryfolders.vdf").get("libraryfolders", {})
     with_portal, others = [], [steam_root]
     if isinstance(entries, dict):
@@ -113,7 +118,7 @@ def library_folders(steam_root: Path) -> list[Path]:
             if not isinstance(path, str) or not path:
                 continue
             apps = entry.get("apps", {}) if isinstance(entry, dict) else {}
-            (with_portal if isinstance(apps, dict) and PORTAL2_APPID in apps else others).append(Path(path))
+            (with_portal if isinstance(apps, dict) and app_id in apps else others).append(Path(path))
     unique, seen = [], set()
     for library in with_portal + others:
         key = os.path.normcase(os.path.normpath(str(library)))
@@ -123,23 +128,29 @@ def library_folders(steam_root: Path) -> list[Path]:
     return unique
 
 
-def find_portal2(steam_root: Path) -> Path | None:
-    for library in library_folders(steam_root):
+def find_game(steam_root: Path, game: games.Game) -> Path | None:
+    """The install folder of a game in the libraries of this Steam client."""
+    for library in library_folders(steam_root, game.app_id):
         apps = library / "steamapps"
-        manifest = _read_keyvalues(apps / f"appmanifest_{PORTAL2_APPID}.acf").get("appstate", {})
+        manifest = _read_keyvalues(apps / f"appmanifest_{game.app_id}.acf").get("appstate", {})
         folder = manifest.get("installdir") if isinstance(manifest, dict) else None
-        for name in dict.fromkeys(n for n in (folder, "Portal 2") if isinstance(n, str) and n):
+        for name in dict.fromkeys(n for n in (folder, game.install_dir) if isinstance(n, str) and n):
             candidate = apps / "common" / name
-            if is_portal2_dir(candidate):
+            if is_portal2_dir(candidate) and (game == games.PORTAL2 or games.is_install(candidate, game)):
                 return _real_path(candidate)
     return None
+
+
+def find_portal2(steam_root: Path) -> Path | None:
+    return find_game(steam_root, games.PORTAL2)
 
 
 def find_installation(game_dir: str, steam_exe: str, registry=registry_steam_exe) -> tuple[str, str]:
     """Return (game_dir, steam_exe), replacing only values that do not point at the real files.
 
     A Portal 2 folder is looked up in the libraries of the given Steam client when
-    that one is valid, so the game and the client that launches it stay paired.
+    that one is valid, so the game and the client that launches it stay paired. A
+    valid Alive & Kicking folder counts as found too: it holds portal2.exe as well.
     """
     game_ok = bool(game_dir.strip()) and is_portal2_dir(Path(game_dir.strip()))
     steam_ok = bool(steam_exe.strip()) and is_steam_exe(Path(steam_exe.strip()))

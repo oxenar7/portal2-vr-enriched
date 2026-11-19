@@ -8,10 +8,10 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 if __package__:
-    from . import test_launcher_core as core
+    from . import games, test_launcher_core as core
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from tools import test_launcher_core as core
+    from tools import games, test_launcher_core as core
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -19,15 +19,19 @@ STATE_PATH = Path(__file__).resolve().parent / ".launcher-state.json"
 
 
 def game_is_running() -> bool:
-    """Fail closed if the Windows process list cannot be checked."""
-    result = subprocess.run(
-        ["tasklist", "/FI", "IMAGENAME eq portal2.exe", "/FO", "CSV", "/NH"],
-        capture_output=True, text=True, check=False, timeout=5,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    if result.returncode:
-        raise RuntimeError(f"Cannot check portal2.exe process: {result.stderr.strip()}")
-    return '"portal2.exe"' in result.stdout.lower()
+    """Fail closed if the Windows process list cannot be checked. Both games run as
+    portal2.exe; Alive & Kicking can also start as aak.exe."""
+    for name in games.PROCESS_NAMES:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {name}", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, check=False, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode:
+            raise RuntimeError(f"Cannot check {name} process: {result.stderr.strip()}")
+        if f'"{name}"' in result.stdout.lower():
+            return True
+    return False
 
 
 class TestLauncher:

@@ -92,7 +92,7 @@ void WorldMenu::Update(VR &vr, bool wanted, bool cursorVisible, bool inputReady)
     const auto now = std::chrono::steady_clock::now();
     if (m_RescanAt != std::chrono::steady_clock::time_point{} && now >= m_RescanAt) {
         m_RescanAt = {};
-        m_Model.SetSaves(VrMenuData::ListSaves(""));
+        m_Model.SetSaves(VrMenuData::ListSaves("", GameProfile::Current()));
     }
     Slide();
     Repaint(vr, submitted);
@@ -101,16 +101,18 @@ void WorldMenu::Update(VR &vr, bool wanted, bool cursorVisible, bool inputReady)
 void WorldMenu::Open(VR &vr)
 {
     if (!m_TextsLoaded) {
+        const auto &game = GameProfile::Current();
         VrMenuData::Strings strings;
-        strings.Load("");
+        strings.Load("", game);
         VrMenu::Texts texts;
-        texts.Load(strings);
+        texts.Load(strings, game);
         m_Model.SetTexts(std::move(texts));
         m_TextsLoaded = true;
-        Logger::Write("In-world menu: " + std::to_string(strings.Count()) + " game texts in " + strings.Language() +
+        Logger::Write("In-world menu: " + std::string(game.name) + ", " + std::to_string(strings.Count()) +
+            " game texts in " + strings.Language() +
             "; font " + std::string(m_Text->Family().begin(), m_Text->Family().end()));
     }
-    m_Model.SetSaves(VrMenuData::ListSaves(""));
+    m_Model.SetSaves(VrMenuData::ListSaves("", GameProfile::Current()));
     m_Model.Open();
 
     // Anchor to where the head is and faces now; the panels then stay put in the room.

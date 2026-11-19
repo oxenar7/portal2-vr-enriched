@@ -45,11 +45,37 @@ inline std::optional<SpriteLayout> ScaleLayout(const AimFeedback::ScreenPoint &p
         (std::max)(1, static_cast<int>(std::lround(height * scale)))};
 }
 
-constexpr std::uintptr_t kClipSetterRva = 0x1010;
-constexpr std::uintptr_t kClipRectRva = 0x13B680;
 constexpr std::uintptr_t kSurfaceTranslationOffset = 0xC;
 constexpr std::size_t kDrawTexturedSubRectSlot = 103;
 constexpr std::size_t kGetScreenSizeSlot = 42;
+// The clip setter starts by comparing its first argument with the clip rect global:
+// cmp ds:[clipRect], eax at this offset, so the global is checked against the code.
+constexpr std::size_t kClipSetterRectCompare = 16;
+
+// One verified vguimatsurface.dll build: header identity, CMatSystemSurface table,
+// the two slots the reticle route calls, the cdecl clip setter and the clip rect global.
+struct SurfaceBuild
+{
+    std::uint32_t timestamp;
+    std::uint32_t imageSize;
+    std::uint32_t vtable;
+    std::uint32_t drawTexturedSubRect;
+    std::uint32_t getScreenSize;
+    std::uint32_t clipSetter;
+    std::uint32_t clipRect;
+};
+
+inline constexpr SurfaceBuild kSurfaceBuilds[] = {
+    {0x6A4466CE, 0x198000, 0xC4ED4, 0xAA10, 0xB8C0, 0x1010, 0x13B680}, // Portal 2
+    {0x65D4091C, 0x197000, 0xC4ED4, 0xA950, 0xB7B0, 0x1010, 0x13B3E0}, // Portal: Alive & Kicking
+};
+
+inline const SurfaceBuild *FindSurfaceBuild(std::uint32_t timestamp, std::uint32_t imageSize)
+{
+    for (const auto &build : kSurfaceBuilds)
+        if (build.timestamp == timestamp && build.imageSize == imageSize) return &build;
+    return nullptr;
+}
 
 struct SurfaceProbe
 {
@@ -61,14 +87,18 @@ struct SurfaceProbe
     std::uintptr_t getScreenSize;
 };
 
-inline bool Supported(const SurfaceProbe &probe)
+inline const SurfaceBuild *Match(const SurfaceProbe &probe)
 {
-    return probe.module && probe.timestamp == 0x6A4466CE && probe.imageSize == 0x198000 &&
-        probe.module <= UINTPTR_MAX - probe.imageSize &&
-        probe.vtable == probe.module + 0xC4ED4 &&
-        probe.drawTexturedSubRect == probe.module + 0xAA10 &&
-        probe.getScreenSize == probe.module + 0xB8C0;
+    const SurfaceBuild *build = FindSurfaceBuild(probe.timestamp, probe.imageSize);
+    if (!probe.module || !build || probe.module > UINTPTR_MAX - probe.imageSize ||
+        probe.vtable != probe.module + build->vtable ||
+        probe.drawTexturedSubRect != probe.module + build->drawTexturedSubRect ||
+        probe.getScreenSize != probe.module + build->getScreenSize)
+        return nullptr;
+    return build;
 }
+
+inline bool Supported(const SurfaceProbe &probe) { return Match(probe) != nullptr; }
 
 struct ClipRect
 {

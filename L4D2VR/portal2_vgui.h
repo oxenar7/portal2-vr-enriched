@@ -5,8 +5,11 @@
 // Slots were read from the installed 32-bit binaries (RTTI vtables of
 // CMatSystemSurface in vguimatsurface.dll, VPanelWrapper, CSchemeManager and
 // CScheme in vgui2.dll, disassembled with dumpbin). Each slot carries the
-// prologue observed there; "?" bytes are relocated absolute addresses. Any
-// mismatch leaves the whole page disabled instead of calling an unknown slot.
+// prologue observed there; "?" bytes are relocated absolute addresses, or the
+// frame size and CMatSystemSurface field offsets that are 4 bytes lower in the
+// Portal: Alive & Kicking build (DrawPrintText, GetScreenSize, PlaySound; the
+// functions are otherwise the same). Any mismatch leaves the whole page disabled
+// instead of calling an unknown slot.
 
 #include "verified_portal_symbols.h"
 
@@ -74,7 +77,7 @@ inline constexpr Slot DrawFilledRect{15, "55 8B EC 83 EC 40 53 57 8B F9 8B 0D", 
 inline constexpr Slot DrawSetTextFont{22, "55 8B EC 8B 45 08 89 81 B0 02 00 00 5D C2 04 00", "DrawSetTextFont"};
 inline constexpr Slot DrawSetTextColor{24, "55 8B EC 66 0F 6E 45 14 53 56 8B F1", "DrawSetTextColor"};
 inline constexpr Slot DrawSetTextPos{25, "55 8B EC 8B 45 08 8B 55 0C 89 41 34 89 51 38 5D C2 08 00", "DrawSetTextPos"};
-inline constexpr Slot DrawPrintText{27, "55 8B EC 83 EC 4C 53 56 8B F1 8B 0D", "DrawPrintText"};
+inline constexpr Slot DrawPrintText{27, "55 8B EC 83 EC ? 53 56 8B F1 8B 0D", "DrawPrintText"};
 inline constexpr Slot DrawGetTextureId{33, "55 8B EC E8 ? ? ? ? 8B 10 8B C8 8B 52 34 5D FF E2", "DrawGetTextureId"};
 inline constexpr Slot DrawSetTextureFile{35, "55 8B EC 56 57 8B F1 E8", "DrawSetTextureFile"};
 inline constexpr Slot DrawSetTexture{37, "55 8B EC 56 8B 75 08 57 8B F9 3B B7 BC 02 00 00", "DrawSetTexture"};
@@ -82,10 +85,10 @@ inline constexpr Slot DrawTexturedRect{39, "55 8B EC 83 EC 50 56 8B F1 80 7E 2F 
 inline constexpr Slot CreateNewTextureID{41, "55 8B EC E8 ? ? ? ? 8B 10 8B C8 8B 12 5D FF E2", "CreateNewTextureID"};
 // Not in All: only the instructor hint glyphs need it, and they verify it themselves.
 inline constexpr Slot DrawSetTextureRGBA{36, "55 8B EC E8 ? ? ? ? 8B 4D 14 8B 10 8B 52 30 6A 02 6A 00 51", "DrawSetTextureRGBA"};
-inline constexpr Slot GetScreenSize{42, "55 8B EC 83 EC 08 80 B9 80 03 01 00 00", "GetScreenSize"};
+inline constexpr Slot GetScreenSize{42, "55 8B EC 83 EC 08 80 B9 ? 03 01 00 00", "GetScreenSize"};
 inline constexpr Slot GetFontTall{72, "55 8B EC 8B 45 08 50 E8", "GetFontTall"};
 inline constexpr Slot GetTextSize{77, "55 8B EC 8B 45 14 8B 4D 10 8B 55 0C 50 8B 45 08", "GetTextSize"};
-inline constexpr Slot PlayUiSound{80, "55 8B EC 8B 81 EC 02 01 00 85 C0 74 09", "PlaySound"};
+inline constexpr Slot PlayUiSound{80, "55 8B EC 8B 81 ? 02 01 00 85 C0 74 09", "PlaySound"};
 inline constexpr Slot GetPopupCount{81, "8B 81 6C 02 00 00 C3", "GetPopupCount"};
 inline constexpr Slot GetPopup{82, "55 8B EC 8B 81 60 02 00 00 8B 4D 08 8B 04 88 5D C2", "GetPopup"};
 inline constexpr Slot PaintTraverseEx{117, "55 8B EC 8B 55 08 83 EC 2C 56 8B F1 8B 0D", "PaintTraverseEx"};

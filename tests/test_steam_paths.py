@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import os
 import unittest
 
-from tools import steam_paths
+from tools import games, steam_paths
 
 LIBRARY_FOLDERS = r'''"libraryfolders"
 {
@@ -128,6 +128,36 @@ class FindInstallationTests(unittest.TestCase):
         self.write_libraries()
         (self.library / "steamapps" / "common" / "Portal 2").mkdir(parents=True)
         self.assertIsNone(steam_paths.find_portal2(self.steam_root))
+
+    def install_aak(self, library: Path, folder="Alive and Kicking") -> Path:
+        game = library / "steamapps" / "common" / folder
+        (game / "bin").mkdir(parents=True)
+        (game / "AAK").mkdir()
+        (game / "portal2.exe").write_bytes(b"fixture")
+        (game / "AAK" / "gameinfo.txt").write_text('"GameInfo" {}', encoding="utf-8")
+        (library / "steamapps" / "appmanifest_270470.acf").write_text(
+            APP_MANIFEST.replace('"620"', '"270470"') % folder, encoding="utf-8")
+        return game
+
+    def test_alive_and_kicking_is_found_by_its_own_app_manifest(self):
+        self.write_libraries()
+        self.install_portal2(self.library)
+        aak = self.install_aak(self.steam_root)
+        self.assertEqual(steam_paths.find_game(self.steam_root, games.ALIVE_AND_KICKING), aak)
+        self.assertEqual(games.detect(aak), games.ALIVE_AND_KICKING)
+
+    def test_a_portal2_folder_is_not_taken_for_alive_and_kicking(self):
+        self.write_libraries()
+        portal = self.install_portal2(self.library, folder="Alive and Kicking", manifest=False)
+        self.assertIsNone(steam_paths.find_game(self.steam_root, games.ALIVE_AND_KICKING))
+        self.assertEqual(games.detect(portal), games.PORTAL2)
+
+    def test_a_chosen_alive_and_kicking_folder_is_kept(self):
+        self.write_libraries()
+        self.install_portal2(self.library)
+        aak = self.install_aak(self.steam_root)
+        found = steam_paths.find_installation(str(aak), str(self.steam), self.registry)
+        self.assertEqual(found, (str(aak), str(self.steam)))
 
     def test_libraries_listing_portal2_come_first_without_duplicates(self):
         self.write_libraries()

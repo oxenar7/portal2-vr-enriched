@@ -8,6 +8,7 @@
 #include "vr_menu_paint.h"
 #include "vr_settings.h"
 
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,14 +27,16 @@ struct Command {
 // closes, and the refusal when a value is already at its end.
 enum class Cue { None, Focus, Accept, Back, Invalid };
 
-// Portal 2's own words, in the game's language, with English fallbacks.
+// The game's own words, in the game's language, with English fallbacks.
 struct Texts {
     std::wstring resume = L"RETURN TO GAME", save = L"SAVE GAME", load = L"LOAD GAME", options = L"OPTIONS",
         exit = L"EXIT TO MAIN MENU", back = L"BACK", saveAction = L"SAVE", loadAction = L"LOAD";
-    std::wstring chapterTitle[11], chapterSubtitle[11];
+    std::wstring chapterTitle[GameProfile::kMaxChapters + 1], chapterSubtitle[GameProfile::kMaxChapters + 1];
+    const GameProfile::Profile *profile = &GameProfile::kPortal2; // whose maps make the chapters
 
-    void Load(const VrMenuData::Strings &strings)
+    void Load(const VrMenuData::Strings &strings, const GameProfile::Profile &game = GameProfile::kPortal2)
     {
+        profile = &game;
         resume = strings.Get("PORTAL2_InGameMainMenu_ReturnToGame", resume.c_str());
         save = strings.Get("PORTAL2_SaveGame", save.c_str());
         load = strings.Get("PORTAL2_LoadGame", load.c_str());
@@ -42,10 +45,19 @@ struct Texts {
         back = strings.Get("L4D360UI_Back", back.c_str());
         saveAction = strings.Get("PORTAL2_ButtonAction_Save", saveAction.c_str());
         loadAction = strings.Get("PORTAL2_ButtonAction_Load", loadAction.c_str());
-        for (int chapter = 1; chapter <= 10; ++chapter) {
-            const std::string token = "portal2_Chapter" + std::to_string(chapter);
-            chapterTitle[chapter] = strings.Get((token + "_Title").c_str(), (L"CHAPTER " + std::to_wstring(chapter)).c_str());
-            chapterSubtitle[chapter] = strings.Get((token + "_Subtitle").c_str(), L"");
+        for (int chapter = 1; chapter <= game.chapterCount; ++chapter) {
+            char title[64]{}, subtitle[64]{};
+            std::snprintf(title, sizeof(title), game.chapterTitleToken, chapter);
+            const std::wstring fallback = L"CHAPTER " + std::to_wstring(chapter);
+            if (game.chapterSubtitleToken) {
+                std::snprintf(subtitle, sizeof(subtitle), game.chapterSubtitleToken, chapter);
+                chapterTitle[chapter] = strings.Get(title, fallback.c_str());
+                chapterSubtitle[chapter] = strings.Get(subtitle, L"");
+            } else {
+                // One token, "title\nsubtitle".
+                chapterTitle[chapter] = strings.Line(title, 0, fallback.c_str());
+                chapterSubtitle[chapter] = strings.Line(title, 1, L"");
+            }
         }
     }
 };
@@ -220,7 +232,7 @@ private:
 
     std::wstring SaveTitle(const VrMenuData::Save &save) const
     {
-        const int chapter = VrMenuData::ChapterOfMap(save.map);
+        const int chapter = VrMenuData::ChapterOfMap(save.map, *m_Texts.profile);
         return chapter ? m_Texts.chapterTitle[chapter] : VrMenuData::Upper(VrMenuData::Widen(save.map));
     }
 
@@ -286,7 +298,7 @@ private:
             const int index = m_ListPage * kSavesPerPage + m_Second - (m_Root == RootSave ? 1 : 0);
             if (index < 0 || index >= static_cast<int>(listed.size())) return built;
             const VrMenuData::Save &save = m_Saves[listed[index]];
-            const int chapter = VrMenuData::ChapterOfMap(save.map);
+            const int chapter = VrMenuData::ChapterOfMap(save.map, *m_Texts.profile);
             panel.title = m_Root == RootSave ? L"SAVE OVER THIS GAME" : m_Texts.load;
             row(SaveTitle(save), RowKind::Info, {});
             if (chapter && !m_Texts.chapterSubtitle[chapter].empty()) row(m_Texts.chapterSubtitle[chapter], RowKind::Info, {});

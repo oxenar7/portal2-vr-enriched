@@ -574,8 +574,10 @@ namespace dxvk {
      * cut-outs get smooth edges instead of       *
      * crawling stair steps.                      *
      * The VR eye mask skips shading for the eye  *
-     * pixels the headset never shows.            */
-    { R"(\\portal2\.exe$)", {{
+     * pixels the headset never shows.            *
+     * Portal: Alive & Kicking runs the same      *
+     * engine as aak.exe.                         */
+    { R"(\\(portal2|aak)\.exe$)", {{
       { "dxvk.enableGraphicsPipelineLibrary", "Auto" },
       { "dxvk.trackPipelineLifetime",         "False" },
       { "d3d9.samplerAnisotropy",             "16" },

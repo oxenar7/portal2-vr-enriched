@@ -1929,6 +1929,11 @@ int main()
            "client.dll under the portal2 folder selects Portal 2");
     expect(&GameProfile::ForClientPath(L"client.dll") == &GameProfile::kPortal2, true,
            "a bare module name falls back to Portal 2");
+    const float *portal2Rig = GameProfile::kPortal2.viewmodelRigShift;
+    expect(portal2Rig[0] == 0.0f && portal2Rig[1] == 0.0f && portal2Rig[2] == 0.0f, true,
+           "Portal 2's portal gun keeps the calibrated grip offset");
+    expect(aak.viewmodelRigShift[0] == 6.0f && aak.viewmodelRigShift[1] == 1.0f && aak.viewmodelRigShift[2] == 0.0f,
+           true, "Alive & Kicking's portal gun rig sits 6 units forward and 1 left");
     VrMenuData::Strings aakStrings;
     aakStrings.Load("C:\\nowhere\\", aak);
     expectInt(static_cast<int>(aakStrings.Count()), 0, "missing localisation files leave no texts");

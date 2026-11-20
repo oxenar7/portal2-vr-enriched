@@ -8,6 +8,7 @@
 #include "trace.h"
 #include "aim_feedback.h"
 #include "hud_capture.h"
+#include "game_profile.h"
 #include "sdk/ivdebugoverlay.h"
 #include <iostream>
 #include <fstream>
@@ -25,9 +26,13 @@ static const Vector kLegacyViewmodelPositionOffset{4.5f, -1.0f, 1.5f};
 // moves the white body onto the controller (headset-calibrated).
 static const Vector kAlignedViewmodelGripOffset{15.0f, 6.0f, -8.0f};
 
-static const Vector &ViewmodelBasePositionOffset(bool aligned)
+// The offsets are subtracted along the controller's forward, right and up; a game whose
+// model animates the rig elsewhere (GameProfile, model y is left) moves them with it.
+static Vector ViewmodelBasePositionOffset(bool aligned)
 {
-    return aligned ? kAlignedViewmodelGripOffset : kLegacyViewmodelPositionOffset;
+    const Vector &base = aligned ? kAlignedViewmodelGripOffset : kLegacyViewmodelPositionOffset;
+    const float *shift = GameProfile::Current().viewmodelRigShift;
+    return Vector{base.x + shift[0], base.y - shift[1], base.z + shift[2]};
 }
 
 namespace {
@@ -3627,7 +3632,7 @@ void VR::ParseConfigFile()
     m_RenderWindow = m_Config.renderWindow;
     m_ViewmodelPosCustomOffset = {m_Config.viewmodelPosOffset[0], m_Config.viewmodelPosOffset[1], m_Config.viewmodelPosOffset[2]};
     m_ViewmodelAngCustomOffset = {m_Config.viewmodelAngOffset[0], m_Config.viewmodelAngOffset[1], m_Config.viewmodelAngOffset[2]};
-    const Vector &viewmodelBase = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment);
+    const Vector viewmodelBase = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment);
     Logger::Write("Config applied: VerboseDiagnostics=" + std::to_string(m_Config.verboseDiagnostics) +
         " TurnSpeed=" + std::to_string(m_TurnSpeed) +
         " SnapTurnAngle=" + std::to_string(m_SnapTurnAngle) +

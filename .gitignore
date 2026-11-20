@@ -422,3 +422,4 @@ STABILIZATION_REPORT.md
 # Project notes are maintained locally, not published to origin.
 /docs/**/*.md
 /tools/.launcher-aak/
+/tools/.launcher-mel/

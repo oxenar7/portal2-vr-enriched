@@ -77,7 +77,9 @@ public:
     Offset FormatViewModelAttachment = { "client.dll", 0x951E0, "55 8B EC 8B 45 08 83 EC 28 53 56 57 33 FF 85 C0 74 20 50 E8" };
     Offset SetViewmodelLocalOrigin = { "client.dll", 0x6DB60, "55 8B EC 56 57 8B 7D 08 F3 0F 10 07 8B F1 0F 2E 86 A8 00 00 00" };
     Offset SetViewmodelLocalAngles = { "client.dll", 0x6DC40, "55 8B EC 56 57 8B 7D 08 F3 0F 10 07 8B F1 0F 2E 86 CC 00 00 00" };
-    Offset ViewmodelScreenAspect = { "engine.dll", 0x7AB80, "55 8B EC 8B 45 0C 8B 4D 08 50 51 E8 ? ? ? ? 83 C4 08 5D C2 08 00 CC CC CC CC CC CC CC CC CC 55 8B EC E8" };
+    // In Portal Stories: Mel the function is the same; the one after its padding starts with a jmp.
+    Offset ViewmodelScreenAspect = { "engine.dll", 0x7AB80, "55 8B EC 8B 45 0C 8B 4D 08 50 51 E8 ? ? ? ? 83 C4 08 5D C2 08 00 CC CC CC CC CC CC CC CC CC 55 8B EC E8",
+        {"55 8B EC 8B 45 0C 8B 4D 08 50 51 E8 ? ? ? ? 83 C4 08 5D C2 08 00 CC CC CC CC CC CC CC CC CC E9"} };
     // Separate optional passive muzzle sampler, verified on the same client.
     // Model formatter: primary thiscall (zero-based attachment, matrix&), NOT
     // GetAttachment (which forces SetupBones). Lookup takes IClientRenderable
@@ -180,7 +182,8 @@ public:
     Offset LocatorDrawTarget = { "client.dll", 0x14BE70, "55 8B EC 51 56 8B 75 08 57 56 8B F9 E8 ? ? ? ? 84 C0 74 74" };
     Offset LocatorHudSize = { "client.dll", 0x1CC3B0, "55 8B EC 8B 55 0C 8B 0D ? ? ? ? 8B 01 8B 80 A8 00 00 00 52 8B 55 08 52 FF D0 5D C3" };
     Offset GetVectorInScreenSpace = { "client.dll", 0xDA1D0, "55 8B EC 8B 45 1C 83 EC 20 85 C0 74 2C F3 0F 10 00 F3 0F 58 45 08" };
-    Offset LocatorSetBinding = { "client.dll", 0x149710, "55 8B EC 81 EC 60 01 00 00 53 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 0D" };
+    // Its frame is 0x160 bytes in Portal 2 and Alive & Kicking, 0x164 in Portal Stories: Mel.
+    Offset LocatorSetBinding = { "client.dll", 0x149710, "55 8B EC 81 EC ? ? 00 00 53 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 0D" };
     // Alive & Kicking's build checks the binding count before querying the input system.
     Offset LocatorUseBindingImage = { "client.dll", 0x147C20, "55 8B EC 56 8B F1 8B 0D ? ? ? ? 8B 01 8B 90 FC 01 00 00 57 FF D2 8B 4E 38 8B F8 85 C9 7F 20",
         {"55 8B EC 56 8B 71 38 85 F6 7F ? 8B 45 0C 8B 4D 08 50 68 ? ? ? ? 51 E8 ? ? ? ? 83 C4 0C B8 ? ? ? ? 5E 5D C2 08 00 8B 41 2C 99 F7 FE"} };

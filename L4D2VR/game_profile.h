@@ -1,8 +1,9 @@
 #pragma once
 
-// Which game the mod runs in. Portal: Alive & Kicking (Steam app 270470) is a standalone
-// install of Portal 2's engine with its own game folder ("AAK"), localisation files, save
-// folder and campaign. The code paths are the same; only these facts differ.
+// Which game the mod runs in. Portal: Alive & Kicking (Steam app 270470) and Portal Stories: Mel
+// (Steam app 317400) are standalone installs of Portal 2's engine, each with its own game folder
+// ("AAK", "portal_stories"), localisation files, save folder and campaign. The code paths are the
+// same; only these facts differ.
 
 #include "gun_models.h"
 
@@ -65,6 +66,20 @@ inline constexpr const char *kAliveAndKickingChapters[] = {
     "sp_a53_chamb18",
     "sp_a53_chamb19 sp_a54_escape00 sp_a54_escape01 sp_a54_escape02 sp_a54_escape03 sp_a55_credits"};
 
+// Portal Stories: Mel's chapters as its own chapter select lists them (scripts/extras.txt): story
+// mode plays the st_ maps, advanced mode the sp_ maps of the same names. Chapter 5 starts at the
+// core access; the credits close it.
+inline constexpr const char *kPortalStoriesMelChapters[] = {
+    "sp_a1_tramride sp_a1_mel_intro sp_a1_lift sp_a1_garden "
+    "st_a1_tramride st_a1_mel_intro st_a1_lift st_a1_garden",
+    "sp_a2_garden_de sp_a2_underbounce sp_a2_once_upon sp_a2_past_power sp_a2_ramp sp_a2_firestorm "
+    "st_a2_garden_de st_a2_underbounce st_a2_once_upon st_a2_past_power st_a2_ramp st_a2_firestorm",
+    "sp_a3_junkyard sp_a3_concepts sp_a3_paint_fling sp_a3_faith_plate sp_a3_transition "
+    "st_a3_junkyard st_a3_concepts st_a3_paint_fling st_a3_faith_plate st_a3_transition",
+    "sp_a4_overgrown sp_a4_tb_over_goo sp_a4_two_of_a_kind sp_a4_destroyed sp_a4_factory "
+    "st_a4_overgrown st_a4_tb_over_goo st_a4_two_of_a_kind st_a4_destroyed st_a4_factory",
+    "sp_a4_core_access sp_a4_finale st_a4_core_access st_a4_finale sp_a5_credits"};
+
 inline constexpr int kMaxChapters = 11;
 
 inline constexpr Profile kPortal2{"Portal 2", "portal2", "620", "portal2_",
@@ -78,7 +93,16 @@ inline constexpr Profile kAliveAndKicking{"Portal: Alive & Kicking", "AAK", "270
     static_cast<int>(std::size(kAliveAndKickingChapters)), kAliveAndKickingChapters, 0x8C, 0xF8,
     &GunModels::kAliveAndKicking};
 
-static_assert(std::size(kPortal2Chapters) <= kMaxChapters && std::size(kAliveAndKickingChapters) <= kMaxChapters);
+// Mel keeps Portal 2's strings and adds its own in valve_<language>.txt: the chapter titles are
+// Portal 2's, the names its own (chapter 1, "1952", has no token and shows the title alone).
+// Its client.dll is a Portal 2 build, so the locator offsets are Portal 2's.
+inline constexpr Profile kPortalStoriesMel{"Portal Stories: Mel", "portal_stories", "317400", "valve_",
+    "portal2_Chapter%d_Title", "PS_CHAPTER%d",
+    static_cast<int>(std::size(kPortalStoriesMelChapters)), kPortalStoriesMelChapters, 0xCC, 0x13C,
+    &GunModels::kPortalStoriesMel};
+
+static_assert(std::size(kPortal2Chapters) <= kMaxChapters && std::size(kAliveAndKickingChapters) <= kMaxChapters &&
+              std::size(kPortalStoriesMelChapters) <= kMaxChapters);
 
 // The profile whose game folder holds the given client.dll path (...\<folder>\bin\client.dll).
 inline const Profile &ForClientPath(const std::wstring &clientPath)
@@ -91,7 +115,9 @@ inline const Profile &ForClientPath(const std::wstring &clientPath)
     std::wstring name = clientPath.substr(folder == std::wstring::npos ? 0 : folder + 1,
                                           bin - (folder == std::wstring::npos ? 0 : folder + 1));
     for (wchar_t &c : name) c = static_cast<wchar_t>(std::towlower(c));
-    return name == L"aak" ? kAliveAndKicking : kPortal2;
+    if (name == L"aak") return kAliveAndKicking;
+    if (name == L"portal_stories") return kPortalStoriesMel;
+    return kPortal2;
 }
 
 // Decided from where the game loaded client.dll, and kept once that is known; Portal 2

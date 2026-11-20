@@ -379,6 +379,7 @@ int main()
     TestHash();
     RunSuite(Detail::portal2Server, Detail::portal2Client, "Portal 2");
     RunSuite(Detail::aakServer, Detail::aakClient, "Alive & Kicking");
+    RunSuite(Detail::melServer, Detail::melClient, "Portal Stories: Mel");
     if (!failures) std::cout << "verified symbol tests passed\n";
     return failures ? 1 : 0;
 }

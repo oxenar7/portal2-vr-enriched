@@ -1498,6 +1498,20 @@ int main()
     crossedBuild.drawScreenSpaceRectangle = 0x50027C40u;
     expect(Portal2MaterialAbi::Classify(crossedBuild) == Portal2MaterialAbi::Kind::Unsupported,
            true, "Portal 2 slot addresses are not accepted in the Alive & Kicking build");
+    const Portal2MaterialAbi::Probe melQueuedContext{
+        0x50000000u, 0x603E2D60u, 0x14C000u,
+        0x5009AE84u, 0x50027730u, 0x500251B0u, 0x50027C60u};
+    expect(Portal2MaterialAbi::Classify(melQueuedContext) == Portal2MaterialAbi::Kind::Queued,
+           true, "Portal Stories: Mel queued context permits the stereo atlas draw");
+    const Portal2MaterialAbi::Probe melImmediateContext{
+        0x50000000u, 0x603E2D60u, 0x14C000u,
+        0x5009DCDCu, 0x5002D840u, 0x5002CA80u, 0x5002A430u};
+    expect(Portal2MaterialAbi::Classify(melImmediateContext) == Portal2MaterialAbi::Kind::Immediate,
+           true, "Portal Stories: Mel immediate context permits the stereo atlas draw");
+    auto melWithAakSlots = aakQueuedContext;
+    melWithAakSlots.timestamp = melQueuedContext.timestamp;
+    expect(Portal2MaterialAbi::Classify(melWithAakSlots) == Portal2MaterialAbi::Kind::Unsupported,
+           true, "Alive & Kicking slot addresses are not accepted in the Mel build");
     const auto stereoReticle = AimFeedback::ProjectReticleSpriteToEye(
         Vector{10, 0, 0}, Vector{0, 0.1f, 0}, eyeForward, eyeRight, eyeUp,
         90.0f, 1.0f, 1000, 1000, 612, 318, 56, 84, 1280, 720);
@@ -1600,6 +1614,14 @@ int main()
     changedSurface.drawTexturedSubRect = 0x5000AA10;
     expect(NativeReticle::Supported(changedSurface), false,
            "Portal 2 slot address is not accepted in the Alive & Kicking surface build");
+    const NativeReticle::SurfaceProbe melSurface{
+        0x50000000, 0x603E2D75, 0x197000, 0x500C4ED4, 0x5000A8C0, 0x5000B720};
+    expect(NativeReticle::Match(melSurface) == &NativeReticle::kSurfaceBuilds[2], true,
+           "Portal Stories: Mel surface build selects its own clip rect global");
+    changedSurface = melSurface;
+    changedSurface.drawTexturedSubRect = 0x5000A950;
+    expect(NativeReticle::Supported(changedSurface), false,
+           "Alive & Kicking slot address is not accepted in the Mel surface build");
     expect(AimFeedback::ClassifyReticleCanvas(1078, 1255, 56, 84, 1280, 720) ==
                AimFeedback::ReticleCanvasPosition::OutsideY, true,
            "eye-sized reticle below the reported Source canvas is diagnosed separately");
@@ -1952,8 +1974,27 @@ int main()
            "client.dll under the portal2 folder selects Portal 2");
     expect(&GameProfile::ForClientPath(L"client.dll") == &GameProfile::kPortal2, true,
            "a bare module name falls back to Portal 2");
-    expect(GameProfile::kPortal2.gunModel == &GunModels::kPortal2 && aak.gunModel == &GunModels::kAliveAndKicking,
+    const auto &mel = GameProfile::kPortalStoriesMel;
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Portal Stories Mel\\portal_stories\\bin\\client.dll") == &mel, true,
+           "client.dll under the portal_stories folder selects Portal Stories: Mel");
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Portal Stories Mel\\portal2\\bin\\client.dll") == &GameProfile::kPortal2,
+           true, "Mel's portal2 folder is not Mel's game folder");
+    expectInt(VrMenuData::ChapterOfMap("sp_a1_tramride", mel), 1, "Mel starts on the tram in chapter 1");
+    expectInt(VrMenuData::ChapterOfMap("st_a2_firestorm", mel), 2, "story mode maps share the chapters");
+    expectInt(VrMenuData::ChapterOfMap("sp_a4_factory", mel), 4, "the factory closes Mel's chapter 4");
+    expectInt(VrMenuData::ChapterOfMap("st_a4_core_access", mel), 5, "Mel's chapter 5 starts at the core access");
+    expectInt(VrMenuData::ChapterOfMap("sp_a5_credits", mel), 5, "the credits close Mel's last chapter");
+    expectInt(VrMenuData::ChapterOfMap("sp_a1_intro1", mel), 0, "Portal 2 maps are not Mel chapters");
+    expect(std::string(mel.folder) == "portal_stories" && std::string(mel.appId) == "317400" &&
+               std::string(mel.gameStrings) == "valve_",
+           true, "Mel reads its folder, manifest and valve_ strings");
+    expect(GameProfile::kPortal2.gunModel == &GunModels::kPortal2 && aak.gunModel == &GunModels::kAliveAndKicking &&
+               mel.gunModel == &GunModels::kPortalStoriesMel,
            true, "each game starts with its own portal gun grip");
+    expect(GunModels::Find(1942580893) == &GunModels::kPortalStoriesMel, true,
+           "Mel's own portal gun is told apart by its checksum");
     const float *portal2Rig = GunModels::kPortal2.shift;
     expect(portal2Rig[0] == 0.0f && portal2Rig[1] == 0.0f && portal2Rig[2] == 0.0f, true,
            "Portal 2's portal gun keeps the calibrated grip offset");

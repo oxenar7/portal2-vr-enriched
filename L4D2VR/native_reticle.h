@@ -68,6 +68,7 @@ struct SurfaceBuild
 inline constexpr SurfaceBuild kSurfaceBuilds[] = {
     {0x6A4466CE, 0x198000, 0xC4ED4, 0xAA10, 0xB8C0, 0x1010, 0x13B680}, // Portal 2
     {0x65D4091C, 0x197000, 0xC4ED4, 0xA950, 0xB7B0, 0x1010, 0x13B3E0}, // Portal: Alive & Kicking
+    {0x603E2D75, 0x197000, 0xC4ED4, 0xA8C0, 0xB720, 0x1010, 0x13B3E0}, // Portal Stories: Mel
 };
 
 inline const SurfaceBuild *FindSurfaceBuild(std::uint32_t timestamp, std::uint32_t imageSize)

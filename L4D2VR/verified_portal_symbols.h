@@ -51,8 +51,8 @@ struct Build {
 };
 
 // Every RVA below was read from one exact build and is accepted only with that build's
-// SHA-256 and with all of its witnesses. The two games differ in addresses, not in layout:
-// the struct offsets checked by the witnesses are the same in both.
+// SHA-256 and with all of its witnesses. The games differ in addresses, not in layout:
+// the struct offsets checked by the witnesses are the same in all of them.
 struct ServerLayout {
     Build build;
     std::uint32_t eyePosition;        // CPortal_Player::EyePosition
@@ -146,8 +146,33 @@ inline constexpr ClientLayout aakClient{
     0x742200, 0x8C969, 0x7382E0, 0x8FB24,
     0x80FCE0, 0x6FB360, 0xA1EAC0, 0x3AFE35};
 
-inline constexpr const ServerLayout *serverLayouts[] = {&portal2Server, &aakServer};
-inline constexpr const ClientLayout *clientLayouts[] = {&portal2Client, &aakClient};
+// Portal Stories: Mel (Steam app 317400), build 6522712 (server/client dated 2021-03-02).
+inline constexpr ServerLayout melServer{
+    {L"server.dll", "3ea16e788523edfb4d5122acf80f1bdd40e65785d18b923ceba95c99aa728876",
+        0x603E2DEEu, 0x972000u},
+    0x365530, 0x102C20, 0x363F80, 0x66AD24, 0x6106CC,
+    0x3FB6DE, {0x8B,0xF9,0x89,0x7D,0xEC,0xE8,0xA8,0xAE,0xCD,0xFF,0x8B,0xF0},
+    0x3FB8CC, 0x7915FC,
+    0x6792A8, 0x684460, 0x5B5478,
+    0x56C68B, 0x56D880, 0x851110, 0x853EC0,
+    0x3ACABF, 0x3C53BC, 0x3C53C2,
+    0x3C4B87, 0x72E9E0,
+    0x3C4F54, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x83,0xC4,0x10,0x8D,0x45,0xC0,0x50,0x8B,0xCE,0xFF,0xD2},
+    0x3BF340, 0x3BF378, 0x3C5CAF, {0xE8,0x8C,0x96,0xFF,0xFF},
+    0x3C4EFB, 0x3C5A86,
+    0x3ACA72, 0xEE9AF,
+    0x3C529D, 0x3C4D84, 0xF3355};
+
+inline constexpr ClientLayout melClient{
+    {L"client.dll", "f848c91621ec7a5dcf3ea4cabf0f0e98fe6ee1ad3c7c9e949854d5c8049fb4a6",
+        0x603E2E11u, 0xFEF000u},
+    0x287050, 0xA049B4, 0x7BA56C, 0x7BAADC,
+    0x7860B0, 0x6F9000, 0xA04998,
+    0x746198, 0x8F529, 0x73C1F8, 0x927F4,
+    0x814848, 0x6FF9D0, 0xA1E2D8, 0x3B49C5};
+
+inline constexpr const ServerLayout *serverLayouts[] = {&portal2Server, &aakServer, &melServer};
+inline constexpr const ClientLayout *clientLayouts[] = {&portal2Client, &aakClient, &melClient};
 
 // Kept for callers that name the Portal 2 builds directly.
 inline constexpr const Build &server = portal2Server.build;

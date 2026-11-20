@@ -16,11 +16,15 @@ class Game:
     install_dir: str     # default folder under steamapps/common
     game_folder: str     # the -game folder holding gameinfo.txt
     processes: tuple[str, ...]  # executable names while it runs
+    blurb: str = ""      # one line under its name on the launcher's Games page
 
 
-PORTAL2 = Game("portal2", "Portal 2", "620", "Portal 2", "portal2", ("portal2.exe",))
+# The launcher's Games page lists them in this order. A new game needs its entry here and its
+# profile in L4D2VR/game_profile.h.
+PORTAL2 = Game("portal2", "Portal 2", "620", "Portal 2", "portal2", ("portal2.exe",),
+               "Valve's single-player campaign.")
 ALIVE_AND_KICKING = Game("aak", "Portal: Alive & Kicking", "270470", "Alive and Kicking", "AAK",
-                         ("portal2.exe", "aak.exe"))
+                         ("portal2.exe", "aak.exe"), "A free fan-made campaign on Portal 2's engine.")
 GAMES = (PORTAL2, ALIVE_AND_KICKING)
 PROCESS_NAMES = tuple(dict.fromkeys(name for game in GAMES for name in game.processes))
 

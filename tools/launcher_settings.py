@@ -20,118 +20,163 @@ class Setting:
     help: str = ""
     # Names shown for choices; the stored values stay what config.txt expects.
     labels: tuple[str, ...] = ()
+    # Shown only with "Advanced settings" on.
+    advanced: bool = False
+    # Shown only while each named setting holds one of the listed values.
+    when: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # Off and on values of a switch over a setting that has more than two choices.
+    toggle: tuple[str, ...] = ()
+    # Retired: the launcher no longer offers it and always writes this value, or the value of
+    # the setting named here.
+    fixed: str | None = None
 
 
-# Match ConfigSnapshot / ParseConfig in L4D2VR/config.h. Labels are presentation only.
+_SNAP = ("SnapTurning", ("true",))
+_SMOOTH = ("SnapTurning", ("false",))
+_POSITIONAL = ("6DOF", ("true",))
+_CAPTIONS = ("ExperimentalHUDOverlay", ("true",))
+_VIBRATION = ("Haptics", ("true",))
+_ZOOM = ("BinocularZoom", ("true",))
+_GUN_HELP = "Moves the portal gun in your hand; one unit is about 2 cm."
+
+# Match ConfigSnapshot / ParseConfig in L4D2VR/config.h. Labels, groups and order are
+# presentation only: the launcher shows the groups in this order.
 SETTINGS = (
-    Setting("TrackingMode", "Tracking mode", "Movement", "Seated", ("Seated", "Standing"),
-            help="Seated uses a recentered eye height; Standing uses the SteamVR floor."),
-    Setting("MovementDirection", "Stick movement relative to", "Movement", "HMD",
+    Setting("TrackingMode", "Play position", "Comfort", "Seated", ("Seated", "Standing"),
+            help="Standing uses your real height from the SteamVR floor. Seated puts the view at "
+                 "eye height when you recenter."),
+    Setting("HeightOffsetMeters", "Height adjustment (m)", "Comfort", "0", bounds=(-.5, .5),
+            help="Raises or lowers your standing view. Applied when you recenter.",
+            advanced=True, when=(("TrackingMode", ("Standing",)),)),
+    Setting("RoomscaleMode", "Physical walking", "Comfort", "Off", ("Off", "Observe", "ActiveExperimental"),
+            help="Your real steps move you in the game. Walls still stop you.",
+            toggle=("Off", "ActiveExperimental"), when=(_POSITIONAL,)),
+    Setting("PhysicalCrouch", "Physical crouch", "Comfort", "true", ("false", "true"),
+            help="Duck in the game when you crouch for real.", when=(_POSITIONAL,)),
+    Setting("PhysicalCrouchDropMeters", "Crouch depth (m)", "Comfort", "0.25", bounds=(.15, .8),
+            help="How far your head must drop to duck; you stand up 5 cm earlier.",
+            advanced=True, when=(_POSITIONAL, ("PhysicalCrouch", ("true",)))),
+    Setting("SnapTurning", "Snap turning", "Comfort", "false", ("false", "true"),
+            help="Turn in steps instead of smoothly."),
+    Setting("SnapTurnAngle", "Snap angle (degrees)", "Comfort", "45", bounds=(1, 180), when=(_SNAP,)),
+    Setting("TurnSpeed", "Smooth turning speed", "Comfort", "0.15", bounds=(.01, 2), when=(_SMOOTH,)),
+    Setting("MovementDirection", "Stick movement follows", "Comfort", "HMD",
             ("HMD", "LeftController", "RightController"), labels=("Headset", "Left controller", "Right controller")),
-    Setting("RoomscaleMode", "Physical walking", "Movement", "Off", ("Off", "Observe", "ActiveExperimental"),
-            help="On: your real steps move you in the game, with collisions. Requires positional head tracking "
-                 "and LegacyYaw portal orientation.",
-            labels=("Off", "Log only (diagnostics)", "On")),
-    Setting("SnapTurning", "Snap turning", "Movement", "false", ("false", "true"),
-            help="Off uses smooth turning; on uses the angle below."),
-    Setting("SnapTurnAngle", "Snap angle (degrees)", "Movement", "45", bounds=(1, 180)),
-    Setting("TurnSpeed", "Smooth turn speed", "Movement", "0.15", bounds=(.01, 2)),
-    Setting("PhysicalCrouch", "Physical crouch", "Movement", "true", ("false", "true"),
-            help="Duck when your real head drops below your standing height. Requires positional head tracking."),
-    Setting("PhysicalCrouchDropMeters", "Crouch head drop (m)", "Movement", "0.25", bounds=(.15, .8),
-            help="How far the head must drop to duck; you stand up 5 cm earlier."),
-    Setting("RenderWindow", "Extra view on the monitor", "Rendering", "0", ("0", "1"),
-            help="Draws a third view for the desktop window. Costs performance; off is recommended."),
-    Setting("6DOF", "Positional head tracking", "Tracking", "true", ("false", "true")),
-    Setting("HeightOffsetMeters", "Standing height offset (m)", "Tracking", "0", bounds=(-.5, .5),
-            help="Standing only; applied when recentering."),
-    Setting("ControllerPitchDegrees", "Controller pitch correction (degrees)", "Tracking", "-30", bounds=(-60, 60)),
-    Setting("LeftHanded", "Left-handed controls", "Tracking", "false", ("false", "true"),
+
+    Setting("LeftHanded", "Left-handed", "Controls", "false", ("false", "true"),
             help="The gun goes in the left hand with its buttons: portal trigger and grip, use on Y. Pause moves to B."),
-    Setting("SwapSticks", "Swap sticks", "Tracking", "false", ("false", "true"),
+    Setting("SwapSticks", "Swap sticks", "Controls", "false", ("false", "true"),
             help="Move with the right stick, turn with the left. Binocular zoom follows the turning stick."),
-    Setting("VRScale", "Source units per real-world metre", "Tracking", "43.2", bounds=(1, 200)),
-    Setting("IPDScale", "Interpupillary distance multiplier", "Tracking", "1", bounds=(.5, 1.5)),
-    Setting("PortalOrientationMode", "Portal orientation", "Portals", "LegacyYaw",
-            ("LegacyYaw", "FullRotation", "YawOnly", "PreserveHorizon"),
-            help="LegacyYaw is recommended. Other modes are experimental; floor/ceiling comfort remains unverified."),
-    Setting("AimMode", "Aim mode", "Aiming", "2", ("0", "1", "2"),
-            help="Beam and crosshair is recommended. Legacy crosshair has known limitations.",
-            labels=("None", "Legacy crosshair", "Beam and crosshair")),
-    Setting("ShowSourceCrosshair", "Show legacy flat crosshair", "Aiming", "true", ("false", "true"),
-            help="Only with aim mode None or Legacy crosshair. Portal 2's portal status artwork stays visible."),
-    Setting("ExperimentalWorldAimMarker", "Aim line", "Aiming", "false", ("false", "true"),
-            help="A line from the gun to where the portal will land. Off leaves only the reticle at the aim point."),
-    Setting("ExperimentalStereoReticle", "Atlas reticle rollback", "Aiming", "false", ("false", "true"),
-            help="Leave off to keep Portal 2's own crosshair artwork. On uses an older experimental crosshair."),
-    Setting("ReticleDistanceScaling", "Gentle reticle distance scaling", "Aiming", "true", ("false", "true"),
-            help="The crosshair shrinks slightly with distance: full size at 1 m, 80% at 10 m."),
-    Setting("LaserCubeAimAssist", "Laser cube aim assist", "Aiming", "true", ("false", "true"),
-            help="Steers a laser leaving a reflector cube onto a catcher, as in co-op."),
-    Setting("HeldObjectAnchor", "Attach held objects to the gun", "Aiming", "true", ("false", "true"),
-            help="Held objects move with the gun and turn with the wrist. Walls still stop them."),
-    Setting("ControllerAimedUse", "Use what the gun points at", "Aiming", "true", ("false", "true"),
+    Setting("ControllerAimedUse", "Use what the gun points at", "Controls", "true", ("false", "true"),
             help="Pick up, drop and press act on what the gun points at. Off acts on what you look at."),
-    Setting("WorldMenu", "Pause menu in the world", "Captions", "true", ("false", "true"),
-            help="The pause menu appears as panels floating in the paused world. Off shows Portal 2's own pause screen."),
-    Setting("HeldObjectColumn", "Held object vertical plane", "Aiming", "false", ("false", "true"),
-            help="Only with the gun attachment off. On is Portal 2's default."),
-    Setting("ExperimentalViewmodelAlignment", "Controller-locked gun and effects", "Gun calibration", "false", ("false", "true")),
-    Setting("AimFromViewmodelMuzzle", "Start aim line at animated gun muzzle", "Gun calibration", "false", ("false", "true"),
-            help="Requires the controller-locked gun. When the muzzle position is unknown, the line is hidden."),
-    Setting("ViewmodelPosCustomOffsetX", "Gun X position (Source units)", "Gun calibration", "0", bounds=(-100, 100)),
-    Setting("ViewmodelPosCustomOffsetY", "Gun Y position (Source units)", "Gun calibration", "0", bounds=(-100, 100)),
-    Setting("ViewmodelPosCustomOffsetZ", "Gun Z position (Source units)", "Gun calibration", "0", bounds=(-100, 100)),
-    Setting("ViewmodelAngCustomOffsetX", "Gun X angle (degrees)", "Gun calibration", "0", bounds=(-180, 180)),
-    Setting("ViewmodelAngCustomOffsetY", "Gun Y angle (degrees)", "Gun calibration", "0", bounds=(-180, 180)),
-    Setting("ViewmodelAngCustomOffsetZ", "Gun Z angle (degrees)", "Gun calibration", "0", bounds=(-180, 180)),
-    Setting("ExperimentalHUDOverlay", "Readable caption overlay", "Captions", "false", ("false", "true"),
-            help="Shows subtitles on a readable panel in front of you. Requires aim mode Beam and crosshair, "
-                 "and subtitles turned on in Portal 2."),
-    Setting("HUDInEyeCentered", "Center legacy HUD in eyes", "Legacy HUD", "false", ("false", "true"),
-            help="Experimental; restart the game after changing it. Requires aim mode None or Legacy crosshair "
-                 "and the caption overlay off. Keeps the original layout if the HUD does not fit."),
-    Setting("HUDInEyeScale", "Legacy HUD width fraction", "Legacy HUD", "0.45", bounds=(.2, 1)),
-    Setting("HUDInEyeVerticalOffset", "Legacy HUD vertical offset fraction", "Legacy HUD", "0.05", bounds=(-.4, .4),
-            help="Positive moves down. Applies only with legacy HUD centering enabled."),
-    Setting("HUDDistanceMeters", "Caption distance (m)", "Captions", "1.3", bounds=(.6, 3)),
-    Setting("HUDWidthMeters", "Caption panel width (m)", "Captions", "1.4", bounds=(.5, 2.5)),
-    Setting("HUDVerticalOffsetMeters", "Caption height relative to eyes (m)", "Captions", "-0.15", bounds=(-.6, .6),
-            help="Positive raises the panel; negative lowers it."),
-    Setting("HUDLazyFollow", "Captions follow the head lazily", "Captions", "true", ("false", "true"),
-            help="Captions follow your gaze, sideways and up or down, once you look past the deadzone. Off locks them to the headset."),
-    Setting("HUDFollowDeadzoneDegrees", "Caption follow deadzone (degrees)", "Captions", "10", bounds=(0, 60)),
-    Setting("HUDFollowSpeed", "Caption follow speed", "Captions", "8", bounds=(1, 20),
-            help="How fast the captions catch up with your gaze. Higher is quicker."),
-    Setting("HUDCaptionOpacityBoost", "Caption background opacity boost", "Captions", "3", bounds=(1, 4),
-            help="Makes the caption box darker over bright scenes. 1 keeps the game's own transparency."),
-    Setting("BinocularZoom", "Binocular zoom", "Zoom", "true", ("false", "true"),
-            help="Hold the right stick in to look through binoculars. Also completes Portal 2's zoom lesson."),
-    Setting("ZoomMagnification", "Zoom magnification", "Zoom", "3", bounds=(1.5, 8),
-            help="How much larger things look through the binoculars."),
-    Setting("ZoomWindowWidthMeters", "Binocular window width (m)", "Zoom", "0.8", bounds=(.3, 1.5)),
-    Setting("ZoomDistanceMeters", "Binocular window distance (m)", "Zoom", "1", bounds=(.5, 3),
-            help="How far from your eyes the binocular window floats."),
-    Setting("ExperimentalPortalShotHaptics", "Portal shot vibration", "Haptics", "false", ("false", "true")),
-    Setting("PortalShotHapticAmplitude", "Vibration strength", "Haptics", "0.35", bounds=(0, 1)),
-    Setting("PortalShotHapticDurationSeconds", "Vibration duration (seconds)", "Haptics", "0.05", bounds=(.01, .15)),
-    Setting("Haptics", "Controller vibration", "Haptics", "true", ("false", "true"),
-            help="Native game rumble, held objects and buttons. Portal shots use the native rumble below."),
-    Setting("HapticsIntensity", "Controller vibration strength", "Haptics", "1", bounds=(0, 1)),
-    Setting("HapticsNativeRumble", "Game rumble (shots, landings, impacts)", "Haptics", "true", ("false", "true"),
-            help="Forwards Portal 2's own rumble effects; replaces the experimental portal shot vibration."),
-    Setting("HapticsHeldObject", "Held object vibration", "Haptics", "true", ("false", "true"),
-            help="Pulse on pickup and drop, light vibration while holding."),
-    Setting("HapticsButtons", "Button vibration", "Haptics", "true", ("false", "true"),
-            help="Pedestal buttons pressed by you and floor buttons."),
-    Setting("AntiAliasing", "Mod anti-aliasing", "Rendering", "0", ("0", "2", "4", "8"),
-            help="Off is recommended. Higher values smooth edges but cost performance.",
-            labels=("Off", "2x", "4x", "8x")),
-    Setting("VerboseDiagnostics", "Verbose diagnostics", "Diagnostics", "false", ("false", "true"),
-            help="Writes much more detail to the mod log, for bug reports. Off still logs startup and errors."),
+    Setting("BinocularZoom", "Binocular zoom", "Controls", "true", ("false", "true"),
+            help="Hold the turning stick in to look through binoculars. Also completes Portal 2's zoom lesson."),
+    Setting("ZoomMagnification", "Zoom magnification", "Controls", "3", bounds=(1.5, 8),
+            advanced=True, when=(_ZOOM,)),
+    Setting("ZoomWindowWidthMeters", "Binocular window width (m)", "Controls", "0.8", bounds=(.3, 1.5),
+            advanced=True, when=(_ZOOM,)),
+    Setting("ZoomDistanceMeters", "Binocular window distance (m)", "Controls", "1", bounds=(.5, 3),
+            advanced=True, when=(_ZOOM,)),
+    Setting("ControllerPitchDegrees", "Controller angle (degrees)", "Controls", "-30", bounds=(-60, 60),
+            help="Tilts the gun and the aim against the controller.", advanced=True),
+
+    Setting("ExperimentalWorldAimMarker", "Aim line", "Aiming and objects", "false", ("false", "true"),
+            help="A line from the gun to where the portal will land."),
+    Setting("ReticleDistanceScaling", "Smaller crosshair far away", "Aiming and objects", "true", ("false", "true"),
+            help="Full size at 1 m, 80% at 10 m.", advanced=True),
+    Setting("HeldObjectAnchor", "Held objects follow the gun", "Aiming and objects", "true", ("false", "true"),
+            help="Held objects move with the gun and turn with the wrist. Walls still stop them."),
+    Setting("HeldObjectColumn", "Held object vertical plane", "Aiming and objects", "false", ("false", "true"),
+            help="On is Portal 2's own behaviour.", advanced=True, when=(("HeldObjectAnchor", ("false",)),)),
+    Setting("LaserCubeAimAssist", "Laser cube aim assist", "Aiming and objects", "true", ("false", "true"),
+            help="Steers a laser leaving a reflector cube onto a catcher, as in co-op."),
+    Setting("WorldMenu", "Pause menu in the world", "Aiming and objects", "true", ("false", "true"),
+            help="The pause menu appears as panels in the paused world. Off shows the game's own pause screen."),
+
+    Setting("ExperimentalHUDOverlay", "Caption panel", "Captions", "false", ("false", "true"),
+            help="Shows subtitles on a readable panel in front of you. Turn subtitles on in the game's audio options."),
+    Setting("HUDDistanceMeters", "Caption distance (m)", "Captions", "1.3", bounds=(.6, 3),
+            advanced=True, when=(_CAPTIONS,)),
+    Setting("HUDWidthMeters", "Caption panel width (m)", "Captions", "1.4", bounds=(.5, 2.5),
+            advanced=True, when=(_CAPTIONS,)),
+    Setting("HUDVerticalOffsetMeters", "Caption height (m)", "Captions", "-0.15", bounds=(-.6, .6),
+            help="Relative to your eyes; negative is lower.", advanced=True, when=(_CAPTIONS,)),
+    Setting("HUDLazyFollow", "Captions follow your gaze", "Captions", "true", ("false", "true"),
+            help="Off locks them to the headset.", advanced=True, when=(_CAPTIONS,)),
+    Setting("HUDFollowDeadzoneDegrees", "Follow deadzone (degrees)", "Captions", "10", bounds=(0, 60),
+            advanced=True, when=(_CAPTIONS, ("HUDLazyFollow", ("true",)))),
+    Setting("HUDFollowSpeed", "Follow speed", "Captions", "8", bounds=(1, 20),
+            help="Higher catches up with your gaze quicker.", advanced=True,
+            when=(_CAPTIONS, ("HUDLazyFollow", ("true",)))),
+    Setting("HUDCaptionOpacityBoost", "Caption background darkness", "Captions", "3", bounds=(1, 4),
+            help="1 keeps the game's own transparency.", advanced=True, when=(_CAPTIONS,)),
+
+    Setting("Haptics", "Controller vibration", "Vibration", "true", ("false", "true"),
+            help="Portal shots, landings, impacts, held objects and buttons."),
+    Setting("HapticsIntensity", "Vibration strength", "Vibration", "1", bounds=(0, 1), when=(_VIBRATION,)),
+    Setting("HapticsNativeRumble", "Game rumble (shots, landings, impacts)", "Vibration", "true", ("false", "true"),
+            advanced=True, when=(_VIBRATION,)),
+    Setting("HapticsHeldObject", "Held object vibration", "Vibration", "true", ("false", "true"),
+            help="A pulse on pickup and drop, a light vibration while holding.", advanced=True, when=(_VIBRATION,)),
+    Setting("HapticsButtons", "Button vibration", "Vibration", "true", ("false", "true"),
+            help="Pedestal buttons you press and floor buttons.", advanced=True, when=(_VIBRATION,)),
+
+    Setting("AntiAliasing", "Anti-aliasing", "Graphics", "0", ("0", "2", "4", "8"),
+            help="Smooths jagged edges; higher values cost performance.", labels=("Off", "2x", "4x", "8x")),
+    Setting("RenderWindow", "Show the game on the monitor", "Graphics", "0", ("0", "1"),
+            help="Draws an extra view for the desktop window. Costs performance."),
+
+    Setting("ViewmodelPosCustomOffsetX", "Gun offset X", "Gun position", "0", bounds=(-100, 100),
+            help=_GUN_HELP, advanced=True),
+    Setting("ViewmodelPosCustomOffsetY", "Gun offset Y", "Gun position", "0", bounds=(-100, 100), advanced=True),
+    Setting("ViewmodelPosCustomOffsetZ", "Gun offset Z", "Gun position", "0", bounds=(-100, 100), advanced=True),
+    Setting("ViewmodelAngCustomOffsetX", "Gun angle X (degrees)", "Gun position", "0", bounds=(-180, 180),
+            advanced=True),
+    Setting("ViewmodelAngCustomOffsetY", "Gun angle Y (degrees)", "Gun position", "0", bounds=(-180, 180),
+            advanced=True),
+    Setting("ViewmodelAngCustomOffsetZ", "Gun angle Z (degrees)", "Gun position", "0", bounds=(-180, 180),
+            advanced=True),
+
+    Setting("6DOF", "Positional head tracking", "Tracking", "true", ("false", "true"),
+            help="Off also turns physical walking off.", advanced=True),
+    Setting("VRScale", "World scale (units per metre)", "Tracking", "43.2", bounds=(1, 200),
+            help="43.2 matches the game's proportions.", advanced=True),
+    Setting("IPDScale", "Eye distance multiplier", "Tracking", "1", bounds=(.5, 1.5),
+            help="Above 1 makes the world look smaller.", advanced=True),
+
+    Setting("PortalOrientationMode", "Portal orientation", "Experimental", "LegacyYaw",
+            ("LegacyYaw", "FullRotation", "YawOnly", "PreserveHorizon"),
+            help="How your view turns through floor and ceiling portals. Modes other than Classic are "
+                 "untested and turn physical walking off.",
+            labels=("Classic", "Full rotation", "Yaw only", "Level horizon"), advanced=True),
+
+    Setting("VerboseDiagnostics", "Detailed log", "Troubleshooting", "false", ("false", "true"),
+            help="Writes much more to the mod log, for bug reports.", advanced=True),
+
+    # Retired options, superseded by what the mod now always does.
+    Setting("AimMode", "Aim mode", "Retired", "2", ("0", "1", "2"), fixed="2"),
+    Setting("ShowSourceCrosshair", "Legacy flat crosshair", "Retired", "true", ("false", "true"), fixed="true"),
+    Setting("ExperimentalStereoReticle", "Atlas reticle rollback", "Retired", "false", ("false", "true"),
+            fixed="false"),
+    Setting("HUDInEyeCentered", "Center legacy HUD in eyes", "Retired", "false", ("false", "true"), fixed="false"),
+    Setting("HUDInEyeScale", "Legacy HUD width fraction", "Retired", "0.45", bounds=(.2, 1), fixed="0.45"),
+    Setting("HUDInEyeVerticalOffset", "Legacy HUD vertical offset", "Retired", "0.05", bounds=(-.4, .4),
+            fixed="0.05"),
+    Setting("ExperimentalViewmodelAlignment", "Controller-locked gun", "Retired", "false", ("false", "true"),
+            fixed="true"),
+    Setting("AimFromViewmodelMuzzle", "Aim from the gun muzzle", "Retired", "false", ("false", "true"),
+            fixed="true"),
+    # The fallback shot pulse when the game's own rumble is unavailable follows Controller vibration.
+    Setting("ExperimentalPortalShotHaptics", "Portal shot vibration", "Retired", "false", ("false", "true"),
+            fixed="Haptics"),
+    Setting("PortalShotHapticAmplitude", "Portal shot vibration strength", "Retired", "0.35", bounds=(0, 1),
+            fixed="0.35"),
+    Setting("PortalShotHapticDurationSeconds", "Portal shot vibration duration", "Retired", "0.05",
+            bounds=(.01, .15), fixed="0.05"),
 )
-BASIC_KEYS = frozenset(("TrackingMode", "MovementDirection", "RoomscaleMode", "SnapTurning",
-                        "SnapTurnAngle", "TurnSpeed", "PhysicalCrouch", "RenderWindow"))
+BY_KEY = {item.key: item for item in SETTINGS}
+# Choices the launcher no longer offers, and what replaces them.
+_RETIRED_CHOICES = {"RoomscaleMode": {"Observe": "Off"}}
 _EYE_HUD_KEYS = frozenset(("HUDInEyeCentered", "HUDInEyeScale", "HUDInEyeVerticalOffset", "ShowSourceCrosshair"))
 _HAPTICS_KEYS = frozenset(("Haptics", "HapticsIntensity", "HapticsNativeRumble", "HapticsHeldObject", "HapticsButtons"))
 _CROUCH_KEYS = frozenset(("PhysicalCrouch", "PhysicalCrouchDropMeters"))
@@ -196,13 +241,47 @@ def retire_ingame_settings(game: Path, imported: dict[str, str]) -> bool:
     return True
 
 
+def visible(item: Setting, values: dict[str, str], advanced: bool) -> bool:
+    """Whether the launcher shows a setting while the others hold these values."""
+    if item.fixed is not None or (item.advanced and not advanced):
+        return False
+    return all(values.get(key) in allowed for key, allowed in item.when)
+
+
+def user_values(values: dict[str, str]) -> dict[str, str]:
+    """A value set as the launcher keeps it: retired options at their fixed values and retired
+    choices replaced. Missing keys stay missing, so validate_settings still reports them."""
+    result = dict(values)
+    for key, replacements in _RETIRED_CHOICES.items():
+        if isinstance(result.get(key), str):
+            result[key] = replacements.get(result[key].strip(), result[key])
+    for item in SETTINGS:
+        if item.fixed is not None and item.key in result:
+            result[item.key] = result.get(item.fixed, item.default) if item.fixed in BY_KEY else item.fixed
+    return result
+
+
+def coupled_changes(values: dict[str, str], key: str) -> dict[str, str]:
+    """Settings that change with `key` so the set stays playable: physical walking needs
+    positional tracking and the classic portal orientation."""
+    walking = values.get("RoomscaleMode") == "ActiveExperimental"
+    if key == "6DOF" and values.get(key) == "false" and walking:
+        return {"RoomscaleMode": "Off"}
+    if key == "PortalOrientationMode" and values.get(key) != "LegacyYaw" and walking:
+        return {"RoomscaleMode": "Off"}
+    if key == "RoomscaleMode" and walking:
+        return {name: want for name, want in (("6DOF", "true"), ("PortalOrientationMode", "LegacyYaw"))
+                if values.get(name) != want}
+    return {}
+
+
 def recommended_settings() -> dict[str, str]:
     # Reuse the tested profile's calibration rather than creating a second copy.
     from .test_launcher_core import BASE_VALUES, PROFILES
     values = {item.key: item.default for item in SETTINGS}
     values.update(BASE_VALUES)
     values.update(PROFILES["roomscale_active_experimental"].changes)
-    return validate_settings(values)
+    return validate_settings(user_values(values))
 
 
 def validate_settings(values: dict[str, str]) -> dict[str, str]:
@@ -240,8 +319,22 @@ def validate_settings(values: dict[str, str]) -> dict[str, str]:
 
 
 def _validated_preferences(prefs: dict) -> dict:
-    if not isinstance(prefs, dict) or prefs.keys() != {"version", "game_dir", "steam_exe", "values"}:
+    required = {"version", "game_dir", "steam_exe", "values"}
+    # game_dirs: the folder chosen for each game by its key, kept while another game is selected.
+    # ingame_taken: per game key, the Options > VR values the launcher already took from that game.
+    if not isinstance(prefs, dict) or not required <= prefs.keys() <= required | {"game_dirs", "ingame_taken"}:
         raise ValueError("Invalid launcher preferences fields")
+    taken = prefs.get("ingame_taken", {})
+    if not isinstance(taken, dict) or not all(
+            isinstance(game, str) and isinstance(values, dict) and
+            all(isinstance(key, str) and isinstance(value, str) for key, value in values.items())
+            for game, values in taken.items()):
+        raise ValueError("Invalid launcher preferences in-game values")
+    folders = prefs.get("game_dirs", {})
+    if not isinstance(folders, dict) or not all(
+            isinstance(key, str) and isinstance(path, str) and path.strip() and "\0" not in path
+            for key, path in folders.items()):
+        raise ValueError("Invalid launcher preferences game folders")
     if type(prefs["version"]) is not int or prefs["version"] != 1:
         raise ValueError("Unsupported launcher preferences version")
     for key in ("game_dir", "steam_exe"):
@@ -262,9 +355,11 @@ def load_preferences(path: Path, legacy: dict) -> dict:
             all_keys = {item.key for item in SETTINGS}
             missing = all_keys - prefs["values"].keys()
             groups = [group for group in _ADDED_KEY_GROUPS if group & missing]
-            if prefs["values"].keys() <= all_keys and missing and                     all(group <= missing for group in groups) and missing == frozenset().union(*groups):
+            if (prefs["values"].keys() <= all_keys and missing and all(group <= missing for group in groups)
+                    and missing == frozenset().union(*groups)):
                 prefs = {**prefs, "values": {**prefs["values"],
                          **{item.key: item.default for item in SETTINGS if item.key in missing}}}
+            prefs = {**prefs, "values": user_values(prefs["values"])}
         return _validated_preferences(prefs)
     except (OSError, UnicodeError, ValueError) as error:
         raise ValueError(f"Cannot read launcher preferences {path}: {error}. The file was not changed.") from error

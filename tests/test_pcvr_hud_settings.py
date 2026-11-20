@@ -90,8 +90,12 @@ class EyeHudSettingsTests(unittest.TestCase):
             path = Path(temporary) / "preferences.json"
             path.write_text(json.dumps(old), encoding="utf-8")
             migrated = settings.load_preferences(path, {})
-            migrated["values"].update(HUDInEyeCentered="true", HUDInEyeScale="0.6",
-                                      HUDInEyeVerticalOffset="-0.2", ShowSourceCrosshair="false")
+            # The legacy aim modes and in-eye HUD are retired: old files move to the current aiming.
+            self.assertEqual({key: migrated["values"][key] for key in
+                              ("AimMode", "ShowSourceCrosshair", "HUDInEyeCentered", "TurnSpeed")},
+                             {"AimMode": "2", "ShowSourceCrosshair": "true", "HUDInEyeCentered": "false",
+                              "TurnSpeed": "0.27"})
+            migrated["values"].update(HUDWidthMeters="1.8", SnapTurnAngle="30")
             settings.save_preferences(path, migrated)
             self.assertEqual(settings.load_preferences(path, {}), migrated)
             template = (Path(__file__).resolve().parent.parent / "L4D2VR/config.txt").read_text(encoding="utf-8")

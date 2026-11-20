@@ -226,6 +226,43 @@ class SettingsTests(unittest.TestCase):
             self.assertTrue(self.settings.retire_ingame_settings(game, {"SnapTurning": "false"}))
             self.assertFalse(path.exists())
 
+    def test_retired_options_keep_fixed_values(self):
+        values = self.settings.recommended_settings()
+        values.update(AimMode="0", ShowSourceCrosshair="false", RoomscaleMode="Observe", Haptics="false",
+                      ExperimentalPortalShotHaptics="true")
+        kept = self.settings.user_values(values)
+        self.assertEqual((kept["AimMode"], kept["ShowSourceCrosshair"]), ("2", "true"))
+        self.assertEqual(kept["RoomscaleMode"], "Off")
+        self.assertEqual(kept["ExperimentalPortalShotHaptics"], "false", "portal shot vibration follows Haptics")
+        for item in self.settings.SETTINGS:
+            if item.fixed is not None:
+                self.assertFalse(self.settings.visible(item, kept, True), item.key)
+
+    def test_conditions_and_advanced_flag_choose_visible_settings(self):
+        by_key, values = self.settings.BY_KEY, self.settings.recommended_settings()
+        visible = lambda key, advanced=False: self.settings.visible(by_key[key], values, advanced)
+        values["SnapTurning"] = "true"
+        self.assertTrue(visible("SnapTurnAngle"))
+        self.assertFalse(visible("TurnSpeed"))
+        values["SnapTurning"] = "false"
+        self.assertEqual((visible("SnapTurnAngle"), visible("TurnSpeed")), (False, True))
+        self.assertFalse(visible("VRScale"))
+        self.assertTrue(visible("VRScale", advanced=True))
+
+    def test_preferences_keep_game_folders_and_taken_ingame_values(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "settings.json"
+            prefs = self.settings.load_preferences(path, core.load_state(path.parent / "state"))
+            prefs = {**prefs, "game_dirs": {"aak": r"C:\Games\AAK"},
+                     "ingame_taken": {"aak": {"SnapTurning": "true"}}}
+            self.settings.save_preferences(path, prefs)
+            self.assertEqual(self.settings.load_preferences(path, {}), prefs)
+            for bad in ({"game_dirs": {"aak": ""}}, {"ingame_taken": {"aak": "x"}},
+                        {"ingame_taken": {"aak": {"SnapTurning": 1}}}):
+                with self.subTest(bad=bad), self.assertRaises(ValueError):
+                    self.settings.save_preferences(path, {**prefs, **bad})
+
+
 class LauncherTests(unittest.TestCase):
     def setUp(self):
         from importlib.util import find_spec
@@ -268,22 +305,25 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse((self.game / "VR").exists())
         self.assertEqual(self.state_path.read_bytes(), self.original_state)
 
-    def test_small_window_keeps_setup_recovery_actions_accessible(self):
+    def test_small_window_keeps_recovery_actions_reachable(self):
         core.stage_install(self.repo, self.game, self.state_path, "baseline")
         self.app._refresh_install()
         width, height = self.app.px(640), self.app.px(520)
         self.root.geometry(f"{width}x{height}")
         self.root.deiconify()
         self.root.update()
-        page = self.app.pages["Setup"]
-        button = next(button for button in self.app.buttons if button.text == "Restore original game files")
-        page.scroll("moveto", 1)
-        self.root.update()
-        top = page.canvas.canvasy(0)
-        self.assertGreaterEqual(button.box[1], top)
-        self.assertLessEqual(button.box[3], top + page.canvas.winfo_height())
-        link = next(button for button in self.app.buttons if button.text == "Open backups")
-        self.assertLessEqual(link.box[3], self.root.winfo_height())
+        for name, text in (("Games", "Restore original files"), ("Help", "Open backups")):
+            with self.subTest(page=name):
+                self.app.show_page(name)
+                page = self.app.pages[name]
+                button = next(button for button in self.app.buttons if button.text == text)
+                self.assertIs(button.canvas, page.canvas)
+                self.assertLessEqual(button.box[3], max(page.content, page.height))
+                page.scroll("moveto", max(0, button.box[1] - self.app.px(40)) / max(page.content, 1))
+                self.root.update()
+                top = page.canvas.canvasy(0)
+                self.assertGreaterEqual(button.box[1], top)
+                self.assertLessEqual(button.box[3], top + page.canvas.winfo_height())
 
     def test_wheel_over_a_choice_scrolls_the_page_without_changing_it(self):
         from tkinter import ttk
@@ -321,7 +361,8 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual((self.root.winfo_x(), self.root.winfo_y()), (left + 30, top + 40))
         self.assertEqual(self.app.close_button.box[2], self.root.winfo_width())
         self.assertEqual(self.app.minimize_button.box[2], self.app.close_button.box[0])
-        self.assertLess(self.app.apply_button.box[2], self.app.launch_button.box[0])
+        self.assertEqual(self.app.launch_button.text, "Play in VR")
+        self.assertEqual(self.app.launch_button.box[2], self.root.winfo_width() - self.app.px(self.launcher.MARGIN))
         with patch.object(self.app, "close") as close:
             self.app.close_button.command = close
             self.app.close_button.invoke()
@@ -348,8 +389,7 @@ class LauncherTests(unittest.TestCase):
         from tkinter import ttk
 
         page = self.app.pages["Settings"]
-        widget = next(control.widget for _, item, control in page.rows
-                      if item and item.key == "MovementDirection")
+        widget = next(control.widget for item, control in page.rows if item.key == "MovementDirection")
         self.assertIsInstance(widget, ttk.Combobox)
         self.assertIn("Left controller", widget.cget("values"))
         widget.set("Left controller")
@@ -357,31 +397,40 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.app.vars["MovementDirection"].get(), "LeftController")
         self.app.vars["MovementDirection"].set("HMD")
         self.assertEqual(widget.get(), "Headset")
-        toggle = next(control for _, item, control in page.rows if item and item.key == "RenderWindow")
+        toggle = next(control for item, control in page.rows if item.key == "RenderWindow")
         self.assertIsInstance(toggle, self.launcher.Toggle)
         self.assertEqual((toggle.off, toggle.on), ("0", "1"))
 
-    def test_preview_is_offered_only_on_advanced(self):
+    def test_pages_are_games_settings_and_help(self):
+        self.assertEqual(tuple(self.app.pages), ("Games", "Settings", "Help"))
+        self.assertEqual(self.app.current, "Games")
         preview = next(button for button in self.app.buttons if button.text == "Preview config")
-        for name, shown in (("Setup", "hidden"), ("Settings", "hidden"), ("Advanced", "normal")):
+        self.assertIs(preview.canvas, self.app.pages["Help"].canvas)
+        # The settings footer shows only on the Settings page.
+        for name in self.app.pages:
             self.app.show_page(name)
-            self.assertEqual(self.app.canvas.itemcget(preview.label, "state"), shown, name)
+            shown = "normal" if name == "Settings" else "hidden"
+            self.assertEqual(self.app.canvas.itemcget(self.app.reset_button.label, "state"), shown, name)
 
-    def test_setup_card_follows_the_install_on_every_page(self):
+    def test_header_follows_the_selected_game_and_its_install(self):
         self.assertFalse(self.app.installed)
         for name in self.app.pages:
             self.app.show_page(name)
         self.root.update_idletasks()
+        subtitle = lambda: self.app.canvas.itemcget(self.app.subtitle, "text")
+        self.assertIn("The mod installs when you play", subtitle())
         self.app.apply()
         self.assertTrue(self.app.installed)
-        subtitle = lambda: self.app.canvas.itemcget(self.app.subtitle, "text")
-        self.assertEqual(subtitle(), "Ready to play")
+        self.assertTrue(subtitle().startswith("Portal 2"))
+        self.assertIn("Ready to play", subtitle())
+        self.assertEqual(self.app.install_button.text, "Apply settings")
         self.app.game_var.set(str(self.folder / "missing"))
-        self.assertEqual(subtitle(), "Needs attention")
+        self.assertEqual(subtitle(), "Portal 2 not found: choose its folder")
         self.app.game_var.set(str(self.game))
         self.app.restore()
         self.assertFalse(self.app.installed)
-        self.assertEqual(subtitle(), "Not installed yet")
+        self.assertIn("The mod installs when you play", subtitle())
+        self.assertEqual(self.app.install_button.text, "Install mod")
 
     def test_process_query_has_bounded_wait_and_hidden_console(self):
         import subprocess
@@ -397,26 +446,78 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(observed[0].get("timeout"), 5)
         self.assertEqual(observed[0].get("creationflags"), getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
-    def test_save_and_reset_only_change_local_settings(self):
+    def test_changes_save_by_themselves_and_only_locally(self):
+        with patch.object(self.launcher, "SAVE_DELAY_MS", 1):
+            self.app.vars["SnapTurning"].set("true")
+        self.assertIsNotNone(self.app._save_job, "a change schedules a save")
+        self.assertFalse(self.prefs_path.exists())
+        self.root.after(30)
+        self.root.update()
+        self.assertIsNone(self.app._save_job)
+        self.assertIn("Settings saved", self.app.status_var.get())
+        self.assertEqual(json.loads(self.prefs_path.read_text())["values"]["SnapTurning"], "true")
+        self.assertEqual(self.state_path.read_bytes(), self.original_state)
+        self.assertFalse((self.game / "VR").exists())
+
+    def test_closing_saves_pending_changes(self):
+        self.app.vars["SnapTurnAngle"].set("30")
+        with patch.object(self.root, "destroy") as destroy:
+            self.app.close()
+        destroy.assert_called_once()
+        self.assertEqual(json.loads(self.prefs_path.read_text())["values"]["SnapTurnAngle"], "30")
+
+    def test_invalid_value_is_named_and_not_saved(self):
+        self.app.vars["SnapTurning"].set("true")
+        self.app.vars["SnapTurnAngle"].set("999")
+        self.assertIsNone(self.app._save_job)
+        self.assertTrue(self.app.invalid)
+        self.assertIn("Snap angle", self.app.status_var.get())
+        self.assertEqual(self.app.canvas.itemcget(self.app.subtitle, "text"), "A setting needs attention")
+        self.app.vars["SnapTurnAngle"].set("30")
+        self.assertFalse(self.app.invalid)
+        self.assertIsNotNone(self.app._save_job)
+
+    def test_reset_asks_then_restores_recommended_and_saves(self):
         self.app.vars["SnapTurning"].set("true")
         self.app.save()
-        data = json.loads(self.prefs_path.read_text())
-        self.assertEqual(data["values"]["SnapTurning"], "true")
+        with patch.object(self.launcher.messagebox, "askyesno", return_value=False):
+            self.app.reset_recommended()
+        self.assertEqual(self.app.vars["SnapTurning"].get(), "true")
         self.app.reset_recommended()
         self.assertEqual(self.app.game_var.get(), str(self.game))
         self.assertEqual(self.app.steam_var.get(), str(self.steam))
         self.assertEqual(self.app.vars["SnapTurning"].get(), "false")
+        self.assertEqual(json.loads(self.prefs_path.read_text())["values"]["SnapTurning"], "false")
         self.assertEqual(self.state_path.read_bytes(), self.original_state)
         self.assertFalse((self.game / "VR").exists())
-        # Reset does not silently replace the previously saved custom preferences.
-        self.assertEqual(json.loads(self.prefs_path.read_text())["values"]["SnapTurning"], "true")
 
     def test_saved_custom_settings_survive_new_window(self):
         self.app.vars["HUDWidthMeters"].set("1.8")
         self.app.save()
         other = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path)
         self.assertEqual(other.vars["HUDWidthMeters"].get(), "1.8")
-        self.assertIn("Custom", other.profile_var.get())
+
+    def test_linked_settings_change_together(self):
+        values = self.app.vars
+        self.assertEqual(values["RoomscaleMode"].get(), "ActiveExperimental")
+        values["6DOF"].set("false")
+        self.assertEqual(values["RoomscaleMode"].get(), "Off")
+        values["PortalOrientationMode"].set("FullRotation")
+        values["RoomscaleMode"].set("ActiveExperimental")
+        self.assertEqual((values["6DOF"].get(), values["PortalOrientationMode"].get()), ("true", "LegacyYaw"))
+        self.assertFalse(self.app.invalid)
+
+    def test_advanced_switch_and_conditions_choose_the_rows(self):
+        page = self.app.pages["Settings"]
+        shown = lambda key: next(control for item, control in page.rows if item.key == key).shown
+        self.assertFalse(shown("ViewmodelPosCustomOffsetX"))
+        self.assertTrue(shown("ExperimentalWorldAimMarker"))
+        self.assertFalse(shown("VerboseDiagnostics"))
+        self.app.advanced_var.set("1")
+        self.assertTrue(shown("VerboseDiagnostics"))
+        keys = {item.key for item, _ in page.rows}
+        self.assertNotIn("AimMode", keys, "retired options have no row")
+        self.assertNotIn("ExperimentalStereoReticle", keys)
 
     def test_found_paths_fill_a_first_start_without_unsaved_changes(self):
         legacy = core.load_state(self.state_path)
@@ -430,7 +531,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(asked, [(r"Z:\missing\Portal 2", r"Z:\missing\steam.exe")])
         self.assertEqual((other.game_var.get(), other.steam_var.get()), (str(self.game), str(self.steam)))
         self.assertEqual(other._paths_found(), (True, True))
-        self.assertNotIn("unsaved", other.profile_var.get())
+        self.assertIsNone(other._save_job)
         self.assertIn("Found Portal 2 and Steam automatically", other.status_var.get())
         self.assertFalse(self.prefs_path.exists())
         other.save()
@@ -444,13 +545,13 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual((other.game_var.get(), other.steam_var.get()), (str(self.game), str(self.steam)))
         self.assertEqual(other.status_var.get(), "")
 
-    def test_bad_dependency_blocks_apply_before_any_settings_or_game_write(self):
-        self.app.vars["6DOF"].set("false")
+    def test_invalid_value_blocks_apply_before_any_settings_or_game_write(self):
+        self.app.vars["IPDScale"].set("3")
         self.app.apply()
         self.assertFalse((self.game / "VR").exists())
         self.assertFalse(self.prefs_path.exists())
         self.assertEqual(self.state_path.read_bytes(), self.original_state)
-        self.assertIn("requires", self.app.status_var.get())
+        self.assertIn("Eye distance multiplier", self.app.status_var.get())
 
     def test_apply_and_restore_use_the_existing_original_backup(self):
         original = self.game / "bin/d3d9.dll"
@@ -551,16 +652,35 @@ class LauncherTests(unittest.TestCase):
         self.app.game_var.set(str(self.game))
         self.assertTrue(self.app.installed, "Portal 2 stays installed")
 
-    def test_switch_game_finds_the_other_game_in_the_steam_libraries(self):
+    def test_select_game_finds_the_other_game_in_the_steam_libraries(self):
         from tools import games
         aak = self.make_aak()
         with patch.object(self.launcher, "find_game", return_value=aak) as find:
-            self.app.switch_game()
+            self.app.select_game(games.ALIVE_AND_KICKING)
         find.assert_called_once_with(self.steam.parent, games.ALIVE_AND_KICKING)
         self.assertEqual(self.app.game_var.get(), str(aak))
+        self.assertIn("Portal: Alive & Kicking selected", self.app.status_var.get())
+        self.app.select_game(games.PORTAL2)
+        self.assertEqual(self.app.game_var.get(), str(self.game), "each game keeps its folder")
+        self.app.save()
+        self.assertEqual(json.loads(self.prefs_path.read_text())["game_dirs"],
+                         {"portal2": str(self.game), "aak": str(aak)})
+        (aak / "AAK/gameinfo.txt").unlink()
         with patch.object(self.launcher, "find_game", return_value=None):
-            self.app.switch_game()
-        self.assertEqual(self.app.game_var.get(), str(aak), "nothing found keeps the folder")
+            self.app.select_game(games.ALIVE_AND_KICKING)
+        self.assertEqual(self.app.game_var.get(), str(self.game), "nothing found keeps the selection")
+        self.assertIn("Locate folder", self.app.status_var.get())
+
+    def test_game_cards_select_only_installed_games(self):
+        from tools import games
+        aak = self.make_aak()
+        self.app.folders["aak"] = str(aak)
+        self.app.pages["Games"].relayout()
+        self.app._card_clicked(games.ALIVE_AND_KICKING)
+        self.assertEqual(self.app.game_var.get(), str(aak))
+        self.app.folders["portal2"] = str(self.folder / "gone")
+        self.app._card_clicked(games.PORTAL2)
+        self.assertEqual(self.app.game_var.get(), str(aak))
 
     def test_running_game_blocks_apply_without_writes(self):
         with patch.object(self.launcher, "game_is_running", return_value=True):
@@ -577,20 +697,32 @@ class LauncherTests(unittest.TestCase):
         self.assertTrue(state["managed_files"])
         self.assertIn("Restore", self.app.status_var.get())
 
-    def test_ingame_changes_load_as_unsaved_edits_and_retire_after_apply(self):
+    def test_ingame_changes_are_taken_once_and_retire_after_apply(self):
         (self.game / "VR").mkdir(parents=True, exist_ok=True)
         ingame = self.game / "VR/ingame_settings.txt"
         ingame.write_text("SnapTurning=true\nSnapTurnAngle=30\n", encoding="utf-8")
         other = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path)
         self.assertEqual(other.vars["SnapTurning"].get(), "true")
-        self.assertIn("unsaved", other.profile_var.get())
-        self.assertIn("Options > VR", other.status_var.get())
-        other.apply()
+        self.assertIn("Took 2 settings", other.status_var.get())
+        saved = json.loads(self.prefs_path.read_text())
+        self.assertEqual(saved["values"]["SnapTurnAngle"], "30")
+        self.assertEqual(saved["ingame_taken"], {"portal2": {"SnapTurning": "true", "SnapTurnAngle": "30"}})
+        # A later change in the launcher wins over the same, already taken file.
+        other.vars["SnapTurnAngle"].set("45")
+        other.save()
+        again = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path)
+        self.assertEqual(again.vars["SnapTurnAngle"].get(), "45")
+        # A new change in the game is taken.
+        ingame.write_text("SnapTurning=true\nSnapTurnAngle=60\n", encoding="utf-8")
+        third = self.launcher.Launcher(self.root, self.repo, self.prefs_path, self.state_path)
+        self.assertEqual(third.vars["SnapTurnAngle"].get(), "60")
+        third.apply()
         values = config_values((self.game / "VR/config.txt").read_text())
-        self.assertEqual(values["SnapTurning"], "true")
-        self.assertEqual(values["SnapTurnAngle"], "30")
+        self.assertEqual((values["SnapTurning"], values["SnapTurnAngle"]), ("true", "60"))
         self.assertFalse(ingame.exists())
-        self.assertEqual(json.loads(self.prefs_path.read_text())["values"]["SnapTurning"], "true")
+        saved = json.loads(self.prefs_path.read_text())
+        self.assertEqual(saved["values"]["SnapTurnAngle"], "60")
+        self.assertNotIn("ingame_taken", saved)
 
 if __name__ == "__main__":
     unittest.main()

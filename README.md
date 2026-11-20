@@ -41,13 +41,13 @@ Then:
 
 1. Download `Portal2VR-Enriched-vX.Y.Z-win32.zip` from the [Releases](https://github.com/oxenar7/portal2-vr-enriched/releases) page and extract the whole ZIP to a folder you keep, for example in Documents. Python and build tools are not needed.
 2. Close Portal 2, connect your headset and open `Portal 2 VR Enriched Launcher.exe`. The launcher is not code-signed, so Windows may show "Windows protected your PC": choose **More info**, then **Run anyway**.
-3. The launcher finds Portal 2 and Steam by itself, including Steam libraries on other drives. If a row still asks for a folder, press **Change** and pick the folder that contains `portal2.exe` (in Steam: right-click Portal 2 > Manage > Browse local files) or `steam.exe` in your Steam folder.
-4. Press **Launch in VR**. The launcher backs up the game files it replaces, installs the mod and starts Portal 2 through Steam with the launch options it needs. SteamVR starts with the game. Next time, just press **Launch in VR** again.
+3. The launcher finds Portal 2 and Steam by itself, including Steam libraries on other drives. If its **Games** page says the game is not found, press **Locate folder** and pick the folder that contains `portal2.exe` (in Steam: right-click Portal 2 > Manage > Browse local files); for Steam, press **Change** on the Steam card and pick `steam.exe` in your Steam folder.
+4. Press **Play in VR**. The launcher backs up the game files it replaces, installs the mod and starts Portal 2 through Steam with the launch options it needs. SteamVR starts with the game. Next time, just press **Play in VR** again.
 5. Optional: turn on subtitles in Portal 2's audio options to get captions in the headset.
 
-The mod stays installed after you quit. To play Portal 2 normally again, open the launcher and press **Restore original game files**. Keep the extracted folder until then: it holds your backups.
+The mod stays installed after you quit. To play Portal 2 normally again, open the launcher and press **Restore original files** on the Games page. Keep the extracted folder until then: it holds your backups.
 
-To update, close the launcher and extract the new ZIP into the same folder, replacing the files. Your settings and backups stay, and the next **Launch in VR** installs the new version. If you prefer a new folder, first press **Restore original game files** in the old launcher.
+To update, close the launcher and extract the new ZIP into the same folder, replacing the files. Your settings and backups stay, and the next **Play in VR** installs the new version. If you prefer a new folder, first press **Restore original files** in the old launcher.
 
 ## Controls
 
@@ -72,16 +72,16 @@ Valve Index and Vive Cosmos controllers have their own default bindings. Other c
 
 ## If something goes wrong
 
-- **The game does not start in VR:** make sure SteamVR sees the headset and controllers before pressing **Launch in VR**.
+- **The game does not start in VR:** make sure SteamVR sees the headset and controllers before pressing **Play in VR**.
 - **The game closes at startup:** install the latest Visual C++ Redistributable for x86 from the link above.
 - **After a Portal 2 update:** some features may switch themselves off until the mod is updated. The log says which.
-- **The portal gun floats too high with an HD texture pack:** the "Portal VR Gun Model" replacement (included in the Portal 2 VR HD Collection) holds the gun differently from the original model, so it sits about 26 cm too high. In the launcher's **Advanced** page, under **Gun calibration**, set Gun X / Y / Z position to `-7.3` / `-8.2` / `11.35` (tested with the controller-locked gun). Set them back to `0` if you remove the pack.
+- **The portal gun floats too high with an HD texture pack:** the "Portal VR Gun Model" replacement (included in the Portal 2 VR HD Collection) holds the gun differently from the original model, so it sits about 26 cm too high. In the launcher's **Settings**, turn on **Advanced settings**, then under **Gun position** set Gun offset X / Y / Z to `-7.3` / `-8.2` / `11.35` (tested with the controller-locked gun). Set them back to `0` if you remove the pack.
 - **Dark or black wedges at the edge of your view:** the mod skips the eye pixels your headset reports as never shown. If your headset shows them anyway, create a text file named `dxvk.conf` in your Portal 2 folder containing `d3d9.vrEyeMask = False`, and please report your headset.
 - **Reporting a problem:** press **Open mod log** in the launcher, or find `bin/portal2vr.log` in your Portal 2 folder, and attach it to a GitHub issue with your headset and graphics card.
 
 ## Settings
 
-The launcher starts with the **recommended setup**. Settings survive restarts. `Save settings` changes only local preferences; `Apply` installs the mod/config without starting the game. Apply changes with the game closed; restart to use the new settings.
+The launcher starts with the **recommended setup**. Settings save as you change them and only touch the launcher's own preferences; **Restore recommended** puts them back. **Play in VR** installs them with the mod, and **Apply settings** on the Games page does the same without starting the game. Apply with the game closed; restart to use the new settings. The basic view shows the everyday options; **Advanced settings** adds calibration, tracking, caption placement and diagnostics.
 
 ### Recommended setup
 
@@ -106,11 +106,11 @@ Settings provides tracking, movement, roomscale, turning and desktop-render opti
 
 Portal 2's own **Options** screen gains a **VR** entry under Controller. It opens a **VR** dialog styled like Video, drawn with the game's tiles, fonts and menu sounds: snap/smooth turning, movement direction, left-handed mode, vibration and the aim line, plus an **Advanced VR** page (positional tracking, controller pitch, standing height, world and IPD scale, individual vibration sources, reticle scaling, desktop mirror). Point and click with the laser, or use the stick: up/down to select, left/right to change, Back to leave. Changes apply immediately; world scale and standing height apply on **Recenter**. Settings that need a restart stay in the launcher.
 
-Changes are saved to `VR/ingame_settings.txt`, which overrides matching keys of `VR/config.txt`; **Use Defaults** deletes it. The launcher shows those values as unsaved edits on its next start and folds them into `config.txt` on Apply/Launch, then removes the file. The page draws only after every VGUI vtable slot it uses matches a prologue verified on the installed `vguimatsurface.dll`/`vgui2.dll`; otherwise it is skipped with a `bin/portal2vr.log` warning and `config.txt` keeps working.
+Changes are saved to `VR/ingame_settings.txt`, which overrides matching keys of `VR/config.txt`; **Use Defaults** deletes it. The launcher takes those values on its next start, once (a later change in the launcher wins over the same file), and folds them into `config.txt` on Apply settings/Play in VR, then removes the file. The page draws only after every VGUI vtable slot it uses matches a prologue verified on the installed `vguimatsurface.dll`/`vgui2.dll`; otherwise it is skipped with a `bin/portal2vr.log` warning and `config.txt` keeps working.
 
 `Restore recommended` resets the form without changing installation paths or silently applying anything. Turning off **Aim line** leaves only the Portal reticle at the aim point.
 
-Before first installation the shared installer takes a hash-verified snapshot of any existing files it will replace. Later updates retain that first snapshot. **Restore original game files** restores pre-existing files and removes only files created by the launcher; backups remain available. Externally edited managed files, corrupted backups and concurrent installer operations are refused rather than overwritten.
+Before first installation the shared installer takes a hash-verified snapshot of any existing files it will replace. Later updates retain that first snapshot. **Restore original files** restores pre-existing files and removes only files created by the launcher; backups remain available. Externally edited managed files, corrupted backups and concurrent installer operations are refused rather than overwritten.
 
 Keep these local files together when moving the checkout or recovering an installation:
 
@@ -178,7 +178,7 @@ Requirements: the same as above, plus a local build. The launcher requires Pytho
 1. Build the mod as described below. This source checkout does not contain a prebuilt `Release/d3d9.dll`.
 2. Double-click **`Portal 2 VR Enriched Launcher.cmd`** in the repository root. Alternatively run `python -m tools.launcher` or open `Portal 2 VR Enriched Launcher.pyw`. Run `python -m tools.launcher_shortcut` once for shortcuts with the launcher icon in the repository root and on the desktop; pin the desktop one to keep that icon on the taskbar.
 3. Check the folder containing `portal2.exe` and your `steam.exe`; the launcher fills them in from Steam's registry entry and library list when the saved ones are missing. Choose the Portal 2 copy registered in that Steam client: launch requests AppID 620, not the selected executable directly. Paths are checked separately; multiple independent Steam installations are not automatically matched (a library on another drive is fine). Close Portal 2 before installing or changing its files.
-4. Connect the headset and controllers, then click **Launch in VR**; SteamVR starts with the game. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
+4. Connect the headset and controllers, then click **Play in VR**; SteamVR starts with the game. The launcher applies the config, backs up originals and launches Steam app 620 with `-insecure` and the retained VR-compatible video arguments.
 5. Enable subtitles in Portal 2's own options if you want captions.
 
 ## Building and verification

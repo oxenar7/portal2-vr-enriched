@@ -2040,6 +2040,35 @@ int main()
            true, "each game starts with its own portal gun grip");
     expect(GunModels::Find(1942580893) == &GunModels::kPortalStoriesMel, true,
            "Mel's own portal gun is told apart by its checksum");
+    const auto &reloaded = GameProfile::kPortalReloaded;
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Portal Reloaded\\portalreloaded\\bin\\client.dll") == &reloaded, true,
+           "client.dll under the portalreloaded folder selects Portal Reloaded");
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Portal Reloaded\\portal2\\bin\\client.dll") == &GameProfile::kPortal2,
+           true, "Reloaded's portal2 folder is not Reloaded's game folder");
+    expectInt(VrMenuData::ChapterOfMap("sp_a1_pr_map_001", reloaded), 1, "Reloaded's first map is its first entry");
+    expectInt(VrMenuData::ChapterOfMap("sp_a1_pr_map_012", reloaded), 12, "Reloaded's finale is its twelfth map");
+    expectInt(VrMenuData::ChapterOfMap("mp_coop_pr_cubes", reloaded), 0, "Reloaded's co-op maps are not chapters");
+    expectInt(VrMenuData::ChapterOfMap("sp_a1_pr_map_005"), 0, "Reloaded maps are not Portal 2 chapters");
+    expect(std::string(reloaded.folder) == "portalreloaded" && std::string(reloaded.appId) == "1255980" &&
+               std::string(reloaded.gameStrings) == "Portal Reloaded_" && reloaded.gunModel == &GunModels::kPortal2,
+           true, "Reloaded reads its folder, manifest and strings, and holds Portal 2's own gun");
+    expect(std::string(reloaded.offHandPress) == "att3" && reloaded.offHandRelease == nullptr &&
+               std::string(GameProfile::kPortal2.offHandPress) == "+reload" &&
+               std::string(GameProfile::kPortal2.offHandRelease) == "-reload" &&
+               std::string(mel.offHandPress) == "+reload" && std::string(aak.offHandPress) == "+reload",
+           true, "only Reloaded's off-hand trigger fires the time portal");
+    {
+        VrMenu::Texts texts;
+        texts.Load(VrMenuData::Strings{}, reloaded);
+        expect(texts.chapterTitle[5] == L"MAP 05" && texts.chapterSubtitle[5].empty() &&
+                   texts.chapterTitle[12] == L"MAP 12",
+               true, "Reloaded's saves are named after its numbered maps");
+        VrMenu::Texts portal2;
+        portal2.Load(VrMenuData::Strings{}, GameProfile::kPortal2);
+        expect(portal2.chapterTitle[3] == L"CHAPTER 3", true, "a chapter with no token keeps the CHAPTER fallback");
+    }
     const float *portal2Rig = GunModels::kPortal2.shift;
     expect(portal2Rig[0] == 0.0f && portal2Rig[1] == 0.0f && portal2Rig[2] == 0.0f, true,
            "Portal 2's portal gun keeps the calibrated grip offset");

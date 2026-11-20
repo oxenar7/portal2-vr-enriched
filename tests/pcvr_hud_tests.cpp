@@ -95,6 +95,11 @@ static void instructorHintTests() {
            "only a leading + is optional");
     expect(ActionForBinding("+speed") == Action::None && ActionForBinding(nullptr) == Action::None,
            "commands without a VR action keep the key icon");
+    expect(ActionForBinding("att1") == Action::PrimaryAttack && ActionForBinding("att2") == Action::SecondaryAttack &&
+               ActionForBinding("using") == Action::Use && ActionForBinding("att3") == Action::Reload,
+           "Portal Reloaded's aliases show the VR buttons that send them; the time portal is the off-hand trigger");
+    expect(ActionForBinding("remote_view") == Action::None && ActionForBinding("holo") == Action::None,
+           "Reloaded's other-time view keeps the key icon");
     using HintIcons::Id;
     expect(GlyphForInput("/user/hand/right", "/input/joystick", "click") == Id::RightStickPress,
            "the zoom click shows the right stick pressed");

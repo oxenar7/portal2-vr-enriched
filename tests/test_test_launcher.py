@@ -479,6 +479,10 @@ class InstallTests(unittest.TestCase):
         self.assertIn('"steam.app.317400"', mel)
         self.assertIn('"steam://launch/317400/VR"', mel)
         self.assertNotIn("620", mel)
+        reloaded = core.manifest_for_game(source, games.PORTAL_RELOADED).decode("utf-8")
+        self.assertIn('"steam.app.1255980"', reloaded)
+        self.assertIn('"steam://launch/1255980/VR"', reloaded)
+        self.assertNotIn('"steam.app.620"', reloaded)
 
     def test_failed_stage_rolls_back_new_files(self):
         with TemporaryDirectory() as temporary:

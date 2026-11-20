@@ -2190,7 +2190,7 @@ void VR::ReleaseHeldActions()
     } actions[] = {
         { &m_PrimaryAttackState, "-attack" }, { &m_SecondaryAttackState, "-attack2" },
         { &m_JumpState, "-jump" }, { &m_CrouchState, "-duck" },
-        { &m_UseState, "-use" }, { &m_ReloadState, "-reload" }
+        { &m_UseState, "-use" }, { &m_ReloadState, GameProfile::Current().offHandRelease }
     };
     for (const auto &action : actions)
         if (const char *command = action.state->HeldCommand(false, false, false, "", action.releaseCommand))
@@ -2413,7 +2413,9 @@ void VR::ProcessInput()
     ProcessHeldAction(m_ActionJump, m_JumpState, "+jump", "-jump");
     ProcessHeldAction(HandedAction(m_ActionCrouch, m_ActionCrouchLeftHanded), m_CrouchState, "+duck", "-duck");
     ProcessHeldAction(HandedAction(m_ActionUse, m_ActionUseLeftHanded), m_UseState, "+use", "-use");
-    ProcessHeldAction(HandedAction(m_ActionReload, m_ActionReloadLeftHanded), m_ReloadState, "+reload", "-reload");
+    const GameProfile::Profile &game = GameProfile::Current();
+    ProcessHeldAction(HandedAction(m_ActionReload, m_ActionReloadLeftHanded), m_ReloadState,
+                      game.offHandPress, game.offHandRelease);
     ProcessZoomInput();
 
     if (PressedDigitalAction(m_ActionPrevItem, true))

@@ -74,6 +74,9 @@ bool Game::Initialize()
                   " (" + ModuleVersion(surfacePath) + ")");
     const auto &game = GameProfile::Current();
     Logger::Write(std::string("Game: ") + game.name + " (folder " + game.folder + ", Steam app " + game.appId + ")");
+    if (std::string_view(game.offHandPress) != "+reload")
+        Logger::Write(std::string("Off-hand trigger sends \"") + game.offHandPress + "\"" +
+                      (game.offHandRelease ? std::string(", release \"") + game.offHandRelease + "\"" : ", no release"));
 
     m_ClientEntityList = (IClientEntityList *)GetInterface("client.dll", "VClientEntityList003");
     m_EngineTrace = (IEngineTrace *)GetInterface("engine.dll", "EngineTraceClient004");

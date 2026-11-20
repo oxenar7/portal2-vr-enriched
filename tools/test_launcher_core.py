@@ -377,7 +377,7 @@ def validate_launch_paths(repo: Path, game: Path, steam: Path) -> None:
 
 def build_steam_command(steam: Path, app_id: str = "620") -> list[str]:
     """Steam starts the game by its app id (games.py): 620 for Portal 2, 270470 for Alive & Kicking,
-    317400 for Portal Stories: Mel."""
+    317400 for Portal Stories: Mel, 1255980 for Portal Reloaded."""
     if not app_id.isdigit():
         raise ValueError(f"Invalid Steam app id: {app_id}")
     return [str(steam), "-applaunch", app_id, "-insecure", "-window", "-novid",

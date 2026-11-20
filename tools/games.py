@@ -1,9 +1,10 @@
 """The games the mod runs in, and how the launcher tells them apart.
 
-Portal: Alive & Kicking and Portal Stories: Mel are standalone Steam apps on Portal 2's
-engine. Their install folders look like Portal 2's (portal2.exe, bin) but their game data
-lives in an "AAK" or "portal_stories" folder instead of "portal2" (Mel's install also has a
-"portal2" folder of its own). The mod files go to the same places in all of them.
+Portal: Alive & Kicking, Portal Stories: Mel and Portal Reloaded are standalone Steam apps on
+Portal 2's engine. Their install folders look like Portal 2's (portal2.exe, bin) but their game
+data lives in an "AAK", "portal_stories" or "portalreloaded" folder instead of "portal2" (Mel's
+and Reloaded's installs also have a "portal2" folder of their own). The mod files go to the same
+places in all of them.
 """
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +29,9 @@ ALIVE_AND_KICKING = Game("aak", "Portal: Alive & Kicking", "270470", "Alive and 
                          ("portal2.exe", "aak.exe"), "A free fan-made campaign on Portal 2's engine.")
 PORTAL_STORIES_MEL = Game("mel", "Portal Stories: Mel", "317400", "Portal Stories Mel", "portal_stories",
                           ("portal2.exe",), "A free fan-made story campaign on Portal 2's engine.")
-GAMES = (PORTAL2, ALIVE_AND_KICKING, PORTAL_STORIES_MEL)
+PORTAL_RELOADED = Game("reloaded", "Portal Reloaded", "1255980", "Portal Reloaded", "portalreloaded",
+                       ("portal2.exe",), "A free fan-made campaign with a third portal that travels in time.")
+GAMES = (PORTAL2, ALIVE_AND_KICKING, PORTAL_STORIES_MEL, PORTAL_RELOADED)
 PROCESS_NAMES = tuple(dict.fromkeys(name for game in GAMES for name in game.processes))
 
 

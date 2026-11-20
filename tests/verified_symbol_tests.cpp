@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -189,6 +190,12 @@ void TestHash()
     Expect(!HashFileSha256(file, digest), "missing file does not hash");
 }
 
+bool SameClientCode(const ClientLayout &a, const ClientLayout &b)
+{
+    return a.build.timestamp == b.build.timestamp && a.build.size == b.build.size &&
+        std::memcmp(&a.fovFunction, &b.fovFunction, sizeof(ClientLayout) - offsetof(ClientLayout, fovFunction)) == 0;
+}
+
 void RunSuite(const ServerLayout &sl, const ClientLayout &cl, const char *game)
 {
     const std::string prefix = std::string(game) + ": ";
@@ -231,8 +238,10 @@ void RunSuite(const ServerLayout &sl, const ClientLayout &cl, const char *game)
         if (other != &sl)
             check(!ResolveImage(server.bytes, server.size, other->build.sha256, Symbol::EyePosition).address,
                 "the other game's server hash rejects this image");
+    // Mel and Reloaded ship the same client code (same timestamp, size and offsets), so either hash
+    // takes the other's image; every other game's hash must not.
     for (const auto *other : Detail::clientLayouts)
-        if (other != &cl)
+        if (other != &cl && !SameClientCode(*other, cl))
             check(!ResolveImage(client.bytes, client.size, other->build.sha256, Symbol::ViewModelFov).address,
                 "the other game's client hash rejects this image");
 
@@ -327,9 +336,12 @@ void RunSuite(const ServerLayout &sl, const ClientLayout &cl, const char *game)
     check(!resolveHeld(clientHash, clientHash).entityList, "held layout rejects wrong server hash");
     check(!resolveHeld(serverHash, serverHash).entityList, "held layout rejects wrong client hash");
     for (const auto *other : Detail::clientLayouts)
-        if (other != &cl)
+        if (other != &cl && !SameClientCode(*other, cl))
             check(!resolveHeld(serverHash, other->build.sha256).entityList,
                 "held layout rejects a client from the other game");
+    for (const auto *other : Detail::serverLayouts)
+        if (other != &sl)
+            check(!Detail::SameGame(other, &cl), "no other game's server pairs with this client");
     const auto heldRejects = [&](Image &image, std::uint32_t textEnd, std::uint32_t rva, const char *name) {
         image.Unseal(textEnd);
         image.bytes[rva] ^= 1;
@@ -380,6 +392,13 @@ int main()
     RunSuite(Detail::portal2Server, Detail::portal2Client, "Portal 2");
     RunSuite(Detail::aakServer, Detail::aakClient, "Alive & Kicking");
     RunSuite(Detail::melServer, Detail::melClient, "Portal Stories: Mel");
+    RunSuite(Detail::melServer, Detail::reloadedClient, "Portal Reloaded");
+    Expect(SameClientCode(Detail::melClient, Detail::reloadedClient) &&
+               Detail::melClient.build.sha256 != Detail::reloadedClient.build.sha256,
+           "Reloaded's client keeps Mel's code under its own hash");
+    Expect(Detail::SameGame(&Detail::melServer, &Detail::reloadedClient) &&
+               !Detail::SameGame(&Detail::portal2Server, &Detail::reloadedClient),
+           "Reloaded's client pairs with Mel's server only");
     if (!failures) std::cout << "verified symbol tests passed\n";
     return failures ? 1 : 0;
 }

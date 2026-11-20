@@ -1,9 +1,9 @@
 #pragma once
 
-// Which game the mod runs in. Portal: Alive & Kicking (Steam app 270470) and Portal Stories: Mel
-// (Steam app 317400) are standalone installs of Portal 2's engine, each with its own game folder
-// ("AAK", "portal_stories"), localisation files, save folder and campaign. The code paths are the
-// same; only these facts differ.
+// Which game the mod runs in. Portal: Alive & Kicking (Steam app 270470), Portal Stories: Mel
+// (Steam app 317400) and Portal Reloaded (Steam app 1255980) are standalone installs of Portal 2's
+// engine, each with its own game folder ("AAK", "portal_stories", "portalreloaded"), localisation
+// files, save folder and campaign. The code paths are the same; only these facts differ.
 
 #include "gun_models.h"
 
@@ -21,7 +21,7 @@ struct Profile {
     const char *appId;        // Steam app id: appmanifest_<appId>.acf names the language
     const char *gameStrings;  // "<gameStrings><language>.txt" next to basemodui_ in <folder>\resource
     // Chapter title tokens, printf-style with the chapter number. Without a subtitle token the
-    // title token holds "title\nsubtitle".
+    // title token holds "title\nsubtitle". Without a title token chapterLabel names the chapter.
     const char *chapterTitleToken;
     const char *chapterSubtitleToken;
     int chapterCount;
@@ -33,6 +33,12 @@ struct Profile {
     // The game's own v_portalgun.mdl. Its grip applies until the mod reads which model the
     // game loaded, and when that one is not in gun_models.h.
     const GunModels::Model *gunModel;
+    // A chapter's name when its title token is missing, printf-style with the chapter number.
+    const wchar_t *chapterLabel = L"CHAPTER %d";
+    // What the off-hand trigger sends on press and release (release may be null). Portal 2 has no
+    // use for +reload; Reloaded fires its time portal with an alias that takes no release.
+    const char *offHandPress = "+reload";
+    const char *offHandRelease = "-reload";
 };
 
 inline constexpr const char *kPortal2Chapters[] = {
@@ -80,7 +86,14 @@ inline constexpr const char *kPortalStoriesMelChapters[] = {
     "st_a4_overgrown st_a4_tb_over_goo st_a4_two_of_a_kind st_a4_destroyed st_a4_factory",
     "sp_a4_core_access sp_a4_finale st_a4_core_access st_a4_finale sp_a5_credits"};
 
-inline constexpr int kMaxChapters = 11;
+// Portal Reloaded's campaign is twelve maps that its own map selection (scripts/extras.txt) lists
+// one by one, numbered 01-12, with no chapter tokens; each map is a chapter here, named "MAP NN".
+inline constexpr const char *kPortalReloadedChapters[] = {
+    "sp_a1_pr_map_001", "sp_a1_pr_map_002", "sp_a1_pr_map_003", "sp_a1_pr_map_004",
+    "sp_a1_pr_map_005", "sp_a1_pr_map_006", "sp_a1_pr_map_007", "sp_a1_pr_map_008",
+    "sp_a1_pr_map_009", "sp_a1_pr_map_010", "sp_a1_pr_map_011", "sp_a1_pr_map_012"};
+
+inline constexpr int kMaxChapters = 12;
 
 inline constexpr Profile kPortal2{"Portal 2", "portal2", "620", "portal2_",
     "portal2_Chapter%d_Title", "portal2_Chapter%d_Subtitle",
@@ -101,8 +114,18 @@ inline constexpr Profile kPortalStoriesMel{"Portal Stories: Mel", "portal_storie
     static_cast<int>(std::size(kPortalStoriesMelChapters)), kPortalStoriesMelChapters, 0xCC, 0x13C,
     &GunModels::kPortalStoriesMel};
 
+// Reloaded runs Mel's 2021 client.dll code and Portal 2's own v_portalgun.mdl (same checksum).
+// Its time portal is the alias "att3" (cfg/autoexec.cfg: ent_fire @att3 Trigger): the map's relay
+// switches the gun to linkage id 2, fires one ordinary +attack and switches back, so the shot
+// takes the controller's aim like any other.
+inline constexpr Profile kPortalReloaded{"Portal Reloaded", "portalreloaded", "1255980", "Portal Reloaded_",
+    nullptr, nullptr,
+    static_cast<int>(std::size(kPortalReloadedChapters)), kPortalReloadedChapters, 0xCC, 0x13C,
+    &GunModels::kPortal2, L"MAP %02d", "att3", nullptr};
+
 static_assert(std::size(kPortal2Chapters) <= kMaxChapters && std::size(kAliveAndKickingChapters) <= kMaxChapters &&
-              std::size(kPortalStoriesMelChapters) <= kMaxChapters);
+              std::size(kPortalStoriesMelChapters) <= kMaxChapters &&
+              std::size(kPortalReloadedChapters) <= kMaxChapters);
 
 // The profile whose game folder holds the given client.dll path (...\<folder>\bin\client.dll).
 inline const Profile &ForClientPath(const std::wstring &clientPath)
@@ -117,6 +140,7 @@ inline const Profile &ForClientPath(const std::wstring &clientPath)
     for (wchar_t &c : name) c = static_cast<wchar_t>(std::towlower(c));
     if (name == L"aak") return kAliveAndKicking;
     if (name == L"portal_stories") return kPortalStoriesMel;
+    if (name == L"portalreloaded") return kPortalReloaded;
     return kPortal2;
 }
 

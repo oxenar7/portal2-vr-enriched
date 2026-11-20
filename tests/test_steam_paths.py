@@ -165,6 +165,33 @@ class FindInstallationTests(unittest.TestCase):
         self.assertEqual(steam_paths.find_game(self.steam_root, games.PORTAL_STORIES_MEL), mel)
         self.assertEqual(games.detect(mel), games.PORTAL_STORIES_MEL)
 
+    def install_reloaded(self, library: Path, folder="Portal Reloaded") -> Path:
+        game = library / "steamapps" / "common" / folder
+        (game / "bin").mkdir(parents=True)
+        (game / "portal2.exe").write_bytes(b"fixture")
+        # Like Mel's, Reloaded's install carries a portal2 folder of its own.
+        for data in ("portalreloaded", "portal2"):
+            (game / data).mkdir()
+            (game / data / "gameinfo.txt").write_text('"GameInfo" {}', encoding="utf-8")
+        (library / "steamapps" / "appmanifest_1255980.acf").write_text(
+            APP_MANIFEST.replace('"620"', '"1255980"') % folder, encoding="utf-8")
+        return game
+
+    def test_portal_reloaded_is_found_by_its_own_app_manifest(self):
+        self.write_libraries()
+        self.install_portal2(self.library)
+        self.install_mel(self.library)
+        reloaded = self.install_reloaded(self.steam_root)
+        self.assertEqual(steam_paths.find_game(self.steam_root, games.PORTAL_RELOADED), reloaded)
+        self.assertEqual(games.detect(reloaded), games.PORTAL_RELOADED)
+        self.assertEqual(games.by_key("reloaded"), games.PORTAL_RELOADED)
+
+    def test_reloaded_is_not_taken_for_portal2_or_mel(self):
+        self.write_libraries()
+        self.install_reloaded(self.library)
+        self.assertIsNone(steam_paths.find_portal2(self.steam_root))
+        self.assertIsNone(steam_paths.find_game(self.steam_root, games.PORTAL_STORIES_MEL))
+
     def test_mel_is_not_taken_for_portal2(self):
         self.write_libraries()
         self.install_mel(self.library)

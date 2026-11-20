@@ -171,8 +171,34 @@ inline constexpr ClientLayout melClient{
     0x746198, 0x8F529, 0x73C1F8, 0x927F4,
     0x814848, 0x6FF9D0, 0xA1E2D8, 0x3B49C5};
 
+// Portal Reloaded (Steam app 1255980) runs Mel's server.dll unchanged. Its client.dll is the same
+// 2021 build as Mel's (same timestamp, size and code); only 220 bytes of .rdata differ, the map
+// names of the rich-presence table. So every offset is Mel's.
+inline constexpr ClientLayout reloadedClient{
+    {L"client.dll", "b3e0acd6ec18e40660856bf439272383a237e8f9aaa39225f9bd84108621b4fe",
+        0x603E2E11u, 0xFEF000u},
+    0x287050, 0xA049B4, 0x7BA56C, 0x7BAADC,
+    0x7860B0, 0x6F9000, 0xA04998,
+    0x746198, 0x8F529, 0x73C1F8, 0x927F4,
+    0x814848, 0x6FF9D0, 0xA1E2D8, 0x3B49C5};
+
 inline constexpr const ServerLayout *serverLayouts[] = {&portal2Server, &aakServer, &melServer};
-inline constexpr const ClientLayout *clientLayouts[] = {&portal2Client, &aakClient, &melClient};
+inline constexpr const ClientLayout *clientLayouts[] = {&portal2Client, &aakClient, &melClient, &reloadedClient};
+
+// The server and client builds that ship together. Reloaded pairs Mel's server with its own client.
+struct LayoutPair {
+    const ServerLayout *server;
+    const ClientLayout *client;
+};
+inline constexpr LayoutPair layoutPairs[] = {{&portal2Server, &portal2Client}, {&aakServer, &aakClient},
+                                             {&melServer, &melClient}, {&melServer, &reloadedClient}};
+
+inline bool SameGame(const ServerLayout *server, const ClientLayout *client)
+{
+    for (const auto &pair : layoutPairs)
+        if (pair.server == server && pair.client == client) return true;
+    return false;
+}
 
 // Kept for callers that name the Portal 2 builds directly.
 inline constexpr const Build &server = portal2Server.build;
@@ -509,12 +535,8 @@ inline HeldObjectLayout ResolveHeldObjectLayoutImage(
 {
     const auto *serverLayout = Detail::ServerFor(serverSha256);
     const auto *clientLayout = Detail::ClientFor(clientSha256);
-    // Both halves must come from the same game: the index pairs the tables.
-    if (!serverLayout || !clientLayout) return {};
-    std::size_t serverIndex = 0, clientIndex = 0;
-    while (Detail::serverLayouts[serverIndex] != serverLayout) ++serverIndex;
-    while (Detail::clientLayouts[clientIndex] != clientLayout) ++clientIndex;
-    if (serverIndex != clientIndex) return {};
+    // Both halves must come from the same game.
+    if (!serverLayout || !clientLayout || !Detail::SameGame(serverLayout, clientLayout)) return {};
     Detail::Image serverImage, clientImage;
     if (!serverImage.Open(server, serverSize, serverLayout->build) ||
         !clientImage.Open(client, clientSize, clientLayout->build) ||

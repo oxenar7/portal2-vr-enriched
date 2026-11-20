@@ -9,6 +9,8 @@
 #include "vr_settings.h"
 
 #include <cstdio>
+#include <cwchar>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -47,8 +49,15 @@ struct Texts {
         loadAction = strings.Get("PORTAL2_ButtonAction_Load", loadAction.c_str());
         for (int chapter = 1; chapter <= game.chapterCount; ++chapter) {
             char title[64]{}, subtitle[64]{};
+            wchar_t label[64]{};
+            std::swprintf(label, std::size(label), game.chapterLabel, chapter);
+            const std::wstring fallback = label;
+            if (!game.chapterTitleToken) {
+                chapterTitle[chapter] = fallback;
+                chapterSubtitle[chapter].clear();
+                continue;
+            }
             std::snprintf(title, sizeof(title), game.chapterTitleToken, chapter);
-            const std::wstring fallback = L"CHAPTER " + std::to_wstring(chapter);
             if (game.chapterSubtitleToken) {
                 std::snprintf(subtitle, sizeof(subtitle), game.chapterSubtitleToken, chapter);
                 chapterTitle[chapter] = strings.Get(title, fallback.c_str());

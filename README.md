@@ -1,15 +1,17 @@
 # Portal 2 VR Enriched
 
-An incremental modernization fork of [Gistix/portal2vr](https://github.com/Gistix/portal2vr), built on [mmadej20/portal2vr-ultimate](https://github.com/mmadej20/portal2vr-ultimate), for the original Windows version of Portal 2. This remains a 32-bit Source/DX9 runtime-hooking mod, not a replacement engine or a rewrite. SteamVR / OpenVR and the modified DXVK rendering path are retained.
+An incremental modernization fork of [Gistix/portal2vr](https://github.com/Gistix/portal2vr), built on [mmadej20/portal2vr-ultimate](https://github.com/mmadej20/portal2vr-ultimate), for the original Windows version of Portal 2 and for Portal: Alive & Kicking, a free fan-made campaign on the same engine. This remains a 32-bit Source/DX9 runtime-hooking mod, not a replacement engine or a rewrite. SteamVR / OpenVR and the modified DXVK rendering path are retained.
 
 The name nods to the Aperture Science Enrichment Center and to what this fork adds to the VR experience.
 
-This is an unofficial fan project, not affiliated with or endorsed by Valve. You need your own copy of Portal 2; no game files are included.
+This is an unofficial fan project, not affiliated with or endorsed by Valve. You need your own copy of the game; no game files are included.
 
-**Tested setup:** the whole campaign has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070). A player reports hours of co-op running well with two Steam Frame headsets. Other headsets and machines are untested, so logs from them are welcome. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
+**Tested setup:** the whole Portal 2 campaign has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070), and Alive & Kicking has been tested on the same setup. Co-op reports from players: hours of co-op running well on two Steam Frame headsets, and a full co-op run with both players in VR and no problems (the final gesture needs a keyboard key, see [If something goes wrong](#if-something-goes-wrong)). Other headsets and machines are untested, so logs from them are welcome. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
 
 ## What's new in this fork
 
+- **Portal: Alive & Kicking in VR:** the fan-made campaign runs with the same features as Portal 2, including its own menus, chapters and portal gun. Pick it on the launcher's **Games** page.
+- **The gun fits your hand in every game:** the mod reads which portal gun model the game loaded (Portal 2's, Alive & Kicking's or the HD Collection's VR gun) and matches its grip by itself.
 - **Physical crouch:** duck in real life and you duck in the game. The camera lands on Source's ducked eye height and eases back as you stand.
 - **Held objects stay on the gun:** they move and turn with your wrist, walls still stop them, and lasers leaving a reflector cube steer onto catchers as they do in co-op.
 - **More haptics:** Portal 2's own rumble, plus pickup, drop, holding and button pulses.
@@ -26,13 +28,13 @@ This is an unofficial fan project, not affiliated with or endorsed by Valve. You
 - **Pause menu in the world:** pausing opens panels in Aperture style, floating in front of you over the paused level: resume, save, load, VR options and exit, picked with the controller laser and Portal 2's own menu sounds. Portal 2's own pause screen is one click away, or the default with **Pause menu in the world** off in the launcher.
 - **Steady funnels with roomscale:** walking in your room no longer fights the pull of an excursion funnel, so the view stays still while you float.
 - **Left-handed play:** left-handed mode moves the gun's buttons with it, and a separate option swaps the sticks.
-- **A small, clean launcher** that finds Portal 2 and Steam by itself, and only needs the Python standard library when run from source.
+- **A small, clean launcher** with a **Games** page: it finds Portal 2, Alive & Kicking and Steam by itself, saves settings as you change them, keeps the everyday options up front and the calibration under **Advanced settings**. It only needs the Python standard library when run from source.
 
 ## Install
 
 You need:
 
-- Portal 2 on Steam, for Windows.
+- Portal 2 or Portal: Alive & Kicking on Steam, for Windows.
 - SteamVR working with your headset. Quest users can connect through Virtual Desktop, Steam Link or Quest Link.
 - The latest [Microsoft Visual C++ Redistributable for x86](https://aka.ms/vc14/vc_redist.x86.exe). Install the x86 one even on 64-bit Windows.
 - A graphics driver with Vulkan support (any recent NVIDIA, AMD or Intel driver).
@@ -41,11 +43,11 @@ Then:
 
 1. Download `Portal2VR-Enriched-vX.Y.Z-win32.zip` from the [Releases](https://github.com/oxenar7/portal2-vr-enriched/releases) page and extract the whole ZIP to a folder you keep, for example in Documents. Python and build tools are not needed.
 2. Close Portal 2, connect your headset and open `Portal 2 VR Enriched Launcher.exe`. The launcher is not code-signed, so Windows may show "Windows protected your PC": choose **More info**, then **Run anyway**.
-3. The launcher finds Portal 2 and Steam by itself, including Steam libraries on other drives. If its **Games** page says the game is not found, press **Locate folder** and pick the folder that contains `portal2.exe` (in Steam: right-click Portal 2 > Manage > Browse local files); for Steam, press **Change** on the Steam card and pick `steam.exe` in your Steam folder.
+3. The launcher opens on its **Games** page and finds your games and Steam by itself, including Steam libraries on other drives. Click the game you want to play. If a game shows as not found, press **Locate folder** and pick the folder that contains `portal2.exe` (in Steam: right-click the game > Manage > Browse local files); for Steam, press **Change** on the Steam card and pick `steam.exe` in your Steam folder.
 4. Press **Play in VR**. The launcher backs up the game files it replaces, installs the mod and starts Portal 2 through Steam with the launch options it needs. SteamVR starts with the game. Next time, just press **Play in VR** again.
 5. Optional: turn on subtitles in Portal 2's audio options to get captions in the headset.
 
-The mod stays installed after you quit. To play Portal 2 normally again, open the launcher and press **Restore original files** on the Games page. Keep the extracted folder until then: it holds your backups.
+The mod stays installed after you quit. To play the game normally again, open the launcher, select it and press **Restore original files** on the Games page. Each game keeps its own backups. Keep the extracted folder until then: it holds your backups.
 
 To update, close the launcher and extract the new ZIP into the same folder, replacing the files. Your settings and backups stay, and the next **Play in VR** installs the new version. If you prefer a new folder, first press **Restore original files** in the old launcher.
 
@@ -74,6 +76,7 @@ Valve Index and Vive Cosmos controllers have their own default bindings. Other c
 
 - **The game does not start in VR:** make sure SteamVR sees the headset and controllers before pressing **Play in VR**.
 - **The game closes at startup:** install the latest Visual C++ Redistributable for x86 from the link above.
+- **The end of the co-op campaign asks for a gesture:** the game's gesture key has no controller button yet. Press **Q** on the PC keyboard when the game asks for it. A fix is planned.
 - **After a Portal 2 update:** some features may switch themselves off until the mod is updated. The log says which.
 - **The portal gun sits away from your hand:** the mod reads which portal gun model the game loaded and matches its grip: Portal 2's own, Alive & Kicking's, and the "Portal VR Gun Model" replacement included in the Portal 2 VR HD Collection, which holds the gun differently. If you set Gun offset X / Y / Z by hand for that pack (`-7.3` / `-8.2` / `11.35`), set them back to `0`. Another replacement model may need its own offsets: in the launcher's **Settings**, turn on **Advanced settings** and adjust them under **Gun position**; `bin/portal2vr.log` names the model it found ("Portal gun model: …").
 - **Dark or black wedges at the edge of your view:** the mod skips the eye pixels your headset reports as never shown. If your headset shows them anyway, create a text file named `dxvk.conf` in your Portal 2 folder containing `d3d9.vrEyeMask = False`, and please report your headset.
@@ -139,7 +142,7 @@ Do not delete install state/backups to fix an error. If only user preferences ar
 - Portal 2's own `robot_point_beam` particle laser is not used: it never showed in the headset. The aim line and the original Portal reticle take its place.
 - FullRotation, YawOnly and PreserveHorizon are manual experiments. FullRotation has limited wall-portal evidence; floor/ceiling comfort, recenter edge cases and broader traversal need testing. Active roomscale requires LegacyYaw and 6DOF.
 - Reticle distance scaling is modest (100% at 1 m to 80% at 10 m); a dedicated far-distance readability comparison remains outstanding.
-- Signatures, offsets, vtables and the 32-bit engine ABI remain compatibility risks. No universal compatibility, performance or 120 Hz frame-rate claim is made. Co-op has not been tested by the developer; the only report so far, from a player on two Steam Frames, says it works well.
+- Signatures, offsets, vtables and the 32-bit engine ABI remain compatibility risks. No universal compatibility, performance or 120 Hz frame-rate claim is made. Co-op has not been tested by the developer. Two player reports say it works well, one of them a full run with both players in VR; the final gesture still needs **Q** on the keyboard.
 - `EyePosition`, `Weapon_ShootPosition` and `GetViewModelFOV` use audited RVAs only after the DLL's SHA-256 and its loaded code/table references match the supported build. The shoot-origin override applies only to the verified `FirePortal` call, preserving other calls to the shared function. An unsupported DLL, failed verification or failed hook installation produces a warning in `bin/portal2vr.log` and skips that hook without blocking startup; Source's original shoot position or viewmodel FOV may be used. The user reported successful hardware testing on one current setup; other game builds and setups require separate validation.
 - No OpenXR backend, optimized desktop mirror, Portal Reloaded ThirdAttack support or complete HUD rewrite.
 - Controller haptics (`Haptics=true` by default) forward Portal 2's own rumble user message (portal shots, failed placement, fizzler, landings, physics impacts) through optional client/server hooks, and add pickup/drop/hold and pedestal/floor-button pulses. Each hook that fails to resolve is logged in `bin/portal2vr.log` and only disables its own vibration source. Every native effect is logged as `Native rumble: ...`. Pulse strengths are tuned for one Quest/Virtual Desktop setup.

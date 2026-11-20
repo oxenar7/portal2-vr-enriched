@@ -30,12 +30,14 @@
 #include "../L4D2VR/logger.h"
 #include "../L4D2VR/use_target.h"
 #include "../L4D2VR/vr_menu_model.h"
+#include "../L4D2VR/vr_menu_palette.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <sstream>
 
 static int failures = 0;
@@ -282,6 +284,46 @@ static void TestVrOptions()
            true, "transition panel accessor matches both builds");
     expect(Portal2Vgui::MatchesSignature(otherPanel, Portal2Transition::kGetPanelSignature), false,
            "transition panel accessor rejects a handle outside the BaseModPanel range");
+
+    // Options > VR colours from basemodui_scheme (values from both games' .res files).
+    using VrMenuPalette::Colour;
+    const auto palette = [](const std::map<std::string, Colour> &scheme) {
+        return VrMenuPalette::FromScheme([&](const char *name, Colour fallback) {
+            const auto found = scheme.find(name);
+            return found == scheme.end() ? fallback : found->second;
+        });
+    };
+    const auto same = [](const VrMenuPalette::Palette &a, const VrMenuPalette::Palette &b) {
+        return a.text == b.text && a.focusText == b.focusText && a.disabledText == b.disabledText &&
+               a.cursor == b.cursor && a.arrowActive == b.arrowActive && a.arrowInactive == b.arrowInactive &&
+               a.title == b.title && a.footerText == b.footerText && a.footerHotText == b.footerHotText;
+    };
+    const Colour white{255, 255, 255, 255};
+    const std::map<std::string, Colour> portal2Scheme{
+        {"HybridButton.TextColor", {0, 0, 0, 255}}, {"HybridButton.FocusColor", {240, 240, 240, 255}},
+        {"HybridButton.DisabledColor", {140, 140, 140, 255}}, {"HybridButton.CursorColor", {0, 0, 0, 240}},
+        {"HybridButton.ListButtonActiveColor", white}, {"HybridButton.ListButtonInactiveColor", {255, 255, 255, 60}},
+        {"Dialog.TitleColor", {0, 0, 0, 255}}, {"FooterPanel.TextColor", {100, 100, 100, 255}}};
+    expect(same(palette(portal2Scheme), VrMenuPalette::kPortal2), true, "Portal 2's scheme keeps the matched palette");
+    expect(same(palette({}), VrMenuPalette::kPortal2), true, "an unreadable scheme keeps Portal 2's palette");
+    auto aakScheme = portal2Scheme;
+    aakScheme["HybridButton.TextColor"] = white;
+    aakScheme["HybridButton.CursorColor"] = {45, 125, 157, 240};
+    aakScheme["Dialog.TitleColor"] = white;
+    aakScheme["FooterPanel.TextColor"] = white;
+    const auto aak = palette(aakScheme);
+    expect(aak.text == white && aak.title == white && aak.footerText == white, true,
+           "Alive & Kicking's scheme gives white text, title and footer");
+    expect(aak.cursor == Colour{45, 125, 157, 240}, true, "Alive & Kicking's blue cursor is drawn as the scheme gives it");
+    expect(aak.footerHotText == VrMenuPalette::kBlack, true, "light footer text turns black on the light hover texture");
+    expect(aak.focusText == VrMenuPalette::kPortal2.focusText && aak.disabledText == VrMenuPalette::kPortal2.disabledText,
+           true, "colours both schemes share stay Portal 2's");
+    auto darkFooter = portal2Scheme;
+    darkFooter["FooterPanel.TextColor"] = {20, 20, 20, 255};
+    expect(palette(darkFooter).footerHotText == Colour{20, 20, 20, 255}, true, "dark footer text keeps its colour on hover");
+    const std::uint8_t getColor[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x0C, 0x83, 0xEC, 0x0C, 0x50, 0xE8};
+    expect(Portal2Vgui::MatchesSignature(getColor, Portal2Vgui::SchemeSlot::GetColor.signature), true,
+           "CScheme::GetColor prologue");
 
     ConfigSnapshot config;
     expect(Step(MenuItem("SnapTurning"), config, 1) == std::optional<std::string>("true"), true,

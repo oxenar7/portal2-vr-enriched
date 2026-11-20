@@ -139,6 +139,9 @@ inline constexpr const Slot *All[] = {&GetScheme, &GetIScheme, &GetProportionalS
 
 namespace SchemeSlot {
 inline constexpr Slot GetFont{3, "55 8B EC 56 8B F1 8D 4E 18 E8", "GetFont"};
+// Color GetColor(const char *name, Color fallback): the Color comes back through a hidden
+// pointer (ret 0Ch). Same prologue in Portal 2's and Alive & Kicking's vgui2.dll.
+inline constexpr Slot GetColor{5, "55 8B EC 8B 45 0C 83 EC 0C 50 E8", "GetColor"};
 }
 
 template <typename Return, typename... Args>
@@ -291,6 +294,16 @@ public:
         return object && VerifySlot(object, SchemeSlot::GetFont, failure) ? object : nullptr;
     }
     HFont GetFont(void *scheme, const char *name, bool proportional) const { return CallSlot<HFont>(scheme, SchemeSlot::GetFont.index, name, proportional); }
+    // Requires a successful VerifySlot(scheme, SchemeSlot::GetColor). Colours are packed as
+    // Source's Color bytes: r | g << 8 | b << 16 | a << 24.
+    std::uint32_t GetColor(void *scheme, const char *name, std::uint32_t fallback) const
+    {
+        using Function = std::uint32_t *(__thiscall *)(void *, std::uint32_t *, const char *, std::uint32_t);
+        std::uint32_t result = fallback;
+        reinterpret_cast<Function>((*reinterpret_cast<void ***>(scheme))[SchemeSlot::GetColor.index])(
+            scheme, &result, name, fallback);
+        return result;
+    }
 
 private:
     bool m_Ready = false;

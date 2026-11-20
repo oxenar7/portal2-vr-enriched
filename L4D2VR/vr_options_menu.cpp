@@ -25,15 +25,6 @@ constexpr const char *kTextureFiles[] = {
     "vgui/menu_tiles/UI_tile_128_crnr_bottomL", "vgui/menu_tiles/UI_tile_128_bottom",
     "vgui/menu_tiles/UI_tile_128_crnr_bottomR", "vgui/btn_bg", "vgui/btn_bg_over"};
 
-// basemodui_scheme.res HybridButton/FooterPanel colours. The cursor bar is the
-// colour measured on the native Video dialog over the tile interior.
-constexpr VrOptionsMenu::Colour kText{0, 0, 0, 255};
-constexpr VrOptionsMenu::Colour kFocusText{240, 240, 240, 255};
-constexpr VrOptionsMenu::Colour kDisabledText{140, 140, 140, 255};
-constexpr VrOptionsMenu::Colour kCursor{57, 57, 57, 255};
-constexpr VrOptionsMenu::Colour kArrowActive{255, 255, 255, 255};
-constexpr VrOptionsMenu::Colour kArrowInactive{255, 255, 255, 60};
-
 // BaseModUI's own menu sounds.
 constexpr const char *kFocusSound = "UI/menu_focus.wav";
 constexpr const char *kAcceptSound = "UI/menu_accept.wav";
@@ -362,6 +353,28 @@ bool VrOptionsMenu::LoadResources()
         Logger::Write("In-game VR options unavailable: a basemodui_scheme font is missing");
         return false;
     }
+    std::string colourFailure;
+    if (Portal2Vgui::VerifySlot(fonts, Portal2Vgui::SchemeSlot::GetColor, colourFailure)) {
+        m_Palette = VrMenuPalette::FromScheme([&](const char *name, Colour fallback) {
+            const auto pack = [](const Colour &c) {
+                return static_cast<std::uint32_t>(c.r & 0xFF) | static_cast<std::uint32_t>(c.g & 0xFF) << 8 |
+                       static_cast<std::uint32_t>(c.b & 0xFF) << 16 | static_cast<std::uint32_t>(c.a & 0xFF) << 24;
+            };
+            const std::uint32_t value = m_Api.GetColor(fonts, name, pack(fallback));
+            return Colour{static_cast<int>(value & 0xFF), static_cast<int>(value >> 8 & 0xFF),
+                          static_cast<int>(value >> 16 & 0xFF), static_cast<int>(value >> 24 & 0xFF)};
+        });
+        const auto describe = [](const Colour &c) {
+            return std::to_string(c.r) + " " + std::to_string(c.g) + " " + std::to_string(c.b) + " " +
+                   std::to_string(c.a);
+        };
+        Logger::Write("In-game VR options palette: text=" + describe(m_Palette.text) +
+            " focus=" + describe(m_Palette.focusText) + " cursor=" + describe(m_Palette.cursor) +
+            " title=" + describe(m_Palette.title) + " footer=" + describe(m_Palette.footerText) +
+            " footerHot=" + describe(m_Palette.footerHotText));
+    } else {
+        Logger::Write("In-game VR options palette: Portal 2 colours, IScheme::" + colourFailure + " unverified");
+    }
     for (int i = 0; i < TextureCount; ++i) {
         int id = m_Api.DrawGetTextureId(kTextureFiles[i]);
         if (id < 0) {
@@ -417,10 +430,10 @@ int VrOptionsMenu::TextWide(HFont font, const std::wstring &text) const
 void VrOptionsMenu::DrawEntry()
 {
     // Same DefaultButton style as AUDIO..CONTROLLER above it.
-    if (m_EntrySelected) Fill(VrSettings::CursorBar(m_EntryRect, m_Unit), kCursor);
+    if (m_EntrySelected) Fill(VrSettings::CursorBar(m_EntryRect, m_Unit), m_Palette.cursor);
     const int tall = m_Api.GetFontTall(m_MenuFont);
     Text(m_MenuFont, L"VR", m_EntryRect.x + Px(Units::TextInset), m_EntryRect.y + (m_EntryRect.h - tall) / 2,
-         m_EntrySelected ? kFocusText : kText);
+         m_EntrySelected ? m_Palette.focusText : m_Palette.text);
 }
 
 void VrOptionsMenu::DrawTiles(const VrSettings::PageLayout &layout)
@@ -470,7 +483,7 @@ void VrOptionsMenu::DrawPage()
         static_cast<int>(page.items.size()), TextWide(m_TitleFont, title), footerWide, footerTall);
 
     DrawTiles(layout);
-    Text(m_TitleFont, title, layout.tab.x + Px(Units::TitleOffsetX), layout.tab.y + Px(Units::TitleOffsetY), kText);
+    Text(m_TitleFont, title, layout.tab.x + Px(Units::TitleOffsetX), layout.tab.y + Px(Units::TitleOffsetY), m_Palette.title);
 
     VrSettings::HitAreas hit;
     hit.layout = layout;
@@ -485,8 +498,8 @@ void VrOptionsMenu::DrawPage()
         const auto bar = VrSettings::CursorBar(rect, m_Unit);
         const bool focused = !m_Focus.footer && m_Focus.index == i;
         const bool enabled = VrSettings::Enabled(item, config);
-        if (focused) Fill(bar, kCursor);
-        const Colour colour = !enabled ? kDisabledText : focused ? kFocusText : kText;
+        if (focused) Fill(bar, m_Palette.cursor);
+        const Colour colour = !enabled ? m_Palette.disabledText : focused ? m_Palette.focusText : m_Palette.text;
         const int textY = rect.y + (rect.h - rowTall) / 2;
         const std::wstring label = item.kind == VrSettings::Kind::Link ? Upper(Widen(item.label)) : Widen(item.label);
         Text(m_RowFont, label, rect.x + Px(Units::TextInset), textY, colour);
@@ -499,13 +512,13 @@ void VrOptionsMenu::DrawPage()
             const int arrowY = rect.y + (rect.h - symbolTall) / 2;
             const bool canIncrease = VrSettings::Step(item, config, 1).has_value();
             const bool canDecrease = VrSettings::Step(item, config, -1).has_value();
-            Text(m_SymbolFont, L"4", right - arrowWide, arrowY, canIncrease ? kArrowActive : kArrowInactive);
+            Text(m_SymbolFont, L"4", right - arrowWide, arrowY, canIncrease ? m_Palette.arrowActive : m_Palette.arrowInactive);
             hit.increase = {right - arrowWide - gap, bar.y, arrowWide + 2 * gap, bar.h};
             right -= arrowWide + gap;
             const int valueWide = TextWide(m_RowFont, value);
             Text(m_RowFont, value, right - valueWide, textY, colour);
             const int leftArrow = right - valueWide - gap - arrowWide;
-            Text(m_SymbolFont, L"3", leftArrow, arrowY, canDecrease ? kArrowActive : kArrowInactive);
+            Text(m_SymbolFont, L"3", leftArrow, arrowY, canDecrease ? m_Palette.arrowActive : m_Palette.arrowInactive);
             hit.decrease = {leftArrow - gap, bar.y, arrowWide + 2 * gap, bar.h};
             hit.arrowRow = i;
         } else {
@@ -518,7 +531,7 @@ void VrOptionsMenu::DrawPage()
         const bool hot = m_HoverFooter == i || (m_Focus.footer && m_Focus.index == i);
         DrawTexture(m_Textures[hot ? ButtonOver : Button], rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
         Text(m_FooterFont, footerText[i], rect.x + (rect.w - footerWide[i]) / 2,
-             rect.y + (rect.h - footerTall) / 2, kText);
+             rect.y + (rect.h - footerTall) / 2, hot ? m_Palette.footerHotText : m_Palette.footerText);
     }
     m_Hit = hit;
 }

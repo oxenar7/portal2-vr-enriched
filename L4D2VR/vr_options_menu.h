@@ -5,6 +5,7 @@
 
 #include "portal2_transition.h"
 #include "portal2_vgui.h"
+#include "vr_menu_palette.h"
 #include "vr_settings.h"
 
 #include <atomic>
@@ -16,7 +17,7 @@ class VrOptionsMenu
 {
 public:
     enum class Nav { Up, Down, Left, Right, Select, Back };
-    struct Colour { int r, g, b, a; };
+    using Colour = VrMenuPalette::Colour;
 
     bool Initialize(VR *vr, void *surface, void *panel, void *schemeManager);
     void *PaintTarget() const { return m_Api.Ready() ? m_Api.PaintTraverseExAddress() : nullptr; }
@@ -86,6 +87,8 @@ private:
     Portal2Vgui::HFont m_MenuFont = 0;
     Portal2Vgui::HFont m_FooterFont = 0;
     Portal2Vgui::HFont m_SymbolFont = 0;
+    // Read from basemodui_scheme with the fonts; Portal 2's until then or if GetColor is unverified.
+    VrMenuPalette::Palette m_Palette = VrMenuPalette::kPortal2;
     enum Texture { TopLeft, Top, TopRight, Left, Interior, Right, BottomLeft, Bottom, BottomRight,
                    Button, ButtonOver, TextureCount };
     int m_Textures[TextureCount]{};

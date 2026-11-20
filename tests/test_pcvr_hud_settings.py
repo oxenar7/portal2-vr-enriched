@@ -54,6 +54,25 @@ class EyeHudSettingsTests(unittest.TestCase):
             self.assertEqual(migrated["steam_exe"], old["steam_exe"])
             self.assertEqual(path.read_bytes(), original)
 
+    def test_hand_set_hd_gun_offsets_return_to_zero_on_load(self):
+        values = settings.recommended_settings()
+        hd = dict(values, ViewmodelPosCustomOffsetX="-7.30", ViewmodelPosCustomOffsetY="-8.2",
+                  ViewmodelPosCustomOffsetZ="11.35", SnapTurning="true")
+        other = dict(values, ViewmodelPosCustomOffsetX="-7.3", ViewmodelPosCustomOffsetY="-8.2",
+                     ViewmodelPosCustomOffsetZ="10")
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original = json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                   "values": hd}).encode()
+            path.write_bytes(original)
+            migrated = settings.load_preferences(path, {})
+            self.assertEqual(migrated["values"], dict(hd, ViewmodelPosCustomOffsetX="0",
+                                                      ViewmodelPosCustomOffsetY="0", ViewmodelPosCustomOffsetZ="0"))
+            self.assertEqual(path.read_bytes(), original)
+            path.write_text(json.dumps({"version": 1, "game_dir": "D:/Game", "steam_exe": "C:/Steam.exe",
+                                        "values": other}))
+            self.assertEqual(settings.load_preferences(path, {})["values"], other)
+
     def test_unknown_incomplete_and_partial_old_schemas_are_rejected(self):
         old_values = {k: v for k, v in settings.recommended_settings().items() if k not in NEW_DEFAULTS}
         variants = [dict(old_values, Unexpected="true"), dict(old_values, HUDInEyeCentered="false")]

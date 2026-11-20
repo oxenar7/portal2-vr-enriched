@@ -343,6 +343,25 @@ def _validated_preferences(prefs: dict) -> dict:
     return {**prefs, "values": validate_settings(prefs["values"])}
 
 
+# The gun offsets the README told players to set by hand for the HD Collection's "Portal VR
+# Gun Model" before the mod matched the grip to the loaded model by itself (v1.1.0). Kept,
+# they would shift that gun twice and move every other gun away from the hand.
+_HAND_SET_HD_GUN_OFFSETS = {"ViewmodelPosCustomOffsetX": -7.3, "ViewmodelPosCustomOffsetY": -8.2,
+                            "ViewmodelPosCustomOffsetZ": 11.35}
+
+
+def without_hand_set_hd_gun_offsets(values: dict) -> dict:
+    """The values with that old hand-set calibration back at 0; any other offsets unchanged."""
+    def matches(key: str, want: float) -> bool:
+        try:
+            return abs(float(values.get(key)) - want) < 1e-6
+        except (TypeError, ValueError):
+            return False
+    if not all(matches(key, want) for key, want in _HAND_SET_HD_GUN_OFFSETS.items()):
+        return values
+    return {**values, **{key: "0" for key in _HAND_SET_HD_GUN_OFFSETS}}
+
+
 def load_preferences(path: Path, legacy: dict) -> dict:
     if not path.exists():
         return _validated_preferences({"version": 1, "game_dir": legacy["game_dir"],
@@ -359,7 +378,7 @@ def load_preferences(path: Path, legacy: dict) -> dict:
                     and missing == frozenset().union(*groups)):
                 prefs = {**prefs, "values": {**prefs["values"],
                          **{item.key: item.default for item in SETTINGS if item.key in missing}}}
-            prefs = {**prefs, "values": user_values(prefs["values"])}
+            prefs = {**prefs, "values": without_hand_set_hd_gun_offsets(user_values(prefs["values"]))}
         return _validated_preferences(prefs)
     except (OSError, UnicodeError, ValueError) as error:
         raise ValueError(f"Cannot read launcher preferences {path}: {error}. The file was not changed.") from error

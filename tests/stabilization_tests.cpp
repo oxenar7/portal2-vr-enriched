@@ -1728,6 +1728,21 @@ int main()
     expectCommand(attack.HeldCommand(false, false, false, "+attack", "-attack"), "-attack", "inactive action releases held command");
     expectCommand(attack.HeldCommand(false, false, false, "+attack", "-attack"), nullptr, "inactive action does not repeat release");
 
+    // The co-op gesture button sends what Portal 2's gesture key sends: the wheel opens on the
+    // press and the gesture happens on the release, so every press must see its release.
+    using namespace CoopGesture;
+    expectText(kPressCommand, "+mouse_menu_taunt", "gesture press is the game's gesture key command");
+    expectText(kReleaseCommand, "-mouse_menu_taunt", "gesture release closes the same wheel");
+    DigitalButtonState gesture;
+    expectCommand(gesture.HeldCommand(true, true, true, kPressCommand, kReleaseCommand), kPressCommand, "gesture tap press");
+    expectCommand(gesture.HeldCommand(true, false, true, kPressCommand, kReleaseCommand), nullptr, "gesture hold sends nothing more");
+    expectCommand(gesture.HeldCommand(true, true, false, kPressCommand, kReleaseCommand), kReleaseCommand, "gesture tap release");
+    expectCommand(gesture.HeldCommand(true, true, true, kPressCommand, kReleaseCommand), kPressCommand, "gesture held when a menu opens");
+    // ReleaseHeldActions passes an empty press command: only the release can come out.
+    expectCommand(gesture.HeldCommand(false, false, false, "", kReleaseCommand), kReleaseCommand, "menu closes the open wheel");
+    expectCommand(gesture.HeldCommand(true, true, false, kPressCommand, kReleaseCommand), nullptr,
+                  "letting go after the menu does not send a second release");
+
     expect(DigitalButtonState::PressEdge(true, false, false), false, "one shot released");
     expect(DigitalButtonState::PressEdge(true, true, true), true, "one shot press");
     expect(DigitalButtonState::PressEdge(true, false, true), false, "one shot hold");

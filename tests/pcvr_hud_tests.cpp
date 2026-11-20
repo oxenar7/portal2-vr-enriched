@@ -89,6 +89,9 @@ static void instructorHintTests() {
     expect(ActionForBinding("+attack2") == Action::SecondaryAttack && ActionForBinding("+attack") == Action::PrimaryAttack,
            "+attack2 is not +attack");
     expect(ActionForBinding("+zoom") == Action::Zoom, "+zoom is the binocular zoom action");
+    expect(ActionForBinding("+mouse_menu_taunt") == Action::Gesture && ActionForBinding("mouse_menu_taunt") == Action::Gesture,
+           "the gesture key's hint shows the co-op gesture button");
+    expect(ActionForBinding("+mouse_menu") == Action::None, "the ping wheel is not the gesture wheel");
     expect(ActionForBinding("use") == Action::Use && ActionForBinding("Attack2") == Action::SecondaryAttack,
            "the game's own lessons name commands without the +");
     expect(ActionForBinding("-use") == Action::None && ActionForBinding("+") == Action::None,

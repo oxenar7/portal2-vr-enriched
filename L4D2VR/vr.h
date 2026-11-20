@@ -289,6 +289,7 @@ public:
 	DigitalButtonState m_CrouchState;
 	DigitalButtonState m_UseState;
 	DigitalButtonState m_ReloadState;
+	DigitalButtonState m_GestureState;
 
 	// action set
 	vr::VRActionSetHandle_t m_ActionSet;
@@ -321,6 +322,8 @@ public:
 	vr::VRActionHandle_t m_PauseLeftHanded = vr::k_ulInvalidActionHandle;
 	// SwapSticks: the zoom click follows turning to the left stick.
 	vr::VRActionHandle_t m_ActionZoomSwappedSticks = vr::k_ulInvalidActionHandle;
+	// Portal 2's gesture key (CoopGesture), on X: it stays on the left hand in both modes.
+	vr::VRActionHandle_t m_ActionGesture = vr::k_ulInvalidActionHandle;
 	int m_LeftHandedButtonsLogged = -1;
 	int m_SwapSticksLogged = -1;
 	vr::VRActionHandle_t m_ActionFlashlight;
@@ -501,8 +504,8 @@ public:
 	void TriggerHapticPulse(const Haptics::Pulse &pulse);
 	void ProcessViewActions();
 	Vector GetMovementForward();
-	void ProcessHeldAction(vr::VRActionHandle_t actionHandle, DigitalButtonState &state,
-	                       const char *pressCommand, const char *releaseCommand);
+	const char *ProcessHeldAction(vr::VRActionHandle_t actionHandle, DigitalButtonState &state,
+	                              const char *pressCommand, const char *releaseCommand);
 	void ReleaseHeldActions();
 	VMatrix VMatrixFromHmdMatrix(const vr::HmdMatrix34_t &hmdMat);
 	vr::HmdMatrix34_t VMatrixToHmdMatrix(const VMatrix &vMat);

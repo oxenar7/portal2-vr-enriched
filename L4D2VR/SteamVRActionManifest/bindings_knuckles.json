@@ -185,7 +185,7 @@
 			{
                "inputs" : {
                   "click" : {
-                     "output" : "/actions/main/in/Scoreboard"
+                     "output" : "/actions/main/in/Gesture"
                   }
                },
                "mode" : "button",

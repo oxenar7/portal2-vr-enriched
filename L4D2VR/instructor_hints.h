@@ -34,7 +34,7 @@ inline bool EqualsIgnoreCase(std::string_view a, std::string_view b)
 }
 
 // Commands VR::ProcessInput issues for the OpenVR actions.
-enum class Action : std::uint8_t { None, Jump, Use, Crouch, PrimaryAttack, SecondaryAttack, Reload, Zoom, Count };
+enum class Action : std::uint8_t { None, Jump, Use, Crouch, PrimaryAttack, SecondaryAttack, Reload, Zoom, Gesture, Count };
 
 // Hint bindings may chain commands with ';' (SetBinding splits them the same
 // way); the first command names the action to show. Like Key_LookupBinding,
@@ -51,7 +51,8 @@ inline Action ActionForBinding(const char *binding)
     struct Entry { std::string_view command; Action action; };
     static constexpr Entry kEntries[] = {{"jump", Action::Jump}, {"use", Action::Use},
         {"duck", Action::Crouch}, {"attack", Action::PrimaryAttack},
-        {"attack2", Action::SecondaryAttack}, {"reload", Action::Reload}, {"zoom", Action::Zoom}};
+        {"attack2", Action::SecondaryAttack}, {"reload", Action::Reload}, {"zoom", Action::Zoom},
+        {"mouse_menu_taunt", Action::Gesture}};
     for (const auto &entry : kEntries)
         if (EqualsIgnoreCase(text, entry.command))
             return entry.action;

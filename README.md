@@ -6,10 +6,11 @@ The name nods to the Aperture Science Enrichment Center and to what this fork ad
 
 This is an unofficial fan project, not affiliated with or endorsed by Valve. You need your own copy of the game; no game files are included.
 
-**Tested setup:** the whole Portal 2 campaign has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070), and Alive & Kicking has been tested on the same setup. Co-op reports from players: hours of co-op running well on two Steam Frame headsets, and a full co-op run with both players in VR and no problems (the final gesture needs a keyboard key, see [If something goes wrong](#if-something-goes-wrong)). Other headsets and machines are untested, so logs from them are welcome. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
+**Tested setup:** the whole Portal 2 campaign has been played on one setup (Quest 3 through Virtual Desktop, RTX 4070), and Alive & Kicking has been tested on the same setup. Co-op reports from players: hours of co-op running well on two Steam Frame headsets, and a full co-op run with both players in VR and no problems. Other headsets and machines are untested, so logs from them are welcome. Hooks are tied to the current Steam build of Portal 2, so a game update can disable them until the mod is updated.
 
 ## What's new in this fork
 
+- **Co-op gesture on a button:** X does what Portal 2's gesture key (Q) does, so the end of the co-op campaign, where each robot must gesture at a camera, no longer needs the keyboard.
 - **Portal: Alive & Kicking in VR:** the fan-made campaign runs with the same features as Portal 2, including its own menus, chapters and portal gun. Pick it on the launcher's **Games** page.
 - **The gun fits your hand in every game:** the mod reads which portal gun model the game loaded (Portal 2's, Alive & Kicking's or the HD Collection's VR gun) and matches its grip by itself.
 - **Physical crouch:** duck in real life and you duck in the game. The camera lands on Source's ducked eye height and eases back as you stand.
@@ -66,17 +67,17 @@ Default bindings for Quest / Oculus Touch controllers:
 | Crouch | Left grip, or crouch for real |
 | Binocular zoom | Hold the right stick in |
 | Pause menu | Y |
+| Co-op gesture | X |
 | Menus | Point and pull the trigger; Portal 2's own menus also take the left stick with A and B |
 
-**Left-handed mode** puts the gun in the left hand, together with its buttons: blue portal on the left trigger, orange portal on the left grip, use on Y. Crouch moves to the right grip and the pause menu to B. **Swap sticks** is a separate option: move with the right stick, turn with the left, and hold the left stick in for binocular zoom. Both are in Options > VR and in the launcher.
+**Left-handed mode** puts the gun in the left hand, together with its buttons: blue portal on the left trigger, orange portal on the left grip, use on Y. Crouch moves to the right grip and the pause menu to B; the gesture stays on X. **Swap sticks** is a separate option: move with the right stick, turn with the left, and hold the left stick in for binocular zoom. Both are in Options > VR and in the launcher.
 
-Valve Index and Vive Cosmos controllers have their own default bindings. Other controllers can be bound in SteamVR: Settings > Controllers > Manage Controller Bindings. **Recenter** is in Options > VR > Advanced VR. Turning, movement direction, left-handed mode and vibration are in Options > VR.
+Valve Index and Vive Cosmos controllers have their own default bindings (on Index the gesture is the left A). Other controllers can be bound in SteamVR: Settings > Controllers > Manage Controller Bindings. **Recenter** is in Options > VR > Advanced VR. Turning, movement direction, left-handed mode and vibration are in Options > VR.
 
 ## If something goes wrong
 
 - **The game does not start in VR:** make sure SteamVR sees the headset and controllers before pressing **Play in VR**.
 - **The game closes at startup:** install the latest Visual C++ Redistributable for x86 from the link above.
-- **The end of the co-op campaign asks for a gesture:** the game's gesture key has no controller button yet. Press **Q** on the PC keyboard when the game asks for it. A fix is planned.
 - **After a Portal 2 update:** some features may switch themselves off until the mod is updated. The log says which.
 - **The portal gun sits away from your hand:** the mod reads which portal gun model the game loaded and matches its grip: Portal 2's own, Alive & Kicking's, and the "Portal VR Gun Model" replacement included in the Portal 2 VR HD Collection, which holds the gun differently. If you set Gun offset X / Y / Z by hand for that pack (`-7.3` / `-8.2` / `11.35`), the launcher puts them back to `0` by itself. Another replacement model may need its own offsets: in the launcher's **Settings**, turn on **Advanced settings** and adjust them under **Gun position**; `bin/portal2vr.log` names the model it found ("Portal gun model: …").
 - **Dark or black wedges at the edge of your view:** the mod skips the eye pixels your headset reports as never shown. If your headset shows them anyway, create a text file named `dxvk.conf` in your Portal 2 folder containing `d3d9.vrEyeMask = False`, and please report your headset.
@@ -142,7 +143,7 @@ Do not delete install state/backups to fix an error. If only user preferences ar
 - Portal 2's own `robot_point_beam` particle laser is not used: it never showed in the headset. The aim line and the original Portal reticle take its place.
 - FullRotation, YawOnly and PreserveHorizon are manual experiments. FullRotation has limited wall-portal evidence; floor/ceiling comfort, recenter edge cases and broader traversal need testing. Active roomscale requires LegacyYaw and 6DOF.
 - Reticle distance scaling is modest (100% at 1 m to 80% at 10 m); a dedicated far-distance readability comparison remains outstanding.
-- Signatures, offsets, vtables and the 32-bit engine ABI remain compatibility risks. No universal compatibility, performance or 120 Hz frame-rate claim is made. Co-op has not been tested by the developer. Two player reports say it works well, one of them a full run with both players in VR; the final gesture still needs **Q** on the keyboard.
+- Signatures, offsets, vtables and the 32-bit engine ABI remain compatibility risks. No universal compatibility, performance or 120 Hz frame-rate claim is made. Co-op has not been tested by the developer. Two player reports say it works well, one of them a full run with both players in VR.
 - `EyePosition`, `Weapon_ShootPosition` and `GetViewModelFOV` use audited RVAs only after the DLL's SHA-256 and its loaded code/table references match the supported build. The shoot-origin override applies only to the verified `FirePortal` call, preserving other calls to the shared function. An unsupported DLL, failed verification or failed hook installation produces a warning in `bin/portal2vr.log` and skips that hook without blocking startup; Source's original shoot position or viewmodel FOV may be used. The user reported successful hardware testing on one current setup; other game builds and setups require separate validation.
 - No OpenXR backend, optimized desktop mirror, Portal Reloaded ThirdAttack support or complete HUD rewrite.
 - Controller haptics (`Haptics=true` by default) forward Portal 2's own rumble user message (portal shots, failed placement, fizzler, landings, physics impacts) through optional client/server hooks, and add pickup/drop/hold and pedestal/floor-button pulses. Each hook that fails to resolve is logged in `bin/portal2vr.log` and only disables its own vibration source. Every native effect is logged as `Native rumble: ...`. Pulse strengths are tuned for one Quest/Virtual Desktop setup.

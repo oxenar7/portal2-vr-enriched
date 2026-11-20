@@ -4,6 +4,8 @@
 // install of Portal 2's engine with its own game folder ("AAK"), localisation files, save
 // folder and campaign. The code paths are the same; only these facts differ.
 
+#include "gun_models.h"
+
 #include <Windows.h>
 #include <cstdint>
 #include <cwctype>
@@ -27,9 +29,9 @@ struct Profile {
     // icon centre x, y and size from locatorCentre, effect flags at locatorFlags.
     std::uint32_t locatorCentre;
     std::uint32_t locatorFlags;
-    // How far the game's v_portalgun.mdl animates its whole rig from Portal 2's, in model space
-    // (x forward, y left, z up). The controller grip offset moves by the same amount.
-    float viewmodelRigShift[3];
+    // The game's own v_portalgun.mdl. Its grip applies until the mod reads which model the
+    // game loaded, and when that one is not in gun_models.h.
+    const GunModels::Model *gunModel;
 };
 
 inline constexpr const char *kPortal2Chapters[] = {
@@ -67,17 +69,14 @@ inline constexpr int kMaxChapters = 11;
 
 inline constexpr Profile kPortal2{"Portal 2", "portal2", "620", "portal2_",
     "portal2_Chapter%d_Title", "portal2_Chapter%d_Subtitle",
-    static_cast<int>(std::size(kPortal2Chapters)), kPortal2Chapters, 0xCC, 0x13C, {0.0f, 0.0f, 0.0f}};
+    static_cast<int>(std::size(kPortal2Chapters)), kPortal2Chapters, 0xCC, 0x13C, &GunModels::kPortal2};
 
 // The locator offsets were read from the same instructions of DrawTarget and Paint in both
 // client.dll builds (Portal 2 +0xCC/+0x13C, Alive & Kicking +0x8C/+0xF8).
-// Its v_portalgun.mdl has Portal 2's skeleton, but every sequence puts the root bone, and so
-// the hand and muzzle, 6 units further forward and 1 further left (frame 0 of each sequence
-// decoded from both models).
 inline constexpr Profile kAliveAndKicking{"Portal: Alive & Kicking", "AAK", "270470", "AAK_",
     "SP_PRESENCE_TEXT_CH%d", nullptr,
     static_cast<int>(std::size(kAliveAndKickingChapters)), kAliveAndKickingChapters, 0x8C, 0xF8,
-    {6.0f, 1.0f, 0.0f}};
+    &GunModels::kAliveAndKicking};
 
 static_assert(std::size(kPortal2Chapters) <= kMaxChapters && std::size(kAliveAndKickingChapters) <= kMaxChapters);
 

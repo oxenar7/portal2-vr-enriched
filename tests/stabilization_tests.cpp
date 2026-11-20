@@ -31,6 +31,8 @@
 #include "../L4D2VR/use_target.h"
 #include "../L4D2VR/vr_menu_model.h"
 #include "../L4D2VR/vr_menu_palette.h"
+#include "../L4D2VR/model_info_abi.h"
+#include "../L4D2VR/gun_models.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -324,6 +326,27 @@ static void TestVrOptions()
     const std::uint8_t getColor[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x0C, 0x83, 0xEC, 0x0C, 0x50, 0xE8};
     expect(Portal2Vgui::MatchesSignature(getColor, Portal2Vgui::SchemeSlot::GetColor.signature), true,
            "CScheme::GetColor prologue");
+
+    // CModelInfoClient slots as read from Portal 2's engine.dll (Alive & Kicking's differ only in
+    // the relocated words).
+    const std::uint8_t getModel[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08, 0x50, 0xE8, 0xC4, 0x91, 0xEE, 0xFF,
+                                     0x8B, 0xC8, 0xE8, 0x1D, 0x6D, 0xEF, 0xFF, 0x5D, 0xC2, 0x04, 0x00};
+    const std::uint8_t getStudiomodel[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08, 0x83, 0xB8, 0x10, 0x01, 0x00, 0x00,
+        0x03, 0x75, 0x19, 0x8B, 0x0D, 0xF8, 0xFC, 0x6C, 0x10, 0x0F, 0xB7, 0x80, 0x38, 0x01, 0x00, 0x00, 0x8B, 0x11,
+        0x8B, 0x52, 0x34, 0x50, 0xFF, 0xD2, 0x5D, 0xC2, 0x04, 0x00, 0x33, 0xC0, 0x5D, 0xC2, 0x04, 0x00};
+    expect(Portal2Vgui::MatchesSignature(getModel, ModelInfoAbi::GetModel.signature) &&
+           Portal2Vgui::MatchesSignature(getModel, ModelInfoAbi::GetModelIndex.signature) &&
+           Portal2Vgui::MatchesSignature(getStudiomodel, ModelInfoAbi::GetStudiomodel.signature), true,
+           "IVModelInfo GetModel, GetModelIndex and GetStudiomodel prologues");
+    expect(Portal2Vgui::MatchesSignature(getModel, ModelInfoAbi::GetStudiomodel.signature), false,
+           "a forwarding stub is not taken for GetStudiomodel");
+    const std::int32_t studioHeader[] = {ModelInfoAbi::kStudioId, 49, -1964506577};
+    const std::int32_t notStudio[] = {0x50534449, 49, -1964506577};
+    std::int32_t checksum = 0;
+    expect(ModelInfoAbi::ReadChecksum(studioHeader, checksum) && checksum == -1964506577, true,
+           "the studio checksum follows the IDST id and version");
+    expect(ModelInfoAbi::ReadChecksum(notStudio, checksum) || ModelInfoAbi::ReadChecksum(nullptr, checksum), false,
+           "anything that is not a studio header is ignored");
 
     ConfigSnapshot config;
     expect(Step(MenuItem("SnapTurning"), config, 1) == std::optional<std::string>("true"), true,
@@ -1929,11 +1952,25 @@ int main()
            "client.dll under the portal2 folder selects Portal 2");
     expect(&GameProfile::ForClientPath(L"client.dll") == &GameProfile::kPortal2, true,
            "a bare module name falls back to Portal 2");
-    const float *portal2Rig = GameProfile::kPortal2.viewmodelRigShift;
+    expect(GameProfile::kPortal2.gunModel == &GunModels::kPortal2 && aak.gunModel == &GunModels::kAliveAndKicking,
+           true, "each game starts with its own portal gun grip");
+    const float *portal2Rig = GunModels::kPortal2.shift;
     expect(portal2Rig[0] == 0.0f && portal2Rig[1] == 0.0f && portal2Rig[2] == 0.0f, true,
            "Portal 2's portal gun keeps the calibrated grip offset");
-    expect(aak.viewmodelRigShift[0] == 6.0f && aak.viewmodelRigShift[1] == 1.0f && aak.viewmodelRigShift[2] == 0.0f,
-           true, "Alive & Kicking's portal gun rig sits 6 units forward and 1 left");
+    const float *aakRig = GunModels::kAliveAndKicking.shift;
+    expect(aakRig[0] == 6.0f && aakRig[1] == -1.0f && aakRig[2] == 0.0f, true,
+           "Alive & Kicking's portal gun rig sits 6 units forward and 1 left (against the right axis)");
+    const float *vrGun = GunModels::kVrGunModel.shift;
+    expect(vrGun[0] == -7.3f && vrGun[1] == -8.2f && vrGun[2] == 11.35f, true,
+           "the HD collection's VR gun model gets the grip matched in the headset");
+    expect(GunModels::Find(-1964506577) == &GunModels::kVrGunModel &&
+           GunModels::Find(435277794) == &GunModels::kAliveAndKicking &&
+           GunModels::Find(-1707162297) == &GunModels::kPortal2 && GunModels::Find(12345) == nullptr,
+           true, "gun models are found by their studio checksum");
+    expect(&GunModels::Choose(true, -1964506577, GunModels::kAliveAndKicking) == &GunModels::kVrGunModel &&
+           &GunModels::Choose(true, 12345, GunModels::kAliveAndKicking) == &GunModels::kAliveAndKicking &&
+           &GunModels::Choose(false, -1964506577, GunModels::kPortal2) == &GunModels::kPortal2,
+           true, "a known loaded model wins; an unknown or unread one keeps the game's grip");
     VrMenuData::Strings aakStrings;
     aakStrings.Load("C:\\nowhere\\", aak);
     expectInt(static_cast<int>(aakStrings.Count()), 0, "missing localisation files leave no texts");

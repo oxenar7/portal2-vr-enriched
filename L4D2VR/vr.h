@@ -26,6 +26,8 @@
 #include "use_target.h"
 #include "vr_world_menu.h"
 #include "eye_mask.h"
+#include "gun_models.h"
+#include <cstdint>
 #include <filesystem>
 
 #define MAX_STR_LEN 256
@@ -211,6 +213,11 @@ public:
 	QAngle m_ViewmodelAngOffset;
 
 	Vector m_ViewmodelPosCustomOffset; // Custom (from config) viewmodel position offset applied on top of hardcoded ones
+	// The loaded portal gun model whose grip applies (gun_models.h); null until one is read.
+	const GunModels::Model *m_GunModel = nullptr;
+	std::int32_t m_GunModelChecksum = 0;
+	bool m_GunModelAbiChecked = false;
+	bool m_GunModelAbiReady = false;
     QAngle m_ViewmodelAngCustomOffset; // Custom (from config) viewmodel angle offset applied on top of hardcoded ones
 
 	float m_Ipd;																	
@@ -508,6 +515,8 @@ public:
 	QAngle GetRecommendedViewmodelAbsAngle();
 	void UpdateHMDAngles();
 	void UpdateTracking();
+	void UpdateGunModel();
+	const GunModels::Model &GunModel() const;
 	float UpdatePhysicalCrouch(C_BasePlayer *player);
 	void UpdatePhysicalCrouchCamera();
 	bool ExperimentalPortalOrientation() const;

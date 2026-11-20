@@ -9,6 +9,8 @@
 #include "aim_feedback.h"
 #include "hud_capture.h"
 #include "game_profile.h"
+#include "gun_models.h"
+#include "model_info_abi.h"
 #include "sdk/ivdebugoverlay.h"
 #include <iostream>
 #include <fstream>
@@ -26,13 +28,12 @@ static const Vector kLegacyViewmodelPositionOffset{4.5f, -1.0f, 1.5f};
 // moves the white body onto the controller (headset-calibrated).
 static const Vector kAlignedViewmodelGripOffset{15.0f, 6.0f, -8.0f};
 
-// The offsets are subtracted along the controller's forward, right and up; a game whose
-// model animates the rig elsewhere (GameProfile, model y is left) moves them with it.
-static Vector ViewmodelBasePositionOffset(bool aligned)
+// The offsets are subtracted along the controller's forward, right and up; a gun model that
+// holds the gun elsewhere (gun_models.h) moves them with it.
+static Vector ViewmodelBasePositionOffset(bool aligned, const GunModels::Model &gun)
 {
     const Vector &base = aligned ? kAlignedViewmodelGripOffset : kLegacyViewmodelPositionOffset;
-    const float *shift = GameProfile::Current().viewmodelRigShift;
-    return Vector{base.x + shift[0], base.y - shift[1], base.z + shift[2]};
+    return Vector{base.x + gun.shift[0], base.y + gun.shift[1], base.z + gun.shift[2]};
 }
 
 namespace {
@@ -467,6 +468,7 @@ void VR::Update()
         }
         ApplyHeldObjectTuning();
         CheckAddressSpace();
+        UpdateGunModel();
     }
     PerfBeginFrame(now);
     PollHeldTrace(now);
@@ -2987,7 +2989,7 @@ void VR::UpdateTracking()
     m_RightControllerAngAbs.Normalize();
 
     // Apply both hardcoded and custom (from config) viewmodel offsets here:
-    m_ViewmodelPosOffset = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment) +
+    m_ViewmodelPosOffset = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment, GunModel()) +
         m_ViewmodelPosCustomOffset;
     m_ViewmodelAngOffset = m_ViewmodelAngCustomOffset;
 
@@ -3632,7 +3634,7 @@ void VR::ParseConfigFile()
     m_RenderWindow = m_Config.renderWindow;
     m_ViewmodelPosCustomOffset = {m_Config.viewmodelPosOffset[0], m_Config.viewmodelPosOffset[1], m_Config.viewmodelPosOffset[2]};
     m_ViewmodelAngCustomOffset = {m_Config.viewmodelAngOffset[0], m_Config.viewmodelAngOffset[1], m_Config.viewmodelAngOffset[2]};
-    const Vector viewmodelBase = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment);
+    const Vector viewmodelBase = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment, GunModel());
     Logger::Write("Config applied: VerboseDiagnostics=" + std::to_string(m_Config.verboseDiagnostics) +
         " TurnSpeed=" + std::to_string(m_TurnSpeed) +
         " SnapTurnAngle=" + std::to_string(m_SnapTurnAngle) +
@@ -3669,7 +3671,51 @@ void VR::ParseConfigFile()
         std::to_string(viewmodelBase.x + m_ViewmodelPosCustomOffset.x) + "," +
         std::to_string(viewmodelBase.y + m_ViewmodelPosCustomOffset.y) + "," +
         std::to_string(viewmodelBase.z + m_ViewmodelPosCustomOffset.z) +
-        (m_Config.experimentalViewmodelAlignment ? " (aligned grip base)" : " (legacy base)"));
+        (m_Config.experimentalViewmodelAlignment ? " (aligned grip base" : " (legacy base") +
+        std::string(", ") + GunModel().name + " gun model)");
+}
+
+const GunModels::Model &VR::GunModel() const
+{
+    return m_GunModel ? *m_GunModel : *GameProfile::Current().gunModel;
+}
+
+// Which portal gun model the game loaded, read once a second while in game. Until a model is
+// read (menus, maps before the gun is precached) the last one, or the game's own, stays.
+void VR::UpdateGunModel()
+{
+    void *modelInfo = m_Game->m_ModelInfo;
+    if (!m_GunModelAbiChecked) {
+        m_GunModelAbiChecked = true;
+        std::string failure = "interface missing";
+        m_GunModelAbiReady = modelInfo != nullptr;
+        for (const Portal2Vgui::Slot *slot : ModelInfoAbi::All)
+            if (m_GunModelAbiReady && !Portal2Vgui::VerifySlot(modelInfo, *slot, failure))
+                m_GunModelAbiReady = false;
+        if (!m_GunModelAbiReady)
+            Logger::Write("Portal gun model: IVModelInfo " + failure + " unverified; keeping " +
+                GunModel().name + " gun grip");
+    }
+    if (!m_GunModelAbiReady || !m_Game->m_EngineClient->IsInGame())
+        return;
+    using namespace ModelInfoAbi;
+    const char *name = kPortalGunModel;
+    const int index = Portal2Vgui::CallSlot<int>(modelInfo, GetModelIndex.index, name);
+    void *model = index > 0 ? Portal2Vgui::CallSlot<void *>(modelInfo, GetModel.index, index) : nullptr;
+    const void *header = model ?
+        Portal2Vgui::CallSlot<const void *>(modelInfo, GetStudiomodel.index, static_cast<const void *>(model)) :
+        nullptr;
+    std::int32_t checksum = 0;
+    if (!ReadChecksum(header, checksum) || (m_GunModel && checksum == m_GunModelChecksum))
+        return;
+    const GunModels::Model &chosen = GunModels::Choose(true, checksum, *GameProfile::Current().gunModel);
+    m_GunModel = &chosen;
+    m_GunModelChecksum = checksum;
+    const bool known = GunModels::Find(checksum) != nullptr;
+    Logger::Write("Portal gun model: " + std::string(known ? chosen.name : "unknown") + " (checksum " +
+        std::to_string(checksum) + ")" + (known ? "" : std::string("; using the ") + chosen.name + " grip") +
+        ", grip shift " + std::to_string(chosen.shift[0]) + "," + std::to_string(chosen.shift[1]) + "," +
+        std::to_string(chosen.shift[2]));
 }
 
 bool VR::WriteMenuSettings(const VrSettings::Overrides &overrides)

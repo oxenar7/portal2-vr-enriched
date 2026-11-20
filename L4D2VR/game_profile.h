@@ -15,6 +15,11 @@
 
 namespace GameProfile {
 
+struct ButtonCommand {
+    const char *press;
+    const char *release; // null: nothing on release
+};
+
 struct Profile {
     const char *name;         // for the log
     const char *folder;       // game folder under the install root (the -game folder)
@@ -35,10 +40,12 @@ struct Profile {
     const GunModels::Model *gunModel;
     // A chapter's name when its title token is missing, printf-style with the chapter number.
     const wchar_t *chapterLabel = L"CHAPTER %d";
-    // What the off-hand trigger sends on press and release (release may be null). Portal 2 has no
-    // use for +reload; Reloaded fires its time portal with an alias that takes no release.
-    const char *offHandPress = "+reload";
-    const char *offHandRelease = "-reload";
+    // What the gun trigger, the gun grip and the off-hand trigger send: Portal 2's own
+    // +commands, or a game's aliases that run through its map logic and release themselves
+    // (release null). Portal 2 has no use for +reload.
+    ButtonCommand primary{"+attack", "-attack"};
+    ButtonCommand secondary{"+attack2", "-attack2"};
+    ButtonCommand offHand{"+reload", "-reload"};
 };
 
 inline constexpr const char *kPortal2Chapters[] = {
@@ -115,13 +122,16 @@ inline constexpr Profile kPortalStoriesMel{"Portal Stories: Mel", "portal_storie
     &GunModels::kPortalStoriesMel};
 
 // Reloaded runs Mel's 2021 client.dll code and Portal 2's own v_portalgun.mdl (same checksum).
-// Its time portal is the alias "att3" (cfg/autoexec.cfg: ent_fire @att3 Trigger): the map's relay
-// switches the gun to linkage id 2, fires one ordinary +attack and switches back, so the shot
-// takes the controller's aim like any other.
+// Its own bindings (cfg/autoexec.cfg) fire portals through aliases, "ent_fire @att1|@att2|@att3
+// Trigger", that every map but the first answers with a relay. In single player @att1 and @att2
+// tap +attack and +attack2; @att3, the time portal, switches the gun to linkage id 2, taps
+// +attack and switches back, so every shot takes the controller's aim. In co-op @att1 and @att2
+// check who pressed: the player who places time portals gets them from the same two buttons,
+// which plain +attack cannot do. Use stays +use: the first map has a cube and no @using.
 inline constexpr Profile kPortalReloaded{"Portal Reloaded", "portalreloaded", "1255980", "Portal Reloaded_",
     nullptr, nullptr,
     static_cast<int>(std::size(kPortalReloadedChapters)), kPortalReloadedChapters, 0xCC, 0x13C,
-    &GunModels::kPortal2, L"MAP %02d", "att3", nullptr};
+    &GunModels::kPortal2, L"MAP %02d", {"att1", nullptr}, {"att2", nullptr}, {"att3", nullptr}};
 
 static_assert(std::size(kPortal2Chapters) <= kMaxChapters && std::size(kAliveAndKickingChapters) <= kMaxChapters &&
               std::size(kPortalStoriesMelChapters) <= kMaxChapters &&

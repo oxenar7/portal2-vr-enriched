@@ -2184,13 +2184,14 @@ void VR::SuspendInputForRenderFailure()
 
 void VR::ReleaseHeldActions()
 {
+    const GameProfile::Profile &game = GameProfile::Current();
     const struct {
         DigitalButtonState *state;
         const char *releaseCommand;
     } actions[] = {
-        { &m_PrimaryAttackState, "-attack" }, { &m_SecondaryAttackState, "-attack2" },
+        { &m_PrimaryAttackState, game.primary.release }, { &m_SecondaryAttackState, game.secondary.release },
         { &m_JumpState, "-jump" }, { &m_CrouchState, "-duck" },
-        { &m_UseState, "-use" }, { &m_ReloadState, GameProfile::Current().offHandRelease }
+        { &m_UseState, "-use" }, { &m_ReloadState, game.offHand.release }
     };
     for (const auto &action : actions)
         if (const char *command = action.state->HeldCommand(false, false, false, "", action.releaseCommand))
@@ -2407,15 +2408,15 @@ void VR::ProcessInput()
                                  : std::string("Sticks: move with the left stick, turn with the right"));
     }
 
-    ProcessHeldAction(primaryAttack, m_PrimaryAttackState, "+attack", "-attack");
+    const GameProfile::Profile &game = GameProfile::Current();
+    ProcessHeldAction(primaryAttack, m_PrimaryAttackState, game.primary.press, game.primary.release);
     ProcessHeldAction(HandedAction(m_ActionSecondaryAttack, m_ActionSecondaryAttackLeftHanded),
-                      m_SecondaryAttackState, "+attack2", "-attack2");
+                      m_SecondaryAttackState, game.secondary.press, game.secondary.release);
     ProcessHeldAction(m_ActionJump, m_JumpState, "+jump", "-jump");
     ProcessHeldAction(HandedAction(m_ActionCrouch, m_ActionCrouchLeftHanded), m_CrouchState, "+duck", "-duck");
     ProcessHeldAction(HandedAction(m_ActionUse, m_ActionUseLeftHanded), m_UseState, "+use", "-use");
-    const GameProfile::Profile &game = GameProfile::Current();
     ProcessHeldAction(HandedAction(m_ActionReload, m_ActionReloadLeftHanded), m_ReloadState,
-                      game.offHandPress, game.offHandRelease);
+                      game.offHand.press, game.offHand.release);
     ProcessZoomInput();
 
     if (PressedDigitalAction(m_ActionPrevItem, true))

@@ -2054,11 +2054,16 @@ int main()
     expect(std::string(reloaded.folder) == "portalreloaded" && std::string(reloaded.appId) == "1255980" &&
                std::string(reloaded.gameStrings) == "Portal Reloaded_" && reloaded.gunModel == &GunModels::kPortal2,
            true, "Reloaded reads its folder, manifest and strings, and holds Portal 2's own gun");
-    expect(std::string(reloaded.offHandPress) == "att3" && reloaded.offHandRelease == nullptr &&
-               std::string(GameProfile::kPortal2.offHandPress) == "+reload" &&
-               std::string(GameProfile::kPortal2.offHandRelease) == "-reload" &&
-               std::string(mel.offHandPress) == "+reload" && std::string(aak.offHandPress) == "+reload",
-           true, "only Reloaded's off-hand trigger fires the time portal");
+    expect(std::string(reloaded.offHand.press) == "att3" && reloaded.offHand.release == nullptr &&
+               std::string(reloaded.primary.press) == "att1" && reloaded.primary.release == nullptr &&
+               std::string(reloaded.secondary.press) == "att2" && reloaded.secondary.release == nullptr,
+           true, "Reloaded's portal buttons send its own aliases; the off-hand trigger fires the time portal");
+    for (const auto *other : {&GameProfile::kPortal2, &aak, &mel})
+        expect(std::string(other->primary.press) == "+attack" && std::string(other->primary.release) == "-attack" &&
+                   std::string(other->secondary.press) == "+attack2" &&
+                   std::string(other->secondary.release) == "-attack2" &&
+                   std::string(other->offHand.press) == "+reload" && std::string(other->offHand.release) == "-reload",
+               true, "the other games keep Portal 2's own button commands");
     {
         VrMenu::Texts texts;
         texts.Load(VrMenuData::Strings{}, reloaded);

@@ -1367,6 +1367,51 @@ int main()
            "missing overlay does not trigger an unsafe weapon lookup");
     expect(AimFeedback::ShouldInspectActiveWeaponForAim(1, true, true), false,
            "head-aim mode skips the weapon lookup");
+    expect(AimFeedback::ShouldShowGunlessAimRing(true, true, false, false, false, true), true,
+           "without the gun the ring shows where use points");
+    expect(AimFeedback::ShouldShowGunlessAimRing(true, true, true, false, false, true), false,
+           "with the gun the beam shows the aim, not the ring");
+    expect(AimFeedback::ShouldShowGunlessAimRing(false, true, false, false, false, true), false,
+           "head-aimed use draws no controller ring");
+    expect(AimFeedback::ShouldShowGunlessAimRing(true, true, false, false, true, true), false,
+           "a held object is the pointer while it is held");
+    expect(AimFeedback::ShouldShowGunlessAimRing(true, true, false, true, false, true), false,
+           "a visible game menu removes the ring");
+    expect(AimFeedback::ShouldShowGunlessAimRing(true, true, false, false, false, false), false,
+           "pointing at nothing draws no ring");
+    expect(AimFeedback::ShouldShowGunlessAimRing(true, false, false, false, false, true), false,
+           "missing Source debug overlay draws no ring");
+    expectNear(AimFeedback::GunlessRingRadius(100.0f, false), 1.2f, "the ring keeps about the same angle");
+    expectNear(AimFeedback::GunlessRingRadius(5.0f, false), AimFeedback::kGunlessRingMinRadius,
+               "up close the ring keeps a visible size");
+    expectNear(AimFeedback::GunlessRingRadius(5000.0f, false), AimFeedback::kGunlessRingMaxRadius,
+               "far away the ring stays below a cube's face");
+    expectNear(AimFeedback::GunlessRingRadius(100.0f, true), 1.5f, "on a usable thing the ring grows a little");
+    expectNear(AimFeedback::GunlessRingRadius(std::nanf(""), false), AimFeedback::kGunlessRingMinRadius,
+               "a broken distance still gives a sane ring");
+    {
+        const Vector wallPoint{50, 0, 10}, wallNormal{-1, 0, 0};
+        const auto ring = AimFeedback::RingTriangles(wallPoint, wallNormal * 3.0f, 2.0f, 1.0f, 12);
+        expect(ring.size() == 12u * 4u, true, "each ring segment is two quads' triangles in both windings");
+        bool inPlane = true, inBand = true;
+        for (const auto &triangle : ring) {
+            for (const Vector &corner : triangle) {
+                inPlane = inPlane && std::fabs(corner.x - (wallPoint.x - AimFeedback::kGunlessRingLift)) < 0.001f;
+                const float r = std::sqrt((corner.y - wallPoint.y) * (corner.y - wallPoint.y) +
+                                          (corner.z - wallPoint.z) * (corner.z - wallPoint.z));
+                inBand = inBand && (std::fabs(r - 2.0f) < 0.001f || std::fabs(r - 1.0f) < 0.001f);
+            }
+        }
+        expect(inPlane, true, "the ring lies on the surface, lifted toward the controller");
+        expect(inBand, true, "every ring corner sits on the inner or outer circle");
+        const auto floorRing = AimFeedback::RingTriangles(Vector{0, 0, 0}, Vector{0, 0, 1}, 2.0f, 1.0f, 8);
+        expect(floorRing.size() == 8u * 4u && std::fabs(floorRing[0][0].z - AimFeedback::kGunlessRingLift) < 0.001f,
+               true, "a ring on the floor lies flat");
+        expect(AimFeedback::RingTriangles(wallPoint, Vector{0, 0, 0}, 2.0f, 1.0f).empty(), true,
+               "a hit without a surface normal draws no ring");
+        expect(AimFeedback::RingTriangles(wallPoint, wallNormal, 1.0f, 2.0f).empty(), true,
+               "an inside-out ring is refused");
+    }
     const auto wallAim = AimFeedback::PrepareWorldAimGeometry(
         Vector{10, 20, 30}, Vector{110, 20, 30});
     expect(wallAim.has_value(), true, "finite wall hit produces aim geometry");

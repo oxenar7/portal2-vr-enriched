@@ -7,6 +7,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 #include "sdk/vector.h"
 
 namespace AimFeedback {
@@ -159,6 +160,63 @@ inline std::array<std::pair<Vector, Vector>, 4> BeamStrands(const Vector &origin
     const float offset = length * std::tan(spread);
     return {{{origin, end + side * offset}, {origin, end - side * offset},
              {origin, end + lift * offset}, {origin, end - lift * offset}}};
+}
+
+// Without the portal gun there is no beam to show what +use would act on, and a beam from the
+// empty hand would make no sense. A ring lies on the surface the controller points at instead,
+// like the in-world menu's pointer, while use follows the controller.
+inline bool ShouldShowGunlessAimRing(bool controllerUse, bool overlayAvailable, bool activeWeapon,
+                                     bool cursorVisible, bool holding, bool traceHit)
+{
+    return controllerUse && overlayAvailable && !activeWeapon && !cursorVisible && !holding && traceHit;
+}
+
+// About the same angle anywhere: the outer radius grows with the distance from the controller,
+// within limits that keep it on a button up close and below a cube's face far away (units).
+inline constexpr float kGunlessRingAngle = 0.012f;
+inline constexpr float kGunlessRingMinRadius = 0.6f;
+inline constexpr float kGunlessRingMaxRadius = 6.0f;
+inline constexpr float kGunlessRingInner = 0.55f;        // inner radius over outer
+inline constexpr float kGunlessRingTargetScale = 1.25f;  // a bit larger on something usable
+inline constexpr float kGunlessRingLift = 0.25f;         // off the surface, against depth fighting
+inline constexpr int kGunlessRingSegments = 20;
+
+inline float GunlessRingRadius(float distance, bool onTarget)
+{
+    if (!std::isfinite(distance) || distance < 0.0f)
+        distance = 0.0f;
+    const float radius = std::clamp(distance * kGunlessRingAngle, kGunlessRingMinRadius, kGunlessRingMaxRadius);
+    return onTarget ? radius * kGunlessRingTargetScale : radius;
+}
+
+using Triangle = std::array<Vector, 3>;
+
+// The ring as triangles in the plane of the surface, lifted off it along the normal. Each
+// quad is listed in both windings, so it shows from either side whatever the overlay culls.
+inline std::vector<Triangle> RingTriangles(const Vector &point, Vector normal, float outer, float inner,
+                                           int segments = kGunlessRingSegments)
+{
+    std::vector<Triangle> triangles;
+    if (VectorNormalize(normal) < 0.5f || !(outer > inner) || inner < 0.0f || segments < 3)
+        return triangles;
+    const Vector reference = std::abs(normal.z) > 0.95f ? Vector{1, 0, 0} : Vector{0, 0, 1};
+    Vector u = CrossProduct(normal, reference);
+    VectorNormalize(u);
+    const Vector v = CrossProduct(normal, u);
+    const Vector center = point + normal * kGunlessRingLift;
+    const auto at = [&](int i, float radius) {
+        const float angle = 6.28318530718f * static_cast<float>(i % segments) / static_cast<float>(segments);
+        return center + u * (std::cos(angle) * radius) + v * (std::sin(angle) * radius);
+    };
+    triangles.reserve(static_cast<std::size_t>(segments) * 4);
+    for (int i = 0; i < segments; ++i) {
+        const Vector o0 = at(i, outer), o1 = at(i + 1, outer), i0 = at(i, inner), i1 = at(i + 1, inner);
+        for (const Triangle &t : {Triangle{o0, o1, i0}, Triangle{i0, o1, i1}}) {
+            triangles.push_back(t);
+            triangles.push_back(Triangle{t[0], t[2], t[1]});
+        }
+    }
+    return triangles;
 }
 
 struct ScreenPoint

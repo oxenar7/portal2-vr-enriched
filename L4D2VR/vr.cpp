@@ -3056,11 +3056,28 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
         return;
     }
     bool aimTraceHit = false;
-    m_AimPos = Trace((uint32_t*)localPlayer, aimTraceHit);
+    Vector aimNormal{0, 0, 1};
+    m_AimPos = Trace((uint32_t*)localPlayer, aimTraceHit, &aimNormal);
+    // C_Portal_Player slot 242 (+968), the same function in Portal 2, Alive & Kicking and Mel.
+    const auto activeWeapon = [localPlayer] {
+        return (*(int(__thiscall**)(void*))(*(uintptr_t*)localPlayer + 968))(localPlayer);
+    };
+    if (ControllerUseWanted() && m_Game->m_DebugOverlay) {
+        const bool cursorVisible = m_Game->m_VguiSurface->IsCursorVisible();
+        if (AimFeedback::ShouldShowGunlessAimRing(true, true, activeWeapon() != 0, cursorVisible,
+                m_HoldTracker.Holding(), aimTraceHit)) {
+            const auto now = std::chrono::steady_clock::now();
+            const float frameInterval = m_LastWorldAimMarkerUpdate ==
+                std::chrono::steady_clock::time_point{} ? 0.0f :
+                std::chrono::duration<float>(now - m_LastWorldAimMarkerUpdate).count();
+            m_LastWorldAimMarkerUpdate = now;
+            DrawGunlessAimRing(m_AimPos, aimNormal, m_UseHover.Active(now),
+                               AimFeedback::WorldAimOverlayLifetime(frameInterval));
+        }
+    }
     if (AimFeedback::ShouldInspectActiveWeaponForAim(
             m_AimMode, m_Config.experimentalWorldAimMarker, m_Game->m_DebugOverlay != nullptr)) {
-        C_Portal_Player* portalPlayer = (C_Portal_Player*)localPlayer;
-        auto activeWeaponAddr = (*(int(__thiscall**)(void*))(*(uintptr_t*)portalPlayer + 968))(portalPlayer);
+        auto activeWeaponAddr = activeWeapon();
         const auto playerKey = reinterpret_cast<std::uintptr_t>(localPlayer);
         const auto weaponKey = static_cast<std::uintptr_t>(activeWeaponAddr);
         if (m_Game->m_VguiSurface->IsCursorVisible())
@@ -3108,6 +3125,21 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
         }
     } else {
         ResetMuzzleSample();
+    }
+}
+
+void VR::DrawGunlessAimRing(const Vector &hit, const Vector &normal, bool onTarget, float lifetime)
+{
+    const float distance = VectorLength(hit - GetRightControllerAbsPos());
+    const float outer = AimFeedback::GunlessRingRadius(distance, onTarget);
+    const auto color = UseTarget::LineColor(onTarget);
+    for (const auto &triangle : AimFeedback::RingTriangles(hit, normal, outer, outer * AimFeedback::kGunlessRingInner))
+        m_Game->m_DebugOverlay->AddTriangleOverlay(triangle[0], triangle[1], triangle[2],
+            color.r, color.g, color.b, 230, false, lifetime);
+    if (!m_GunlessAimRingLogged) {
+        Logger::Write("Gunless aim ring drawn: no active weapon, ring radius " + std::to_string(outer) +
+            " at " + std::to_string(distance) + " units; stereo look requires VR testing");
+        m_GunlessAimRingLogged = true;
     }
 }
 
@@ -3364,7 +3396,7 @@ Vector VR::GetViewOriginRight(Vector setupOrigin)
     return viewOriginRight;
 }
 
-Vector VR::Trace(uint32_t* localPlayer, bool &didHit) {
+Vector VR::Trace(uint32_t* localPlayer, bool &didHit, Vector *normal) {
     Vector vecStart = GetRightControllerAbsPos();
     Vector vecEnd = vecStart + m_RightControllerForward * MAX_TRACE_LENGTH;
 
@@ -3379,6 +3411,8 @@ Vector VR::Trace(uint32_t* localPlayer, bool &didHit) {
     m_Game->m_EngineTrace->TraceRay(ray, MASK_SHOT_PORTAL, &tracefilter, &trace);
 
     didHit = trace.DidHit();
+    if (normal)
+        *normal = trace.plane.normal;
     return trace.endpos;
 }
 

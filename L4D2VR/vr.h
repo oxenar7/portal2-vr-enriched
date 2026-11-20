@@ -80,6 +80,7 @@ public:
 	vr::VROverlayHandle_t m_HUDHandle = vr::k_ulOverlayHandleInvalid;
 	bool m_HUDBoundsReady = false;
 	bool m_WorldAimMarkerLogged = false;
+	bool m_GunlessAimRingLogged = false;
 	bool m_WorldAimMarkerCadenceLogged = false;
 	std::chrono::steady_clock::time_point m_LastWorldAimMarkerUpdate{};
 	bool m_HUDCaptureLogged = false;
@@ -561,6 +562,7 @@ public:
 	bool WriteMenuSettings(const VrSettings::Overrides &overrides);
 	bool ApplyMenuSetting(const std::string &key, const std::string &value);
 	void ResetMenuSettings();
-	Vector Trace(uint32_t* localPlayer, bool &didHit);
+	Vector Trace(uint32_t* localPlayer, bool &didHit, Vector *normal = nullptr);
+	void DrawGunlessAimRing(const Vector &hit, const Vector &normal, bool onTarget, float lifetime);
 	Vector TraceEye(uint32_t* localPlayer, Vector cameraPos, Vector eyePos, QAngle& eyeAngle);
 };

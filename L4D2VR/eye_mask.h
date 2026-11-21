@@ -11,6 +11,11 @@
 //
 // OpenVR does not document whether the hidden area mesh has v pointing up or
 // down, so only the cells hidden under both readings are masked.
+//
+// A lens never hides the middle of the view, nor most of it. Some setups report a
+// mesh that does (one Quest 3 returned a single triangle over the whole eye, and
+// stamping it left only the portal interiors visible), so such a mesh is ignored
+// and only the outside strips are masked.
 
 #include <algorithm>
 #include <cmath>
@@ -37,11 +42,14 @@ struct Result {
     Rect visible;                 // submitted bounds plus margin; empty if invalid
     double outsideFraction = 0.0; // of the whole texture
     double lensFraction = 0.0;    // of the whole texture
+    bool lensIgnored = false;     // the mesh hid the view centre or more than kMaxLensShare
 };
 
 // Pixels kept unmasked around the submitted bounds and the lens edge.
 constexpr int32_t kBoundsMargin = 8;
 constexpr int32_t kCellSize = 16;
+// Largest share of the submitted view a lens mask may hide (Quest 3: about 5%).
+constexpr double kMaxLensShare = 0.5;
 
 inline bool InsideTriangle(const Point &a, const Point &b, const Point &c, float u, float v)
 {
@@ -92,6 +100,10 @@ inline Result Build(uint32_t width, uint32_t height, const Bounds &bounds, const
 
     if (hiddenMesh.size() < 3)
         return result;
+    if (InsideMesh(hiddenMesh, 0.5f, 0.5f)) {
+        result.lensIgnored = true;
+        return result;
+    }
 
     // Lens part: cells inside the bounds whose centre is hidden under both v
     // readings, eroded by one cell so the mask stays clear of the lens edge.
@@ -116,6 +128,7 @@ inline Result Build(uint32_t width, uint32_t height, const Bounds &bounds, const
         return hidden[static_cast<size_t>(r) * cols + c] != 0;
     };
     std::vector<uint8_t> masked(hidden.size(), 0);
+    size_t maskedCells = 0;
     for (int32_t r = 0; r < rows; ++r)
         for (int32_t c = 0; c < cols; ++c) {
             bool all = true;
@@ -123,7 +136,12 @@ inline Result Build(uint32_t width, uint32_t height, const Bounds &bounds, const
                 for (int32_t dc = -1; dc <= 1 && all; ++dc)
                     all = at(r + dr, c + dc);
             masked[static_cast<size_t>(r) * cols + c] = all;
+            maskedCells += all ? 1 : 0;
         }
+    if (static_cast<double>(maskedCells) > kMaxLensShare * static_cast<double>(masked.size())) {
+        result.lensIgnored = true;
+        return result;
+    }
 
     // Horizontal runs per cell row, merged downwards while the run repeats.
     struct Run { int32_t c0, c1, r0, r1; };

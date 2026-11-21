@@ -1219,6 +1219,14 @@ class Launcher:
                                 "Your original files stay backed up.")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             self._error(self._friendly(error) if isinstance(error, ValueError) else error)
+        except Exception as error:  # noqa: BLE001 - see _unexpected
+            self._unexpected(error)
+
+    def _unexpected(self, error):
+        """A fault nobody planned for. The packaged launcher has no console, so an exception
+        that escaped a button would vanish and the button would seem to do nothing."""
+        self._error(f"Unexpected error ({type(error).__name__}): {error}. "
+                    "Please report it on GitHub with this message.")
 
     def launch(self):
         staged = False
@@ -1237,6 +1245,8 @@ class Launcher:
                 error = RuntimeError(f"Steam launch failed: {error}. Mod files and backups are retained; "
                                      "retry or use Restore original files.")
             self._error(self._friendly(error) if isinstance(error, ValueError) else error)
+        except Exception as error:  # noqa: BLE001 - see _unexpected
+            self._unexpected(error)
 
     def restore(self):
         try:
@@ -1258,6 +1268,8 @@ class Launcher:
             self.status_var.set("Original files restored. Your settings and the backup are kept.")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             self._error(error)
+        except Exception as error:  # noqa: BLE001 - see _unexpected
+            self._unexpected(error)
         finally:
             self._refresh_install()
 

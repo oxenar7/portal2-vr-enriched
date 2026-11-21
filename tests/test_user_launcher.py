@@ -439,12 +439,34 @@ class LauncherTests(unittest.TestCase):
         observed = []
         def query_boundary(command, **kwargs):
             observed.append(kwargs)
-            return subprocess.CompletedProcess(command, 0, '"portal2.exe","123"', "")
+            return subprocess.CompletedProcess(command, 0, b'"portal2.exe","123"', b"")
 
         with patch.object(test_launcher.subprocess, "run", side_effect=query_boundary):
             self.assertTrue(test_launcher.game_is_running())
         self.assertEqual(observed[0].get("timeout"), 5)
         self.assertEqual(observed[0].get("creationflags"), getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        self.assertNotIn("text", observed[0], "tasklist output is read as bytes")
+
+    def test_process_query_reads_tasklist_in_any_console_code_page(self):
+        # German Windows, nothing running: cp850 writes the u-umlaut as 0x81, which cp1252
+        # cannot decode (issue #3: Apply and Play in VR did nothing).
+        import subprocess
+        from tools import test_launcher
+        german = (b"INFORMATION: Es werden keine Aufgaben mit den angegebenen Kriterien "
+                  b"ausgef\x81hrt.\r\n")
+        with patch.object(test_launcher.subprocess, "run",
+                          return_value=subprocess.CompletedProcess([], 0, german, b"")):
+            self.assertFalse(test_launcher.game_is_running())
+        failed = subprocess.CompletedProcess([], 1, b"", b"FEHLER: Zugriff verweigert \x81")
+        with patch.object(test_launcher.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(RuntimeError, "Cannot check portal2.exe process: FEHLER"):
+                test_launcher.game_is_running()
+
+    def test_unexpected_button_fault_is_shown_not_swallowed(self):
+        for button in (self.app.apply, self.app.launch, self.app.restore):
+            with patch.object(self.launcher, "game_is_running", side_effect=IndexError("list index out of range")):
+                button()
+            self.assertIn("Unexpected error (IndexError): list index out of range", self.app.status_var.get())
 
     def test_changes_save_by_themselves_and_only_locally(self):
         with patch.object(self.launcher, "SAVE_DELAY_MS", 1):

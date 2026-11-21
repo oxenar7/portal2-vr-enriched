@@ -20,16 +20,21 @@ STATE_PATH = Path(__file__).resolve().parent / ".launcher-state.json"
 
 def game_is_running() -> bool:
     """Fail closed if the Windows process list cannot be checked. Both games run as
-    portal2.exe; Alive & Kicking can also start as aak.exe."""
+    portal2.exe; Alive & Kicking can also start as aak.exe.
+
+    tasklist writes in the console's OEM code page, which is not the ANSI code page Python
+    decodes text with: on German Windows its "no tasks" message has a byte cp1252 cannot
+    decode. So the output is read as bytes; the quoted image name is plain ASCII."""
     for name in games.PROCESS_NAMES:
         result = subprocess.run(
             ["tasklist", "/FI", f"IMAGENAME eq {name}", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True, check=False, timeout=5,
+            capture_output=True, check=False, timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode:
-            raise RuntimeError(f"Cannot check {name} process: {result.stderr.strip()}")
-        if f'"{name}"' in result.stdout.lower():
+            detail = (result.stderr or b"").decode("ascii", errors="replace").strip()
+            raise RuntimeError(f"Cannot check {name} process: {detail}")
+        if f'"{name}"'.encode("ascii") in (result.stdout or b"").lower():
             return True
     return False
 

@@ -202,6 +202,18 @@ int main()
     }
     check(insideTexture, "eye mask rects stay inside the eye texture");
     check(clearOfEdge, "eye mask keeps lens rects at least half a cell away from the lens edge");
+    check(!band.lensIgnored && !noLens.lensIgnored, "a plausible lens mesh is used");
+    // Issue #5: one triangle over the whole eye hid the world; only the portals showed.
+    const std::vector<EyeMask::Point> wholeEye{{-1, -1}, {3, -1}, {-1, 3}};
+    const auto whole = EyeMask::Build(2688, 2880, questLeft, wholeEye);
+    check(whole.lensIgnored && whole.lensFraction == 0.0 && whole.rects.size() == noLens.rects.size() &&
+          whole.outsideFraction == noLens.outsideFraction,
+        "a lens mesh over the whole view is ignored; the outside strips stay masked");
+    // Wide side bands (0..0.4 and 0.6..1) leave the centre clear but hide most of the view.
+    const std::vector<EyeMask::Point> wideBands{{0, 0}, {0.4f, 0}, {0, 1}, {0.4f, 0}, {0.4f, 1}, {0, 1},
+                                                {0.6f, 0}, {1, 0}, {0.6f, 1}, {1, 0}, {1, 1}, {0.6f, 1}};
+    const auto wide = EyeMask::Build(2688, 2880, questLeft, wideBands);
+    check(wide.lensIgnored && wide.lensFraction == 0.0, "a lens mesh hiding most of the view is ignored");
     if (failures) return 1;
     std::cout << "PCVR render policy checks passed: " << checks << '\n';
     return 0;

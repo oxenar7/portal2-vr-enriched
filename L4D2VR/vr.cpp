@@ -149,10 +149,11 @@ VR::VR(Game *game)
             {tb.uMin, tb.vMin, tb.uMax, tb.vMax}, triangles);
         m_EyeMaskRects[eye] = mask.rects;
         m_EyeVisibleRect[eye] = mask.visible;
-        char line[192];
-        snprintf(line, sizeof(line), "Eye mask %s: %u lens triangles, %zu rects, outside bounds %.1f%%, lens %.1f%% of the eye texture",
+        char line[256];
+        snprintf(line, sizeof(line), "Eye mask %s: %u lens triangles, %zu rects, outside bounds %.1f%%, lens %.1f%% of the eye texture%s",
                  eye == 0 ? "left" : "right", mesh.unTriangleCount, mask.rects.size(),
-                 mask.outsideFraction * 100.0, mask.lensFraction * 100.0);
+                 mask.outsideFraction * 100.0, mask.lensFraction * 100.0,
+                 mask.lensIgnored ? " (lens mesh ignored: it would hide the view centre or most of the view)" : "");
         Logger::Write(line);
     }
 

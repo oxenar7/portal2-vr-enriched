@@ -2191,8 +2191,8 @@ void VR::ReleaseHeldActions()
         const char *releaseCommand;
     } actions[] = {
         { &m_PrimaryAttackState, game.primary.release }, { &m_SecondaryAttackState, game.secondary.release },
-        { &m_JumpState, "-jump" }, { &m_CrouchState, "-duck" },
-        { &m_UseState, "-use" }, { &m_ReloadState, game.offHand.release }
+        { &m_JumpState, game.jump.release }, { &m_CrouchState, game.crouch.release },
+        { &m_UseState, game.use.release }, { &m_ReloadState, game.offHand.release }
     };
     for (const auto &action : actions)
         if (const char *command = action.state->HeldCommand(false, false, false, "", action.releaseCommand))
@@ -2413,21 +2413,27 @@ void VR::ProcessInput()
     ProcessHeldAction(primaryAttack, m_PrimaryAttackState, game.primary.press, game.primary.release);
     ProcessHeldAction(HandedAction(m_ActionSecondaryAttack, m_ActionSecondaryAttackLeftHanded),
                       m_SecondaryAttackState, game.secondary.press, game.secondary.release);
-    ProcessHeldAction(m_ActionJump, m_JumpState, "+jump", "-jump");
-    ProcessHeldAction(HandedAction(m_ActionCrouch, m_ActionCrouchLeftHanded), m_CrouchState, "+duck", "-duck");
-    ProcessHeldAction(HandedAction(m_ActionUse, m_ActionUseLeftHanded), m_UseState, "+use", "-use");
+    ProcessHeldAction(m_ActionJump, m_JumpState, game.jump.press, game.jump.release);
+    ProcessHeldAction(HandedAction(m_ActionCrouch, m_ActionCrouchLeftHanded), m_CrouchState,
+                      game.crouch.press, game.crouch.release);
+    ProcessHeldAction(HandedAction(m_ActionUse, m_ActionUseLeftHanded), m_UseState, game.use.press, game.use.release);
     ProcessHeldAction(HandedAction(m_ActionReload, m_ActionReloadLeftHanded), m_ReloadState,
                       game.offHand.press, game.offHand.release);
     ProcessZoomInput();
 
     if (PressedDigitalAction(m_ActionPrevItem, true))
     {
-        m_Game->ClientCmd_Unrestricted("invprev");
+        m_Game->ClientCmd_Unrestricted(game.stickUp);
     }
     else if (PressedDigitalAction(m_ActionNextItem, true))
     {
-        m_Game->ClientCmd_Unrestricted("invnext");
+        m_Game->ClientCmd_Unrestricted(game.stickDown);
     }
+
+    // The left X button (Index: left A) is bound to the Scoreboard action, which Portal 2 has no
+    // use for in single player; a game profile can give it a command.
+    if (game.extraButton && PressedDigitalAction(m_Scoreboard, true))
+        m_Game->ClientCmd_Unrestricted(game.extraButton);
 
     if (PressedDigitalAction(m_ActionFlashlight, true))
     {

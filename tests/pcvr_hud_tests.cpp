@@ -100,6 +100,10 @@ static void instructorHintTests() {
            "Portal Reloaded's aliases show the VR buttons that send them; the time portal is the off-hand trigger");
     expect(ActionForBinding("remote_view") == Action::None && ActionForBinding("holo") == Action::None,
            "Reloaded's other-time view keeps the key icon");
+    expect(ActionForBinding("+AT1") == Action::PrimaryAttack && ActionForBinding("+at2") == Action::SecondaryAttack &&
+               ActionForBinding("+US") == Action::Use && ActionForBinding("+JP") == Action::Jump &&
+               ActionForBinding("+CROUCH") == Action::Crouch,
+           "Thinking with Time Machine's aliases show the VR buttons that send them");
     using HintIcons::Id;
     expect(GlyphForInput("/user/hand/right", "/input/joystick", "click") == Id::RightStickPress,
            "the zoom click shows the right stick pressed");

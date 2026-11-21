@@ -182,8 +182,35 @@ inline constexpr ClientLayout reloadedClient{
     0x746198, 0x8F529, 0x73C1F8, 0x927F4,
     0x814848, 0x6FF9D0, 0xA1E2D8, 0x3B49C5};
 
-inline constexpr const ServerLayout *serverLayouts[] = {&portal2Server, &aakServer, &melServer};
-inline constexpr const ClientLayout *clientLayouts[] = {&portal2Client, &aakClient, &melClient, &reloadedClient};
+// Thinking with Time Machine (Steam app 286080): a 2014 Portal 2 branch (server/client dated
+// 2014-08-06). Every witness and the CGrabController datamap match Portal 2's shapes.
+inline constexpr ServerLayout twtmServer{
+    {L"server.dll", "955d19bde7fd83d0d718fe2407ab49fc144c182030088274ae54c49f01237602",
+        0x53E2923Cu, 0x96D000u},
+    0x361FF0, 0x100820, 0x4B740, 0x666574, 0x60BF4C,
+    0x3F87DE, {0x8B,0xF9,0x89,0x7D,0xEC,0xE8,0xE8,0xB8,0xCD,0xFF,0x8B,0xF0},
+    0x3F89CC, 0x78C294,
+    0x674AD8, 0x67FC90, 0x5B0F60,
+    0x5692CB, 0x56A4C0, 0x84B9A8, 0x84E758,
+    0x3A9A1F, 0x3C244C, 0x3C2452,
+    0x3C1C17, 0x729758,
+    0x3C1FE4, {0x8B,0x16,0x8B,0x92,0x84,0x04,0,0,0x83,0xC4,0x10,0x8D,0x45,0xC0,0x50,0x8B,0xCE,0xFF,0xD2},
+    0x3BC3B0, 0x3BC3E8, 0x3C2D3F, {0xE8,0x6C,0x96,0xFF,0xFF},
+    0x3C1F8B, 0x3C2B16,
+    0x3A99D2, 0xEC6EF,
+    0x3C232D, 0x3C1E14, 0xF1095};
+
+inline constexpr ClientLayout twtmClient{
+    {L"client.dll", "fee5594b87a541189b095fc9e657e6b5e06a46244eb953cccc44fa6d554fafa9",
+        0x53E2927Bu, 0xFE9000u},
+    0x284920, 0x9FF2BC, 0x7B727C, 0x7B77F4,
+    0x782DC8, 0x6F5A90, 0x9FF2A0,
+    0x742C48, 0x8C709, 0x738CA8, 0x8F8C4,
+    0x810F80, 0x6FC450, 0xA18B80, 0x3B1CF5};
+
+inline constexpr const ServerLayout *serverLayouts[] = {&portal2Server, &aakServer, &melServer, &twtmServer};
+inline constexpr const ClientLayout *clientLayouts[] = {&portal2Client, &aakClient, &melClient, &reloadedClient,
+                                                       &twtmClient};
 
 // The server and client builds that ship together. Reloaded pairs Mel's server with its own client.
 struct LayoutPair {
@@ -191,7 +218,8 @@ struct LayoutPair {
     const ClientLayout *client;
 };
 inline constexpr LayoutPair layoutPairs[] = {{&portal2Server, &portal2Client}, {&aakServer, &aakClient},
-                                             {&melServer, &melClient}, {&melServer, &reloadedClient}};
+                                             {&melServer, &melClient}, {&melServer, &reloadedClient},
+                                             {&twtmServer, &twtmClient}};
 
 inline bool SameGame(const ServerLayout *server, const ClientLayout *client)
 {

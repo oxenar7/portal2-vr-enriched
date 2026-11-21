@@ -393,6 +393,7 @@ int main()
     RunSuite(Detail::aakServer, Detail::aakClient, "Alive & Kicking");
     RunSuite(Detail::melServer, Detail::melClient, "Portal Stories: Mel");
     RunSuite(Detail::melServer, Detail::reloadedClient, "Portal Reloaded");
+    RunSuite(Detail::twtmServer, Detail::twtmClient, "Thinking with Time Machine");
     Expect(SameClientCode(Detail::melClient, Detail::reloadedClient) &&
                Detail::melClient.build.sha256 != Detail::reloadedClient.build.sha256,
            "Reloaded's client keeps Mel's code under its own hash");

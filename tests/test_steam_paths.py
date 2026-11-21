@@ -186,6 +186,33 @@ class FindInstallationTests(unittest.TestCase):
         self.assertEqual(games.detect(reloaded), games.PORTAL_RELOADED)
         self.assertEqual(games.by_key("reloaded"), games.PORTAL_RELOADED)
 
+    def install_twtm(self, library: Path, folder="Thinking with Time Machine") -> Path:
+        game = library / "steamapps" / "common" / folder
+        (game / "bin").mkdir(parents=True)
+        (game / "portal2.exe").write_bytes(b"fixture")
+        # Like Mel's and Reloaded's, Time Machine's install carries a portal2 folder of its own.
+        for data in ("TWTM", "portal2"):
+            (game / data).mkdir()
+            (game / data / "gameinfo.txt").write_text('"GameInfo" {}', encoding="utf-8")
+        (library / "steamapps" / "appmanifest_286080.acf").write_text(
+            APP_MANIFEST.replace('"620"', '"286080"') % folder, encoding="utf-8")
+        return game
+
+    def test_thinking_with_time_machine_is_found_by_its_own_app_manifest(self):
+        self.write_libraries()
+        self.install_portal2(self.library)
+        self.install_reloaded(self.library)
+        twtm = self.install_twtm(self.steam_root)
+        self.assertEqual(steam_paths.find_game(self.steam_root, games.THINKING_WITH_TIME_MACHINE), twtm)
+        self.assertEqual(games.detect(twtm), games.THINKING_WITH_TIME_MACHINE)
+        self.assertEqual(games.by_key("twtm"), games.THINKING_WITH_TIME_MACHINE)
+
+    def test_time_machine_is_not_taken_for_another_game(self):
+        self.write_libraries()
+        self.install_twtm(self.library)
+        self.assertIsNone(steam_paths.find_portal2(self.steam_root))
+        self.assertIsNone(steam_paths.find_game(self.steam_root, games.PORTAL_RELOADED))
+
     def test_reloaded_is_not_taken_for_portal2_or_mel(self):
         self.write_libraries()
         self.install_reloaded(self.library)

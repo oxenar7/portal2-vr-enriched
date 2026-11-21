@@ -1,9 +1,10 @@
 #pragma once
 
 // Which game the mod runs in. Portal: Alive & Kicking (Steam app 270470), Portal Stories: Mel
-// (Steam app 317400) and Portal Reloaded (Steam app 1255980) are standalone installs of Portal 2's
-// engine, each with its own game folder ("AAK", "portal_stories", "portalreloaded"), localisation
-// files, save folder and campaign. The code paths are the same; only these facts differ.
+// (Steam app 317400), Portal Reloaded (Steam app 1255980) and Thinking with Time Machine (Steam
+// app 286080) are standalone installs of Portal 2's engine, each with its own game folder ("AAK",
+// "portal_stories", "portalreloaded", "TWTM"), localisation files, save folder and campaign. The
+// code paths are the same; only these facts differ.
 
 #include "gun_models.h"
 
@@ -46,6 +47,15 @@ struct Profile {
     ButtonCommand primary{"+attack", "-attack"};
     ButtonCommand secondary{"+attack2", "-attack2"};
     ButtonCommand offHand{"+reload", "-reload"};
+    // Use, jump and crouch, for a game whose own bindings wrap them in aliases.
+    ButtonCommand use{"+use", "-use"};
+    ButtonCommand jump{"+jump", "-jump"};
+    ButtonCommand crouch{"+duck", "-duck"};
+    // One-shot commands of the left X button (Index: left A), unused in Portal 2, and of the turn
+    // stick pushed up and down.
+    const char *extraButton = nullptr;
+    const char *stickUp = "invprev";
+    const char *stickDown = "invnext";
 };
 
 inline constexpr const char *kPortal2Chapters[] = {
@@ -100,6 +110,13 @@ inline constexpr const char *kPortalReloadedChapters[] = {
     "sp_a1_pr_map_005", "sp_a1_pr_map_006", "sp_a1_pr_map_007", "sp_a1_pr_map_008",
     "sp_a1_pr_map_009", "sp_a1_pr_map_010", "sp_a1_pr_map_011", "sp_a1_pr_map_012"};
 
+// Thinking with Time Machine has no chapter select: New Game opens tm_intro_01 and each map names
+// the next (MapCFG in scripts/vscripts/TM.nut). Its chambers follow the clock the maps show
+// (ChamHourNum 0-9); the training and the cutscene map go with the chamber before them.
+inline constexpr const char *kThinkingWithTimeMachineChapters[] = {
+    "tm_intro_01 tm_training_01b", "tm_map_01b tm_scene_map-update2", "tm_map_02b", "tm_map_03b",
+    "tm_map_04a", "tm_map_05a-update2", "tm_map_06a", "tm_map_07", "tm_map_08", "tm_map_final"};
+
 inline constexpr int kMaxChapters = 12;
 
 inline constexpr Profile kPortal2{"Portal 2", "portal2", "620", "portal2_",
@@ -133,9 +150,25 @@ inline constexpr Profile kPortalReloaded{"Portal Reloaded", "portalreloaded", "1
     static_cast<int>(std::size(kPortalReloadedChapters)), kPortalReloadedChapters, 0xCC, 0x13C,
     &GunModels::kPortal2, L"MAP %02d", {"att1", nullptr}, {"att2", nullptr}, {"att3", nullptr}};
 
+// Thinking with Time Machine (2014 build; DrawTarget and Paint read the locator at Alive & Kicking's
+// offsets) uses Portal 2's v_portalgun.mdl. Its bindings (cfg/config_default.cfg, autoexec.cfg)
+// route shots, use, jump and crouch through aliases that also tell the time machine script
+// (entity @TM in every map), so a recording repeats them: +AT1/+AT2 tap +attack/+attack2, +US
+// lets the script press use itself, +JP and +CROUCH wrap +jump and +duck. Its gamepad preset puts
+// the time machine on the d-pad: record, play and stop are StartR, StartP and Stop. Here record is
+// the off-hand trigger, play the left X button and stop the turn stick pushed down.
+inline constexpr Profile kThinkingWithTimeMachine{"Thinking with Time Machine", "TWTM", "286080", "TWTM_",
+    nullptr, nullptr,
+    static_cast<int>(std::size(kThinkingWithTimeMachineChapters)), kThinkingWithTimeMachineChapters, 0x8C, 0xF8,
+    &GunModels::kPortal2, L"CHAPTER %d", {"+AT1", "-AT1"}, {"+AT2", "-AT2"},
+    {"ent_fire @tm callscriptfunction StartR", nullptr}, {"+US", "-US"}, {"+JP", "-JP"},
+    {"+CROUCH", "-CROUCH"}, "ent_fire @tm callscriptfunction StartP", "invprev",
+    "ent_fire @tm callscriptfunction Stop"};
+
 static_assert(std::size(kPortal2Chapters) <= kMaxChapters && std::size(kAliveAndKickingChapters) <= kMaxChapters &&
               std::size(kPortalStoriesMelChapters) <= kMaxChapters &&
-              std::size(kPortalReloadedChapters) <= kMaxChapters);
+              std::size(kPortalReloadedChapters) <= kMaxChapters &&
+              std::size(kThinkingWithTimeMachineChapters) <= kMaxChapters);
 
 // The profile whose game folder holds the given client.dll path (...\<folder>\bin\client.dll).
 inline const Profile &ForClientPath(const std::wstring &clientPath)
@@ -151,6 +184,7 @@ inline const Profile &ForClientPath(const std::wstring &clientPath)
     if (name == L"aak") return kAliveAndKicking;
     if (name == L"portal_stories") return kPortalStoriesMel;
     if (name == L"portalreloaded") return kPortalReloaded;
+    if (name == L"twtm") return kThinkingWithTimeMachine;
     return kPortal2;
 }
 

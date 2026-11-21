@@ -81,6 +81,13 @@ bool Game::Initialize()
     if (std::string_view(game.primary.press) != "+attack" || std::string_view(game.offHand.press) != "+reload")
         Logger::Write("Game buttons: gun trigger " + describe(game.primary) + ", grip " + describe(game.secondary) +
                       ", off-hand trigger " + describe(game.offHand));
+    if (std::string_view(game.use.press) != "+use" || std::string_view(game.jump.press) != "+jump" ||
+        std::string_view(game.crouch.press) != "+duck")
+        Logger::Write("Game buttons: use " + describe(game.use) + ", jump " + describe(game.jump) +
+                      ", crouch " + describe(game.crouch));
+    if (game.extraButton || std::string_view(game.stickUp) != "invprev" || std::string_view(game.stickDown) != "invnext")
+        Logger::Write(std::string("Game buttons: left X \"") + (game.extraButton ? game.extraButton : "") +
+                      "\", turn stick up \"" + game.stickUp + "\", down \"" + game.stickDown + "\"");
 
     m_ClientEntityList = (IClientEntityList *)GetInterface("client.dll", "VClientEntityList003");
     m_EngineTrace = (IEngineTrace *)GetInterface("engine.dll", "EngineTraceClient004");

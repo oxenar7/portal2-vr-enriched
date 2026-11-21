@@ -1,10 +1,10 @@
 """The games the mod runs in, and how the launcher tells them apart.
 
-Portal: Alive & Kicking, Portal Stories: Mel and Portal Reloaded are standalone Steam apps on
-Portal 2's engine. Their install folders look like Portal 2's (portal2.exe, bin) but their game
-data lives in an "AAK", "portal_stories" or "portalreloaded" folder instead of "portal2" (Mel's
-and Reloaded's installs also have a "portal2" folder of their own). The mod files go to the same
-places in all of them.
+Portal: Alive & Kicking, Portal Stories: Mel, Portal Reloaded and Thinking with Time Machine are
+standalone Steam apps on Portal 2's engine. Their install folders look like Portal 2's
+(portal2.exe, bin) but their game data lives in an "AAK", "portal_stories", "portalreloaded" or
+"TWTM" folder instead of "portal2" (Mel's, Reloaded's and Time Machine's installs also have a
+"portal2" folder of their own). The mod files go to the same places in all of them.
 """
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,7 +31,10 @@ PORTAL_STORIES_MEL = Game("mel", "Portal Stories: Mel", "317400", "Portal Storie
                           ("portal2.exe",), "A free fan-made story campaign on Portal 2's engine.")
 PORTAL_RELOADED = Game("reloaded", "Portal Reloaded", "1255980", "Portal Reloaded", "portalreloaded",
                        ("portal2.exe",), "A free fan-made campaign with a third portal that travels in time.")
-GAMES = (PORTAL2, ALIVE_AND_KICKING, PORTAL_STORIES_MEL, PORTAL_RELOADED)
+THINKING_WITH_TIME_MACHINE = Game("twtm", "Thinking with Time Machine", "286080", "Thinking with Time Machine",
+                                  "TWTM", ("portal2.exe",),
+                                  "A free fan-made campaign where you record yourself and replay it.")
+GAMES = (PORTAL2, ALIVE_AND_KICKING, PORTAL_STORIES_MEL, PORTAL_RELOADED, THINKING_WITH_TIME_MACHINE)
 PROCESS_NAMES = tuple(dict.fromkeys(name for game in GAMES for name in game.processes))
 
 

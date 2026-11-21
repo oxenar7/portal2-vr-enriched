@@ -51,11 +51,13 @@ inline Action ActionForBinding(const char *binding)
     struct Entry { std::string_view command; Action action; };
     // Portal Reloaded's lessons name its own aliases (cfg/autoexec.cfg): att1, att2 and using stand
     // for +attack, +attack2 and +use; att3, the time portal, is what the off-hand trigger sends there.
+    // Thinking with Time Machine's +AT1, +AT2, +US, +JP and +CROUCH wrap the same five commands.
     static constexpr Entry kEntries[] = {{"jump", Action::Jump}, {"use", Action::Use},
         {"duck", Action::Crouch}, {"attack", Action::PrimaryAttack},
         {"attack2", Action::SecondaryAttack}, {"reload", Action::Reload}, {"zoom", Action::Zoom},
         {"att1", Action::PrimaryAttack}, {"att2", Action::SecondaryAttack}, {"using", Action::Use},
-        {"att3", Action::Reload}};
+        {"att3", Action::Reload}, {"AT1", Action::PrimaryAttack}, {"AT2", Action::SecondaryAttack},
+        {"US", Action::Use}, {"JP", Action::Jump}, {"CROUCH", Action::Crouch}};
     for (const auto &entry : kEntries)
         if (EqualsIgnoreCase(text, entry.command))
             return entry.action;

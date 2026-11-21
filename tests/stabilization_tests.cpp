@@ -1557,6 +1557,20 @@ int main()
     melWithAakSlots.timestamp = melQueuedContext.timestamp;
     expect(Portal2MaterialAbi::Classify(melWithAakSlots) == Portal2MaterialAbi::Kind::Unsupported,
            true, "Alive & Kicking slot addresses are not accepted in the Mel build");
+    const Portal2MaterialAbi::Probe twtmQueuedContext{
+        0x50000000u, 0x53BDC87Fu, 0x14C000u,
+        0x5009AE3Cu, 0x50027620u, 0x500250A0u, 0x50027B50u};
+    expect(Portal2MaterialAbi::Classify(twtmQueuedContext) == Portal2MaterialAbi::Kind::Queued,
+           true, "Thinking with Time Machine queued context permits the stereo atlas draw");
+    const Portal2MaterialAbi::Probe twtmImmediateContext{
+        0x50000000u, 0x53BDC87Fu, 0x14C000u,
+        0x5009DC94u, 0x5002D7D0u, 0x5002CA10u, 0x5002A320u};
+    expect(Portal2MaterialAbi::Classify(twtmImmediateContext) == Portal2MaterialAbi::Kind::Immediate,
+           true, "Thinking with Time Machine immediate context permits the stereo atlas draw");
+    auto twtmWithMelSlots = melQueuedContext;
+    twtmWithMelSlots.timestamp = twtmQueuedContext.timestamp;
+    expect(Portal2MaterialAbi::Classify(twtmWithMelSlots) == Portal2MaterialAbi::Kind::Unsupported,
+           true, "Mel slot addresses are not accepted in the Time Machine build");
     const auto stereoReticle = AimFeedback::ProjectReticleSpriteToEye(
         Vector{10, 0, 0}, Vector{0, 0.1f, 0}, eyeForward, eyeRight, eyeUp,
         90.0f, 1.0f, 1000, 1000, 612, 318, 56, 84, 1280, 720);
@@ -1667,6 +1681,14 @@ int main()
     changedSurface.drawTexturedSubRect = 0x5000A950;
     expect(NativeReticle::Supported(changedSurface), false,
            "Alive & Kicking slot address is not accepted in the Mel surface build");
+    const NativeReticle::SurfaceProbe twtmSurface{
+        0x50000000, 0x53E291D8, 0x197000, 0x500C4ED4, 0x5000A940, 0x5000B7A0};
+    expect(NativeReticle::Match(twtmSurface) == &NativeReticle::kSurfaceBuilds[3], true,
+           "Thinking with Time Machine surface build is accepted");
+    changedSurface = twtmSurface;
+    changedSurface.getScreenSize = 0x5000B720;
+    expect(NativeReticle::Supported(changedSurface), false,
+           "Mel slot address is not accepted in the Time Machine surface build");
     expect(AimFeedback::ClassifyReticleCanvas(1078, 1255, 56, 84, 1280, 720) ==
                AimFeedback::ReticleCanvasPosition::OutsideY, true,
            "eye-sized reticle below the reported Source canvas is diagnosed separately");
@@ -2064,6 +2086,42 @@ int main()
                    std::string(other->secondary.release) == "-attack2" &&
                    std::string(other->offHand.press) == "+reload" && std::string(other->offHand.release) == "-reload",
                true, "the other games keep Portal 2's own button commands");
+    for (const auto *other : {&GameProfile::kPortal2, &aak, &mel, &reloaded})
+        expect(std::string(other->use.press) == "+use" && std::string(other->use.release) == "-use" &&
+                   std::string(other->jump.press) == "+jump" && std::string(other->jump.release) == "-jump" &&
+                   std::string(other->crouch.press) == "+duck" && std::string(other->crouch.release) == "-duck" &&
+                   other->extraButton == nullptr && std::string(other->stickUp) == "invprev" &&
+                   std::string(other->stickDown) == "invnext",
+               true, "use, jump, crouch and the spare buttons keep Portal 2's commands outside Time Machine");
+    const auto &twtm = GameProfile::kThinkingWithTimeMachine;
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Thinking with Time Machine\\TWTM\\bin\\client.dll") == &twtm,
+           true, "client.dll under the TWTM folder selects Thinking with Time Machine");
+    expect(&GameProfile::ForClientPath(
+               L"C:\\Steam\\steamapps\\common\\Thinking with Time Machine\\portal2\\bin\\client.dll") ==
+               &GameProfile::kPortal2,
+           true, "Time Machine's portal2 folder is not its game folder");
+    expectInt(VrMenuData::ChapterOfMap("tm_intro_01", twtm), 1, "Time Machine's intro opens its first chapter");
+    expectInt(VrMenuData::ChapterOfMap("tm_training_01b", twtm), 1, "the training shares the intro's chapter");
+    expectInt(VrMenuData::ChapterOfMap("tm_scene_map-update2", twtm), 2, "the cutscene follows chamber 1");
+    expectInt(VrMenuData::ChapterOfMap("tm_map_05a-update2", twtm), 6, "chamber 5 is the sixth chapter");
+    expectInt(VrMenuData::ChapterOfMap("tm_map_final", twtm), 10, "the final chamber closes the campaign");
+    expectInt(VrMenuData::ChapterOfMap("tm_map_03b"), 0, "Time Machine maps are not Portal 2 chapters");
+    expect(std::string(twtm.folder) == "TWTM" && std::string(twtm.appId) == "286080" &&
+               std::string(twtm.gameStrings) == "TWTM_" && twtm.gunModel == &GunModels::kPortal2 &&
+               twtm.locatorCentre == aak.locatorCentre && twtm.locatorFlags == aak.locatorFlags,
+           true, "Time Machine reads its folder, manifest and strings, holds Portal 2's gun and AAK's locator layout");
+    expect(std::string(twtm.primary.press) == "+AT1" && std::string(twtm.primary.release) == "-AT1" &&
+               std::string(twtm.secondary.press) == "+AT2" && std::string(twtm.secondary.release) == "-AT2" &&
+               std::string(twtm.use.press) == "+US" && std::string(twtm.jump.press) == "+JP" &&
+               std::string(twtm.crouch.press) == "+CROUCH" && std::string(twtm.crouch.release) == "-CROUCH",
+           true, "Time Machine's buttons send its own aliases, so the time machine records them");
+    expect(std::string(twtm.offHand.press) == "ent_fire @tm callscriptfunction StartR" &&
+               twtm.offHand.release == nullptr &&
+               std::string(twtm.extraButton) == "ent_fire @tm callscriptfunction StartP" &&
+               std::string(twtm.stickDown) == "ent_fire @tm callscriptfunction Stop" &&
+               std::string(twtm.stickUp) == "invprev",
+           true, "record on the off-hand trigger, play on left X, stop with the turn stick down");
     {
         VrMenu::Texts texts;
         texts.Load(VrMenuData::Strings{}, reloaded);
@@ -2073,6 +2131,11 @@ int main()
         VrMenu::Texts portal2;
         portal2.Load(VrMenuData::Strings{}, GameProfile::kPortal2);
         expect(portal2.chapterTitle[3] == L"CHAPTER 3", true, "a chapter with no token keeps the CHAPTER fallback");
+        VrMenu::Texts timeMachine;
+        timeMachine.Load(VrMenuData::Strings{}, twtm);
+        expect(timeMachine.chapterTitle[1] == L"CHAPTER 1" && timeMachine.chapterSubtitle[1].empty() &&
+                   timeMachine.chapterTitle[10] == L"CHAPTER 10",
+               true, "Time Machine's saves are named after its chambers' chapters");
     }
     const float *portal2Rig = GunModels::kPortal2.shift;
     expect(portal2Rig[0] == 0.0f && portal2Rig[1] == 0.0f && portal2Rig[2] == 0.0f, true,

@@ -7,7 +7,8 @@
 namespace Portal2MaterialAbi {
 
 // Verified against the Windows materialsystem.dll of Portal 2 (2026-07-01), of
-// Portal: Alive & Kicking (2024-02-20) and of Portal Stories: Mel (2021-03-02). Other builds must retain the native HUD
+// Portal: Alive & Kicking (2024-02-20), of Portal Stories: Mel (2021-03-02) and of Thinking with
+// Time Machine (2014-07-09). Other builds must retain the native HUD
 // draw rather than call unknown slots.
 inline constexpr std::size_t kViewportSlot = 38;
 inline constexpr std::size_t kGetViewportSlot = 39;
@@ -35,6 +36,8 @@ inline constexpr Build kBuilds[] = {
         {0x9CC84u, 0x2D560u, 0x2C7A0u, 0x2A1E0u}},  // Portal: Alive & Kicking
     {0x603E2D60u, 0x14C000u, {0x9AE84u, 0x27730u, 0x251B0u, 0x27C60u},
         {0x9DCDCu, 0x2D840u, 0x2CA80u, 0x2A430u}},  // Portal Stories: Mel
+    {0x53BDC87Fu, 0x14C000u, {0x9AE3Cu, 0x27620u, 0x250A0u, 0x27B50u},
+        {0x9DC94u, 0x2D7D0u, 0x2CA10u, 0x2A320u}},  // Thinking with Time Machine
 };
 
 inline const Build *FindBuild(std::uint32_t timestamp, std::uint32_t imageSize)

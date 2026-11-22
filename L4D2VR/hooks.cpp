@@ -15,6 +15,7 @@
 #include "native_reticle.h"
 #include "eye_hud.h"
 #include "game_profile.h"
+#include "portal_diagnostics.h"
 #include <Windows.h>
 #include <intrin.h>
 #include <algorithm>
@@ -93,6 +94,154 @@ static std::optional<PortalOrientation::Rotation> ReadPortalRotation(const void*
                            &matrix, sizeof(matrix), &bytesRead) || bytesRead != sizeof(matrix))
         return std::nullopt;
     return PortalOrientation::Rotation::FromVMatrix(matrix);
+}
+
+// Issue #4 diagnostics (portal_diagnostics.h): logging only.
+static PortalDiagnostics::Watch s_PortalWatch;
+static const void *s_PortalWatchPlayer = nullptr;
+
+static bool ReadGameMemory(const void *address, void *out, std::size_t size)
+{
+    SIZE_T bytesRead = 0;
+    return address && ReadProcessMemory(GetCurrentProcess(), address, out, size, &bytesRead) &&
+        bytesRead == size;
+}
+
+// True when every page of [address, address + size) is committed and readable.
+static bool ReadableRange(std::uintptr_t address, std::size_t size)
+{
+    const std::uintptr_t end = address + size;
+    while (address < end) {
+        MEMORY_BASIC_INFORMATION info{};
+        if (!VirtualQuery(reinterpret_cast<const void *>(address), &info, sizeof(info)) ||
+            info.State != MEM_COMMIT || (info.Protect & (PAGE_NOACCESS | PAGE_GUARD)) ||
+            !(info.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ |
+                              PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
+            return false;
+        address = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
+    }
+    return true;
+}
+
+// The player's local up and stick-camera fields, read once from client.dll's datamap.
+static const PortalDiagnostics::PlayerLayout &PortalPlayerLayout(std::uintptr_t clientBase)
+{
+    static bool tried = false;
+    static PortalDiagnostics::PlayerLayout layout;
+    if (tried)
+        return layout;
+    tried = true;
+    std::vector<PortalDiagnostics::Section> sections;
+    const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(clientBase);
+    if (clientBase && dos->e_magic == IMAGE_DOS_SIGNATURE) {
+        const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(clientBase + dos->e_lfanew);
+        if (nt->Signature == IMAGE_NT_SIGNATURE) {
+            const IMAGE_SECTION_HEADER *section = IMAGE_FIRST_SECTION(nt);
+            for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section) {
+                if ((section->Characteristics & IMAGE_SCN_MEM_EXECUTE) ||
+                    !(section->Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA))
+                    continue;
+                const std::uintptr_t address = clientBase + section->VirtualAddress;
+                const std::size_t size = (std::min)(section->Misc.VirtualSize, section->SizeOfRawData);
+                if (size && ReadableRange(address, size))
+                    sections.push_back({reinterpret_cast<const unsigned char *>(address), size, address});
+            }
+        }
+    }
+    layout = PortalDiagnostics::FindPlayerLayout(sections);
+    char text[160];
+    if (layout.Valid())
+        std::snprintf(text, sizeof(text), "Portal diagnostics: player local up at +0x%X, stick camera at +0x%X",
+                      layout.localUp, layout.stickCamera);
+    else
+        std::snprintf(text, sizeof(text), "Portal diagnostics: player local up not found in client.dll's datamap");
+    Logger::Write(text);
+    return layout;
+}
+
+static void ReadPlayerPortalState(const void *player, PortalDiagnostics::Snapshot &state,
+                                  std::uintptr_t clientBase, std::uint32_t viewOffsetField)
+{
+    const auto *base = static_cast<const unsigned char *>(player);
+    Vector origin;
+    if (ReadGameMemory(base + HeldObject::kAbsOrigin, &origin, sizeof(origin)))
+        state.playerOrigin = origin;
+    float viewOffsetZ = 0.0f;
+    if (viewOffsetField && ReadGameMemory(base + viewOffsetField, &viewOffsetZ, sizeof(viewOffsetZ)))
+        state.viewOffsetZ = viewOffsetZ;
+    const auto &layout = PortalPlayerLayout(clientBase);
+    if (!layout.Valid())
+        return;
+    Vector up;
+    if (ReadGameMemory(base + layout.localUp, &up, sizeof(up)))
+        state.localUp = up;
+    int stick = 0;
+    if (ReadGameMemory(base + layout.stickCamera, &stick, sizeof(stick)))
+        state.stickCamera = stick;
+}
+
+static void WatchPortalPlayer(const void *player)
+{
+    if (player != s_PortalWatchPlayer) {
+        s_PortalWatch.Reset();
+        s_PortalWatchPlayer = player;
+    }
+}
+
+static std::string FormatAngles(const QAngle &angles)
+{
+    return PortalDiagnostics::Format(Vector(angles.x, angles.y, angles.z));
+}
+
+static void LogPortalCrossing(const void *player, const void *portal, const QAngle &viewBefore,
+                              const QAngle &viewAfter, const PortalDiagnostics::Snapshot &before,
+                              const PortalDiagnostics::Snapshot &after)
+{
+    WatchPortalPlayer(player);
+    const int crossing = s_PortalWatch.OnCrossing(std::chrono::steady_clock::now());
+    if (crossing > 40)
+        return;
+    using PortalDiagnostics::Format;
+    char head[96];
+    std::snprintf(head, sizeof(head), "Portal diag: crossing %d through portal %p: ", crossing, portal);
+    std::string line = std::string(head) + "engine view angles " + FormatAngles(viewBefore) + " -> " +
+        FormatAngles(viewAfter) + "; player origin " + Format(before.playerOrigin) + " -> " +
+        Format(after.playerOrigin);
+    if (before.localUp && after.localUp)
+        line += "; local up " + Format(*before.localUp, 3) + " -> " + Format(*after.localUp, 3);
+    if (before.stickCamera && after.stickCamera)
+        line += "; stick camera " + std::to_string(*before.stickCamera) + " -> " +
+            std::to_string(*after.stickCamera);
+    if (const auto rotation = ReadPortalRotation(portal))
+        line += "; portal turns up into " + Format(rotation->Rotate({0, 0, 1}), 3);
+    Logger::Write(line);
+}
+
+static void ObservePortalState(const void *player, PortalDiagnostics::Snapshot state,
+                               std::uintptr_t clientBase, std::uint32_t viewOffsetField)
+{
+    if (!player)
+        return;
+    WatchPortalPlayer(player);
+    ReadPlayerPortalState(player, state, clientBase, viewOffsetField);
+    const auto now = std::chrono::steady_clock::now();
+    char head[96];
+    switch (s_PortalWatch.Next(now, PortalDiagnostics::Anomalous(state))) {
+    case PortalDiagnostics::Watch::Line::Window:
+        std::snprintf(head, sizeof(head), "Portal diag: %.2f s after crossing %d: ",
+                      s_PortalWatch.WindowSeconds(now), s_PortalWatch.Crossings());
+        break;
+    case PortalDiagnostics::Watch::Line::Anomaly:
+        std::snprintf(head, sizeof(head), "Portal diag: still off after %.1f s: ",
+                      s_PortalWatch.AnomalySeconds(now));
+        break;
+    case PortalDiagnostics::Watch::Line::Cleared:
+        std::snprintf(head, sizeof(head), "Portal diag: back to normal: ");
+        break;
+    default:
+        return;
+    }
+    Logger::Write(head + PortalDiagnostics::Describe(state));
 }
 
 struct SourceHudTextureIdentity
@@ -893,6 +1042,8 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 	hudViewSetup.m_nUnscaledHeight = m_VR->m_RenderHeight;
 
 	Vector position = setup.origin;
+	const Vector engineEye = setup.origin;     // for the portal diagnostics
+	const Vector engineAngles = setup.angles;
 
     if (!m_VR->ExperimentalPortalOrientation() && m_VR->m_ApplyPortalRotationOffset) {
 		Vector vec = position - m_VR->m_SetupOrigin;
@@ -941,7 +1092,21 @@ void __fastcall Hooks::dRenderView(void *ecx, void *edx, CViewSetup &setup, CVie
 
 	// Left eye CViewSetup
 	QAngle tempAngle = QAngle(setup.angles.x, setup.angles.y, setup.angles.z);
-	leftEyeView.origin = m_VR->TraceEye((uint32_t*)localPlayer, position, m_VR->GetViewOriginLeft(position), tempAngle);
+	const Vector leftEyeWanted = m_VR->GetViewOriginLeft(position);
+	leftEyeView.origin = m_VR->TraceEye((uint32_t*)localPlayer, position, leftEyeWanted, tempAngle);
+	{
+		PortalDiagnostics::Snapshot portalState;
+		portalState.engineEye = engineEye;
+		portalState.engineAngles = engineAngles;
+		portalState.hmdAngles = hmdAngle;
+		portalState.yawOffset = m_VR->m_RotationOffset.y;
+		portalState.leftEye = leftEyeView.origin;
+		portalState.leftEyeThroughPortal = PortalDiagnostics::Length(Vector(
+			leftEyeView.origin.x - leftEyeWanted.x, leftEyeView.origin.y - leftEyeWanted.y,
+			leftEyeView.origin.z - leftEyeWanted.z)) > 0.01f;
+		ObservePortalState(localPlayer, portalState, m_Game->m_BaseClient,
+			m_Game->m_Offsets->m_PlayerFields.viewOffsetZ);
+	}
 	if (m_VR->ExperimentalPortalOrientation())
 		leftEyeView.angles = Vector(tempAngle.x, tempAngle.y, tempAngle.z);
 	else
@@ -1582,6 +1747,11 @@ void __fastcall Hooks::dPlayerPortalled(void* ecx, void* edx, void* a2, __int64 
 	const auto portalRotation = experimental && localPlayer ?
 		ReadPortalRotation(a2) : std::nullopt;
 
+	const std::uint32_t viewOffsetField = m_Game->m_Offsets->m_PlayerFields.viewOffsetZ;
+	PortalDiagnostics::Snapshot stateBefore;
+	if (localPlayer)
+		ReadPlayerPortalState(pBaseEntity, stateBefore, m_Game->m_BaseClient, viewOffsetField);
+
 	QAngle angAbsRotationBefore;
 	m_Game->m_EngineClient->GetViewAngles(angAbsRotationBefore);
 
@@ -1591,6 +1761,11 @@ void __fastcall Hooks::dPlayerPortalled(void* ecx, void* edx, void* a2, __int64 
 
 	QAngle angAbsRotationAfter;
 	m_Game->m_EngineClient->GetViewAngles(angAbsRotationAfter);
+	if (localPlayer) {
+		PortalDiagnostics::Snapshot stateAfter;
+		ReadPlayerPortalState(pBaseEntity, stateAfter, m_Game->m_BaseClient, viewOffsetField);
+		LogPortalCrossing(pBaseEntity, a2, angAbsRotationBefore, angAbsRotationAfter, stateBefore, stateAfter);
+	}
 
 	if (experimental && localPlayer) {
 		m_VR->QueuePortalTraversal(reinterpret_cast<std::uintptr_t>(pBaseEntity),

@@ -33,6 +33,7 @@
 #include "../L4D2VR/vr_menu_palette.h"
 #include "../L4D2VR/model_info_abi.h"
 #include "../L4D2VR/gun_models.h"
+#include "../L4D2VR/portal_diagnostics.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -465,9 +466,131 @@ static void TestVrOptions()
     expectInt(MoveFooterFocus({true, 1}, 2, 1).index, 1, "footer focus clamps at the last button");
 }
 
+// A fake client.dll data section: datamap entries {type, name pointer, offset} and their names.
+struct FakeDatamap
+{
+    static constexpr std::uintptr_t kAddress = 0x10000000;
+    std::vector<unsigned char> bytes = std::vector<unsigned char>(1024, 0);
+    std::size_t nextName = 8, nextEntry = 512;
+
+    std::uint32_t Name(const char *name)
+    {
+        const std::size_t at = nextName;
+        std::memcpy(bytes.data() + at, name, std::strlen(name) + 1);
+        nextName += std::strlen(name) + 2;
+        return static_cast<std::uint32_t>(kAddress + at);
+    }
+    void Entry(std::uint32_t type, std::uint32_t name, std::uint32_t offset)
+    {
+        const std::uint32_t words[] = {type, name, offset};
+        std::memcpy(bytes.data() + nextEntry, words, sizeof(words));
+        nextEntry += 16;
+    }
+    std::vector<PortalDiagnostics::Section> Sections() const { return {{bytes.data(), bytes.size(), kAddress}}; }
+};
+
+static void TestPortalDiagnostics()
+{
+    using namespace PortalDiagnostics;
+    {
+        FakeDatamap map;
+        const auto local = map.Name("m_PortalLocal");
+        const auto up = map.Name("m_vLocalUp");
+        const auto stick = map.Name("m_nStickCameraState");
+        map.Entry(kFieldEmbedded, local, 0x1C60);
+        map.Entry(kFieldVector, up, 0x13C);
+        map.Entry(kFieldInteger, stick, 0x178);
+        const auto layout = FindPlayerLayout(map.Sections());
+        expect(layout.Valid() && layout.localUp == 0x1C60 + 0x13C && layout.stickCamera == 0x1C60 + 0x178, true,
+               "portal diagnostics read the player's local up and stick camera from the datamap");
+        expect(FieldOffset(map.Sections(), "m_vLocalUp", kFieldInteger, 0x400).has_value(), false,
+               "a datamap field of another type is not taken");
+        expect(FieldOffset(map.Sections(), "m_PortalLocal", kFieldEmbedded, 0x1000).has_value(), false,
+               "a datamap offset past the limit is not taken");
+        map.Entry(kFieldVector, up, 0x140);
+        expect(FieldOffset(map.Sections(), "m_vLocalUp", kFieldVector, 0x400).has_value(), false,
+               "a field listed twice is ambiguous");
+        expect(FindPlayerLayout(map.Sections()).Valid(), false, "an ambiguous field disables the local-up lines");
+    }
+    {
+        FakeDatamap map;
+        const auto up = map.Name("xm_vLocalUp"); // only "m_vLocalUp" inside a longer name
+        map.Entry(kFieldVector, up + 1, 0x13C);
+        expect(FieldOffset(map.Sections(), "m_vLocalUp", kFieldVector, 0x400).has_value(), false,
+               "a name must start after a NUL");
+    }
+
+    Snapshot level;
+    level.playerOrigin = {100, 200, 0};
+    level.viewOffsetZ = 64;
+    level.engineEye = {100, 200, 64};
+    level.localUp = Vector(0, 0, 1);
+    level.stickCamera = 0;
+    expect(Anomalous(level), false, "a level player on the floor is normal");
+    auto onWall = level;
+    onWall.localUp = Vector(1, 0, 0);
+    expect(Anomalous(onWall), true, "a local up along a wall normal is reported");
+    auto movedEye = level;
+    movedEye.engineEye = {100, 240, 64};
+    expectNear(EyeDisplacement(movedEye), 40.0f, "the engine eye's distance from origin plus view offset");
+    expect(Anomalous(movedEye), true, "an engine eye far from the player is reported");
+    auto rolled = level;
+    rolled.engineAngles = {0, 90, 30};
+    expect(Anomalous(rolled), true, "a rolled engine camera is reported");
+    rolled.engineAngles = {0, 90, 355};
+    expect(Anomalous(rolled), false, "a 5 degree roll written as 355 is normal");
+    auto unknown = level;
+    unknown.localUp.reset();
+    unknown.viewOffsetZ = NAN;
+    unknown.engineEye = {500, 500, 500};
+    expect(Anomalous(unknown), false, "unknown fields never raise a report");
+    onWall.leftEyeThroughPortal = true;
+    const std::string described = Describe(onWall);
+    expect(described.find("local up (1.000 0.000 0.000)") != std::string::npos &&
+               described.find("stick camera 0") != std::string::npos &&
+               described.find("eye 0.0 off") != std::string::npos &&
+               described.find("through a portal") != std::string::npos,
+           true, "a portal diagnostics line names local up, stick camera, eye offset and the portal eye");
+
+    using namespace std::chrono_literals;
+    using Line = Watch::Line;
+    Watch watch;
+    const auto t0 = Watch::Clock::time_point{} + 100s;
+    expect(watch.Next(t0, true) == Line::None, true, "no line before any crossing or hold");
+    watch.Reset();
+    expectInt(watch.OnCrossing(t0), 1, "the first crossing of a level is number 1");
+    expect(watch.Next(t0, false) == Line::Window, true, "a crossing logs at once");
+    expect(watch.Next(t0 + 100ms, false) == Line::None, true, "window lines are a quarter second apart");
+    expect(watch.Next(t0 + 250ms, true) == Line::Window, true, "the window logs on schedule, off or not");
+    expect(watch.Next(t0 + 3100ms, false) == Line::None, true, "a normal state after the window is quiet");
+    expect(watch.Next(t0 + 3200ms, true) == Line::None, true, "an off state waits half a second");
+    expect(watch.Next(t0 + 3700ms, true) == Line::Anomaly, true, "an off state that holds is logged");
+    expect(watch.Next(t0 + 4000ms, true) == Line::None, true, "a lasting off state is not logged every frame");
+    expect(watch.Next(t0 + 5700ms, true) == Line::Anomaly, true, "a lasting off state is logged every two seconds");
+    expect(watch.Next(t0 + 5800ms, false) == Line::Cleared, true, "the end of a logged off state is logged");
+    expect(watch.Next(t0 + 5900ms, false) == Line::None, true, "clearing is logged once");
+    expect(watch.Next(t0 + 6000ms, true) == Line::None, true, "a brief flicker is not logged");
+    expect(watch.Next(t0 + 6100ms, false) == Line::None, true, "an unlogged flicker does not log a clear");
+
+    Watch capped;
+    auto t = t0;
+    for (int i = 0; i < Watch::kWindowCrossings; ++i, t += 10s)
+        capped.OnCrossing(t);
+    expect(capped.Next(t - 10s, false) == Line::Window, true, "the 20th crossing still opens a window");
+    capped.OnCrossing(t);
+    expect(capped.Next(t, false) == Line::None, true, "crossings past 20 in a level log no window");
+    int anomalyLines = 0;
+    for (int i = 0; i < 200; ++i)
+        anomalyLines += capped.Next(t + 1s + std::chrono::seconds(i), true) == Line::Anomaly;
+    expectInt(anomalyLines, Watch::kAnomalyLines, "off-state lines stop at 30 per level");
+    capped.Reset();
+    expectInt(capped.Crossings(), 0, "a new level starts counting again");
+}
+
 int main()
 {
     TestVrOptions();
+    TestPortalDiagnostics();
     TestPerfStats();
     MuzzleOrigin::Sample muzzle;
     expect(muzzle.Origin({200,50,60}, {0,90,0}, 1, 2, 1.0).has_value(), false,

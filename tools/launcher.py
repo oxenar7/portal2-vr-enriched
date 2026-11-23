@@ -689,9 +689,9 @@ class Launcher:
         self.missing_buttons = {game.key: (
             CanvasButton(self, c, "Get it on Steam", lambda game=game: self.open_store(game), surface=CARD),
             CanvasButton(self, c, "Locate folder", lambda game=game: self.browse_game(game), surface=CARD))
-            for game in games.GAMES}
+            for game in games.KNOWN}
         self.steam_actions = (CanvasButton(self, c, "Change", self.browse_steam, surface=CARD),)
-        for game in games.GAMES:
+        for game in games.KNOWN:
             tag = f"card:{game.key}"
             c.tag_bind(tag, "<Enter>", lambda _, game=game: self._hover_card(game, True))
             c.tag_bind(tag, "<Leave>", lambda _, game=game: self._hover_card(game, False))
@@ -704,7 +704,7 @@ class Launcher:
         self.card_items = {}
         y = self._heading(c, 0, "Choose a game")
         current = self._game()
-        for game in games.GAMES:
+        for game in games.listed(current):
             y = self._game_card(c, y, width, game, game == current)
         steam_found = self._paths_found()[1]
         return self._setup_card(c, y, width, "ok" if steam_found else "warn", "Steam",
@@ -1081,7 +1081,7 @@ class Launcher:
         current, saved = games.detect(Path(prefs["game_dir"])), prefs.get("game_dirs", {})
         steam = Path(prefs["steam_exe"])
         folders = {}
-        for game in games.GAMES:
+        for game in games.listed(current):
             folder = prefs["game_dir"] if game == current else saved.get(game.key, "")
             if game != current and not self._holds(folder, game):
                 try:

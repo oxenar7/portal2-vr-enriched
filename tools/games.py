@@ -34,8 +34,18 @@ PORTAL_RELOADED = Game("reloaded", "Portal Reloaded", "1255980", "Portal Reloade
 THINKING_WITH_TIME_MACHINE = Game("twtm", "Thinking with Time Machine", "286080", "Thinking with Time Machine",
                                   "TWTM", ("portal2.exe",),
                                   "A free fan-made campaign where you record yourself and replay it.")
-GAMES = (PORTAL2, ALIVE_AND_KICKING, PORTAL_STORIES_MEL, PORTAL_RELOADED, THINKING_WITH_TIME_MACHINE)
-PROCESS_NAMES = tuple(dict.fromkeys(name for game in GAMES for name in game.processes))
+# Reloaded and Time Machine are ported but not yet played in VR, so the Games page leaves them
+# out until they are. The launcher still recognises their folders, and one chosen by hand keeps
+# its card.
+GAMES = (PORTAL2, ALIVE_AND_KICKING, PORTAL_STORIES_MEL)
+UPCOMING = (PORTAL_RELOADED, THINKING_WITH_TIME_MACHINE)
+KNOWN = GAMES + UPCOMING
+PROCESS_NAMES = tuple(dict.fromkeys(name for game in KNOWN for name in game.processes))
+
+
+def listed(current: Game) -> tuple[Game, ...]:
+    """The Games page's cards: the released games, plus the selected one if it is not."""
+    return GAMES if current in GAMES else GAMES + (current,)
 
 
 def is_install(folder: Path, game: Game) -> bool:
@@ -47,14 +57,14 @@ def is_install(folder: Path, game: Game) -> bool:
 def detect(folder: Path) -> Game:
     """The game a chosen folder holds. Anything that is not another game's install counts as
     Portal 2, so a folder chosen by hand keeps working as before."""
-    for game in GAMES:
+    for game in KNOWN:
         if game != PORTAL2 and is_install(folder, game):
             return game
     return PORTAL2
 
 
 def by_key(key: str) -> Game:
-    for game in GAMES:
+    for game in KNOWN:
         if game.key == key:
             return game
     raise ValueError(f"Unknown game: {key}")

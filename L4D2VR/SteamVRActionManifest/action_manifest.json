@@ -174,6 +174,11 @@
 			"name": "/actions/main/in/ZoomSwappedSticks",
 			"type": "boolean",
 			"requirement": "optional"
+		},
+		{
+			"name": "/actions/main/in/Gesture",
+			"type": "boolean",
+			"requirement": "optional"
 		}
 	],
 
@@ -222,7 +227,8 @@
 			"/actions/main/in/CrouchLeftHanded" : "Crouch (left-handed mode)",
 			"/actions/main/in/UseLeftHanded" : "Use (left-handed mode)",
 			"/actions/main/in/PauseLeftHanded" : "Pause (left-handed mode)",
-			"/actions/main/in/ZoomSwappedSticks" : "Zoom (sticks swapped)"
+			"/actions/main/in/ZoomSwappedSticks" : "Zoom (sticks swapped)",
+			"/actions/main/in/Gesture" : "Gesture (co-op)"
 		}
 	]
 }

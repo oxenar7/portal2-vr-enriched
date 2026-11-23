@@ -374,6 +374,7 @@ bool VR::SetActionManifest(const char *fileName)
     GET_ACTION(m_ActionUseLeftHanded, "UseLeftHanded");
     GET_ACTION(m_PauseLeftHanded, "PauseLeftHanded");
     GET_ACTION(m_ActionZoomSwappedSticks, "ZoomSwappedSticks");
+    GET_ACTION(m_ActionGesture, "Gesture");
 #undef GET_ACTION
 
     const auto setError = m_Input->GetActionSetHandle("/actions/main", &m_ActionSet);
@@ -1233,6 +1234,7 @@ std::optional<InstructorHints::Glyph> VR::HintGlyphForBinding(const char *bindin
     case Action::SecondaryAttack: handle = HandedAction(m_ActionSecondaryAttack, m_ActionSecondaryAttackLeftHanded); break;
     case Action::Reload: handle = HandedAction(m_ActionReload, m_ActionReloadLeftHanded); break;
     case Action::Zoom: handle = ZoomAction(); break;
+    case Action::Gesture: handle = m_ActionGesture; break;
     default: return std::nullopt;
     }
     if (!m_IsVREnabled || !m_Input || handle == vr::k_ulInvalidActionHandle)
@@ -2167,16 +2169,17 @@ bool VR::MenuBackPressed()
     return back || pause;
 }
 
-void VR::ProcessHeldAction(vr::VRActionHandle_t actionHandle, DigitalButtonState &state,
-                           const char *pressCommand, const char *releaseCommand)
+const char *VR::ProcessHeldAction(vr::VRActionHandle_t actionHandle, DigitalButtonState &state,
+                                  const char *pressCommand, const char *releaseCommand)
 {
     vr::InputDigitalActionData_t data{};
     const auto result = m_Input->GetDigitalActionData(actionHandle, &data, sizeof(data),
                                                       vr::k_ulInvalidInputValueHandle);
     const bool active = result == vr::VRInputError_None && data.bActive;
-    if (const char *command = state.HeldCommand(active, data.bChanged, data.bState,
-                                                 pressCommand, releaseCommand))
+    const char *command = state.HeldCommand(active, data.bChanged, data.bState, pressCommand, releaseCommand);
+    if (command)
         m_Game->ClientCmd_Unrestricted(command);
+    return command;
 }
 
 void VR::InvalidateTrackingOutput()
@@ -2218,6 +2221,11 @@ void VR::ReleaseHeldActions()
     for (const auto &action : actions)
         if (const char *command = action.state->HeldCommand(false, false, false, "", action.releaseCommand))
             m_Game->ClientCmd_Unrestricted(command);
+    // A menu or a lost controller must not leave the gesture wheel open.
+    if (const char *command = m_GestureState.HeldCommand(false, false, false, "", CoopGesture::kReleaseCommand)) {
+        m_Game->ClientCmd_Unrestricted(command);
+        Logger::Write(std::string("Gesture button: ") + command + " (menu or input lost)");
+    }
     if (m_ZoomHold.Cancel())
         EndZoom("menu or input lost");
 }
@@ -2440,6 +2448,16 @@ void VR::ProcessInput()
     ProcessHeldAction(HandedAction(m_ActionUse, m_ActionUseLeftHanded), m_UseState, game.use.press, game.use.release);
     ProcessHeldAction(HandedAction(m_ActionReload, m_ActionReloadLeftHanded), m_ReloadState,
                       game.offHand.press, game.offHand.release);
+    // The left X button (Index: left A) carries the Gesture action. A game profile that gives
+    // that button its own command (Time Machine's replay) takes it instead; the Scoreboard
+    // action it used before still answers for a saved custom binding.
+    if (game.extraButton) {
+        if (PressedDigitalAction(m_ActionGesture, true) | PressedDigitalAction(m_Scoreboard, true))
+            m_Game->ClientCmd_Unrestricted(game.extraButton);
+    } else if (const char *command = ProcessHeldAction(m_ActionGesture, m_GestureState,
+                   CoopGesture::kPressCommand, CoopGesture::kReleaseCommand)) {
+        Logger::Write(std::string("Gesture button: ") + command);
+    }
     ProcessZoomInput();
 
     if (PressedDigitalAction(m_ActionPrevItem, true))
@@ -2450,11 +2468,6 @@ void VR::ProcessInput()
     {
         m_Game->ClientCmd_Unrestricted(game.stickDown);
     }
-
-    // The left X button (Index: left A) is bound to the Scoreboard action, which Portal 2 has no
-    // use for in single player; a game profile can give it a command.
-    if (game.extraButton && PressedDigitalAction(m_Scoreboard, true))
-        m_Game->ClientCmd_Unrestricted(game.extraButton);
 
     if (PressedDigitalAction(m_ActionFlashlight, true))
     {

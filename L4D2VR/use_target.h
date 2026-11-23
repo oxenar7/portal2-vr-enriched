@@ -34,6 +34,20 @@ inline bool HiddenBehindHit(float hitDistance, float pickDistance)
     return pickDistance > hitDistance + kBehindSurfaceSlack;
 }
 
+// The server entity's ObjectCaps (CBaseEntity vtable slot 39) and its use bits in this engine
+// branch: 1 impulse, 2 continuous, 4 on/off, 8 directional. Directional alone is a train's
+// driving control, and a child inherits its parent's use bits: Mel's tram body, floor and doors
+// ride a func_tanktrain, so the use search took them while a press does nothing (headset test
+// 2026-11-23, the line stayed orange in the whole tram). Checked by RTTI in the server.dll of
+// Portal 2, Alive & Kicking, Mel, Time Machine and Reloaded.
+inline constexpr int kObjectCapsSlot = 39;
+inline constexpr int kPressUseCaps = 0x7;
+
+inline bool PressUsable(int objectCaps)
+{
+    return (objectCaps & kPressUseCaps) != 0;
+}
+
 class Hover {
 public:
     using Clock = std::chrono::steady_clock;

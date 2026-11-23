@@ -21,3 +21,12 @@ public:
                                 int r, int g, int b, bool noDepthTest,
                                 float duration) = 0;
 };
+
+// VDebugOverlay004 slot 16, ClearAllOverlays: deletes every line, triangle, box and text
+// overlay. In the engine.dll of Portal 2, Alive & Kicking, Mel, Time Machine and Reloaded it
+// empties the list AddLineOverlay appends to (checked by RTTI, 2026-11-23).
+inline void ClearAllDebugOverlays(IVDebugOverlay *overlay)
+{
+    using ClearAll = void(__thiscall *)(IVDebugOverlay *);
+    (*reinterpret_cast<ClearAll **>(overlay))[16](overlay);
+}

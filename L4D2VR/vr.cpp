@@ -3084,6 +3084,14 @@ std::optional<Vector> VR::GetAimBeamOrigin()
 
 void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
 {
+    // Source draws an overlay until its lifetime ends, a little over a frame, so the last
+    // update's ring and beam drew beside this one's: two rings, two beams while moving
+    // (headset test 2026-11-23). The ring and beam are the only overlays in normal play,
+    // so the last ones are cleared before new ones go in.
+    if (m_AimOverlaysLive && m_Game->m_DebugOverlay) {
+        ClearAllDebugOverlays(m_Game->m_DebugOverlay);
+        m_AimOverlaysLive = false;
+    }
     if (!localPlayer || !m_TrackingOutputValid || !m_RightControllerPose.valid) {
         ResetMuzzleSample();
         return;
@@ -3151,6 +3159,7 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
                 m_LastWorldAimMarkerUpdate = now;
                 m_Game->m_DebugOverlay->AddLineOverlay(*beamOrigin, geometry->beamEnd,
                     color.r, color.g, color.b, false, lifetime);
+                m_AimOverlaysLive = true;
                 if (onUseTarget) {
                     for (const auto &[from, to] : AimFeedback::BeamStrands(*beamOrigin, geometry->beamEnd,
                              UseTarget::kStrandSpread))
@@ -3189,6 +3198,7 @@ void VR::DrawGunlessAimRing(const Vector &hit, const Vector &normal, bool onTarg
              outer * AimFeedback::kGunlessRingInner))
         m_Game->m_DebugOverlay->AddTriangleOverlay(triangle[0], triangle[1], triangle[2],
             color.r, color.g, color.b, 230, true, lifetime);
+    m_AimOverlaysLive = true;
     if (!m_GunlessAimRingLogged) {
         Logger::Write("Gunless aim ring drawn: no active weapon, ring radius " + std::to_string(outer) +
             " at " + std::to_string(distance) + " units (reach " +

@@ -1569,6 +1569,11 @@ int main()
            "a pick behind the floor the gun's line stops on is refused");
     expect(UseTarget::HiddenBehindHit(40.0f, 43.0f), false, "a button flush with the wall the line grazes stays");
     expect(UseTarget::HiddenBehindHit(1024.0f, 60.0f), false, "a line that hits nothing hides nothing");
+    expect(UseTarget::PressUsable(0x8), false, "a tram part with only its train's directional use is no target");
+    expect(UseTarget::PressUsable(0x8 | 0x10 | 0x80), false, "other caps bits beside directional use add nothing");
+    expect(UseTarget::PressUsable(0x1), true, "an impulse-use button is a target");
+    expect(UseTarget::PressUsable(0x2 | 0x8), true, "continuous use counts even beside directional use");
+    expect(UseTarget::PressUsable(0x4), true, "an on/off use target counts");
     {
         // MaterialAbi::Real: the CMaterial behind the queue-friendly wrapper.
         struct Fake { const void *table; void *inner; };

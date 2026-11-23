@@ -82,6 +82,7 @@ public:
 	bool m_WorldAimMarkerLogged = false;
 	bool m_GunlessAimRingLogged = false;
 	bool m_ServerRingHitLogged = false;
+	bool m_AimOverlaysLive = false; // the ring or beam is in Source's debug overlay list
 	// The server's gun ray from its last tick (NoteServerAim), for the gunless ring.
 	Vector m_ServerAimDirection{0, 0, 0};
 	Vector m_ServerAimNormal{0, 0, 1};

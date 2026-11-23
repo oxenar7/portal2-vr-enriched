@@ -1402,6 +1402,13 @@ static bool GunRayReaches(void *player, void *entity)
 	return DotProduct(toward, forward) >= std::cos(kUseAimToleranceDegrees * 3.14159265f / 180.0f);
 }
 
+// CBaseEntity::ObjectCaps on a server entity (see UseTarget::kObjectCapsSlot).
+static int ServerObjectCaps(void *entity)
+{
+	using ObjectCaps = int(__thiscall *)(void *);
+	return (*reinterpret_cast<ObjectCaps **>(entity))[UseTarget::kObjectCapsSlot](entity);
+}
+
 // The gun's straight ray with the server's collision, for the gunless ring: the client never
 // gets some of it (Mel's tram floor). One trace a tick, just long enough for the ring's reach.
 // Call only while dServerPollForUse has the gun answering for this player's eyes.
@@ -1449,6 +1456,18 @@ void __fastcall Hooks::dServerPollForUse(void* ecx, void* edx, bool basicUse, vo
 		void *hover = useEntity && *useEntity ? *useEntity : FindUseEntity(ecx, &portal);
 		if (hover && !portal && !GunRayReaches(ecx, hover))
 			hover = nullptr;
+		if (hover) {
+			const int caps = ServerObjectCaps(hover);
+			if (!UseTarget::PressUsable(caps)) {
+				static bool logged = false;
+				if (!logged) {
+					logged = true;
+					Logger::Write("Use hover ignores a target a press cannot use (ObjectCaps " +
+						std::to_string(caps) + ", a train's directional use)");
+				}
+				hover = nullptr;
+			}
+		}
 		m_VR->NoteUseHover(hover);
 		NoteServerAim(ecx);
 	}

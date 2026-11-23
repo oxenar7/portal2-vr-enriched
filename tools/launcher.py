@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import subprocess
 import sys
+import threading
 import tkinter as tk
 import webbrowser
 from tkinter import filedialog, font as tkfont, messagebox, ttk
@@ -11,11 +12,13 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from tools import games, launcher_art as art, launcher_settings as settings, test_launcher_core as core
+    from tools import launcher_update as update
     from tools.test_launcher import game_is_running
     from tools.launcher_paths import application_root, prepare_frozen_process
     from tools.steam_paths import find_game, find_installation
 else:
     from . import games, launcher_art as art, launcher_settings as settings, test_launcher_core as core
+    from . import launcher_update as update
     from .test_launcher import game_is_running
     from .launcher_paths import application_root, prepare_frozen_process
     from .steam_paths import find_game, find_installation
@@ -41,6 +44,7 @@ BUTTON_STYLES = {
     "primary": {"normal": (BLUE, BLUE, "#08131d"), "hover": ("#6fbdf6", "#6fbdf6", "#08131d"),
                 "pressed": ("#3a90d3", "#3a90d3", "#08131d")},
     "link": {"normal": (None, None, MUTED), "hover": (None, None, TEXT), "pressed": (None, None, TEXT)},
+    "link_accent": {"normal": (None, None, BLUE), "hover": (None, None, "#6fbdf6"), "pressed": (None, None, "#6fbdf6")},
 }
 
 
@@ -134,9 +138,13 @@ class CanvasButton:
     def height(self):
         return self.app.px(34)
 
+    @property
+    def is_link(self):
+        return self.style.startswith("link")
+
     def width(self):
-        text = self.app.fonts["link" if self.style == "link" else "button"].measure(self.text)
-        return text + (0 if self.style == "link" else self.app.px(28))
+        text = self.app.fonts["link" if self.is_link else "button"].measure(self.text)
+        return text + (0 if self.is_link else self.app.px(28))
 
     def draw(self, x, y, width=None):
         c = self.canvas
@@ -144,7 +152,7 @@ class CanvasButton:
         w, h = width or self.width(), self.height
         self.box = (x, y, x + w, y + h)
         tags = (self.tag, "layout", self.group) if self.group else (self.tag, "layout")
-        if self.style == "link":
+        if self.is_link:
             # Canvas text only reacts on its glyphs, so links get an invisible hit area.
             self.face = None
             c.create_rectangle(*self.box, fill=self.surface, outline="", tags=tags)
@@ -161,8 +169,8 @@ class CanvasButton:
         if self.face:
             size = (self.box[2] - self.box[0], self.box[3] - self.box[1])
             c.itemconfigure(self.face, image=app.box(size, app.px(8), fill, outline, self.surface))
-        font = "link_hover" if self.style == "link" and self.state != "normal" else \
-            "link" if self.style == "link" else "button"
+        font = "link_hover" if self.is_link and self.state != "normal" else \
+            "link" if self.is_link else "button"
         c.itemconfigure(self.label, fill=text, font=app.fonts[font])
 
     def _set(self, state):
@@ -350,8 +358,10 @@ class Page:
 class Launcher:
     def __init__(self, root: tk.Tk, repo: Path = REPO,
                  preferences_path: Path = PREFERENCES_PATH,
-                 install_state_path: Path = INSTALL_STATE_PATH, find_paths=None):
+                 install_state_path: Path = INSTALL_STATE_PATH, find_paths=None, check_updates=False):
         self.root, self.repo = root, repo
+        self.update_release = self.update_button = self.version = None
+        self._updating = False
         self.preferences_path, self.install_state_path = preferences_path, install_state_path
         legacy = core.load_state(install_state_path)
         prefs = settings.load_preferences(preferences_path, legacy)
@@ -412,6 +422,8 @@ class Launcher:
             self.save(announce=False)
         self._changed()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        if check_updates:
+            self._start_update_check()
 
     def px(self, value):
         return round(value * self.scale)
@@ -509,6 +521,7 @@ class Launcher:
         self.subtitle = c.create_text(margin + px(56), px(68), anchor="nw", font=self.fonts["subtitle"], tags=drag)
         launch_width = self.launch_button.width() + px(16)
         self.launch_button.draw(width - margin - launch_width, px(47), launch_width)
+        self._draw_update()
         self._draw_tabs(margin, px(100))
         self._draw_footer()
         for name, page in self.pages.items():
@@ -1301,15 +1314,107 @@ class Launcher:
     def open_url(self, url):
         webbrowser.open(url)
 
+    # ----- Updates --------------------------------------------------------------------------
+
+    def _background(self, work, done):
+        """Run work on a thread; done(result, error) runs on the window's thread afterwards."""
+        outcome = {}
+
+        def run():
+            try:
+                outcome["result"] = work()
+            except update.UpdateError as error:
+                outcome["error"] = error
+            except Exception as error:  # noqa: BLE001 - reported, never raised on the thread
+                outcome["error"] = update.UpdateError(f"{type(error).__name__}: {error}")
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+
+        def poll():
+            if thread.is_alive():
+                self.root.after(150, poll)
+            else:
+                done(outcome.get("result"), outcome.get("error"))
+        self.root.after(150, poll)
+
+    def _start_update_check(self):
+        """A release package asks GitHub for a newer release; a source checkout never does."""
+        self.version = update.current_version(self.repo)
+        if not self.version:
+            return
+        update.remove_leftovers(self.repo)
+        self._background(update.latest_release, self._update_checked)
+
+    def _update_checked(self, release, error):
+        # No network or no newer release: the launcher just carries on.
+        if error or not release or not update.is_newer(release["version"], self.version):
+            return
+        self.update_release = release
+        self.update_button = CanvasButton(self, self.canvas, f"Update to {release['version']}",
+                                          self.install_update, "link_accent")
+        self._draw_update()
+        if not self.status_error:
+            self.status_var.set(f"Portal 2 VR Enriched {release['version']} is available; "
+                                "Update installs it and restarts the launcher.")
+
+    def _draw_update(self):
+        button = self.update_button
+        if not button or not self.size:
+            return
+        x = self.size[0] - 2 * self.close_button.width() - self.px(12) - button.width()
+        button.draw(x, self.px(4))
+
+    def install_update(self):
+        release = self.update_release
+        if not release or self._updating:
+            return
+        version = release["version"]
+        if not messagebox.askyesno(
+                "Update Portal 2 VR Enriched",
+                f"Download and install {version}?\n\nYour settings are kept. The launcher restarts when it is "
+                "done, and the game gets the new mod files the next time you press Play in VR.", parent=self.root):
+            return
+        self._updating = True
+        self.update_button.text = f"Updating to {version}…"
+        self._draw_update()
+        self.status_var.set(f"Downloading and checking {version}…")
+
+        def work():
+            update.install_update(update.download_update(release), self.repo)
+
+        self._background(work, lambda _, error: self._update_installed(version, error))
+
+    def _update_installed(self, version, error):
+        if error:
+            self._updating = False
+            self.update_button.text = f"Update to {version}"
+            self._draw_update()
+            self._error(f"{error}\n\nNothing was changed; you can try again or download the release from GitHub.")
+            return
+        self.update_release = None
+        self.update_button.text = f"Updated to {version}"
+        self._draw_update()
+        self.status_var.set(f"{version} installed. Restarting the launcher…")
+        self.root.after(400, self._restart)
+
+    def _restart(self):
+        if not getattr(sys, "frozen", False) or not self.close():
+            return
+        # A fresh copy of the new executable, not a child that reuses this one's unpacked files.
+        environment = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")
+        subprocess.Popen([sys.executable], cwd=str(self.repo), env=environment)
+
     def close(self):
         if self.invalid:
             if not messagebox.askyesno("Setting not saved", "One setting has a value that is not valid, so it was "
                                        "not saved. Close anyway?", parent=self.root):
-                return
+                return False
         elif self._save_job or self.preferences() != self.saved:
             if not self.save(announce=False):
-                return
+                return False
         self.root.destroy()
+        return True
 
 
 def package_self_test(report: Path) -> int:
@@ -1369,7 +1474,7 @@ def main():
     root = tk.Tk()
     root.withdraw()
     try:
-        Launcher(root, find_paths=find_installation)
+        Launcher(root, find_paths=find_installation, check_updates=True)
         borderless_window(root)
     except (OSError, ValueError, RuntimeError) as error:
         messagebox.showerror("Portal 2 VR Enriched startup", f"{error}\n\nNo game files were changed. "

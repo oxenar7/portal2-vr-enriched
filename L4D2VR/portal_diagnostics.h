@@ -97,7 +97,7 @@ struct Snapshot
 {
     Vector engineEye{0.0f, 0.0f, 0.0f};           // CViewSetup origin as Source built it
     Vector engineAngles{0.0f, 0.0f, 0.0f};        // CViewSetup angles as Source built them
-    Vector playerOrigin{0.0f, 0.0f, 0.0f};
+    Vector playerOrigin{NAN, NAN, NAN};          // NAN until read
     float viewOffsetZ = NAN;    // NAN when the player field is unverified
     std::optional<Vector> localUp;
     std::optional<int> stickCamera;
@@ -109,10 +109,12 @@ struct Snapshot
 
 inline float Length(const Vector &v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
 
-// How far Source's camera sits from origin + view offset; 0 when the view offset is unknown.
+inline bool Finite(const Vector &v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+
+// How far Source's camera sits from origin + view offset; 0 when either is unknown.
 inline float EyeDisplacement(const Snapshot &s)
 {
-    if (!std::isfinite(s.viewOffsetZ))
+    if (!std::isfinite(s.viewOffsetZ) || !Finite(s.playerOrigin))
         return 0.0f;
     const Vector expected(s.playerOrigin.x, s.playerOrigin.y, s.playerOrigin.z + s.viewOffsetZ);
     return Length(Vector(s.engineEye.x - expected.x, s.engineEye.y - expected.y, s.engineEye.z - expected.z));
@@ -146,8 +148,8 @@ inline std::string Format(const Vector &v, int decimals = 1)
 inline std::string Describe(const Snapshot &s)
 {
     std::string line = "engine eye " + Format(s.engineEye) + " angles " + Format(s.engineAngles) +
-        "; player origin " + Format(s.playerOrigin);
-    if (std::isfinite(s.viewOffsetZ)) {
+        "; player origin " + (Finite(s.playerOrigin) ? Format(s.playerOrigin) : std::string("unknown"));
+    if (std::isfinite(s.viewOffsetZ) && Finite(s.playerOrigin)) {
         char text[64];
         std::snprintf(text, sizeof(text), " view offset %.1f, eye %.1f off", s.viewOffsetZ, EyeDisplacement(s));
         line += text;

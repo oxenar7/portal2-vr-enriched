@@ -181,6 +181,32 @@ inline constexpr float kGunlessRingTargetScale = 1.25f;  // a bit larger on some
 inline constexpr float kGunlessRingLift = 0.25f;         // off the surface, against depth fighting
 inline constexpr int kGunlessRingSegments = 20;
 
+// The ring shows what the empty hand can use, so it stays within the game's +use reach: 80 units
+// (PLAYER_USE_RADIUS) from the eye, which the controller stands in for. On a target the game
+// offers it reaches a little farther, as the game measures to the target's box. Past that the
+// ring hid behind nothing: Mel's tram walls and windows have no collision, so it lay on the
+// scenery outside (headset test 2026-11-23).
+inline constexpr float kGunlessRingReach = 80.0f;
+inline constexpr float kGunlessRingTargetReach = 110.0f;
+
+inline bool GunlessRingInReach(float distance, bool onTarget)
+{
+    return std::isfinite(distance) && distance >= 0.0f &&
+        distance <= (onTarget ? kGunlessRingTargetReach : kGunlessRingReach);
+}
+
+// The surface's normal, or the way back to the hand when the trace gave none.
+inline Vector GunlessRingNormal(const Vector &normal, const Vector &aimForward)
+{
+    Vector result = normal;
+    if (VectorNormalize(result) >= 0.5f)
+        return result;
+    result = aimForward * -1.0f;
+    if (VectorNormalize(result) >= 0.5f)
+        return result;
+    return Vector{0.0f, 0.0f, 1.0f};
+}
+
 inline float GunlessRingRadius(float distance, bool onTarget)
 {
     if (!std::isfinite(distance) || distance < 0.0f)

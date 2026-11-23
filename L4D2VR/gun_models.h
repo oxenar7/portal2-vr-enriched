@@ -16,22 +16,34 @@ struct Model {
     // Added to the grip offset, in the units and axes of ViewmodelPosCustomOffset (x forward,
     // y right, z up; the model moves against them), relative to Portal 2's own model.
     float shift[3];
+    // Added to ViewmodelAngCustomOffset (x pitch, positive raises the nose; y yaw, positive turns
+    // left; z roll), so the model turns about the grip.
+    float turn[3];
+    // A material that only the model's arms use, hidden while the viewmodels draw (none: null).
+    const char *armsMaterial;
 };
 
 // Portal 2's own model (portal2/pak01_dir.vpk).
-inline constexpr Model kPortal2{-1707162297, "Portal 2", {0.0f, 0.0f, 0.0f}};
+inline constexpr Model kPortal2{-1707162297, "Portal 2", {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, nullptr};
 // Portal: Alive & Kicking's (AAK/pak01_dir.vpk): Portal 2's skeleton, but every sequence puts the
 // root bone, and so the hand and muzzle, 6 units further forward and 1 further left (frame 0 of
 // each sequence decoded from both models).
-inline constexpr Model kAliveAndKicking{435277794, "Portal: Alive & Kicking", {6.0f, -1.0f, 0.0f}};
+inline constexpr Model kAliveAndKicking{435277794, "Portal: Alive & Kicking", {6.0f, -1.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f}, nullptr};
 // Portal Stories: Mel's (portal_stories/pak01_dir.vpk): its own 1970s gun on a new rig with both
-// of Mel's arms. The shift puts the same place on its body (by the gun's box in frame 0 of idle,
-// skinned from both models) where Portal 2's grip sits on Portal 2's; not checked in the headset.
-inline constexpr Model kPortalStoriesMel{1942580893, "Portal Stories: Mel", {2.4f, -0.4f, 1.7f}};
+// of Mel's arms. In frame 0 of idle its muzzle attachment points 21 degrees off the model's x axis
+// (18 left, 11 up; Portal 2's is 7 off), which the 2026-11-23 headset test showed as a beam
+// leaving the gun at an angle. The turn puts the muzzle's axis on the aim line, upright, and the
+// shift puts the muzzle 1 unit above the controller's aim line, as on Portal 2's gun
+// (mel-re/gun_barrel_offset.py). The arms (chell_torso_diffuse, used by no other mesh of the
+// model) swung around the controller, so they are hidden.
+inline constexpr Model kPortalStoriesMel{1942580893, "Portal Stories: Mel", {3.51f, 2.49f, 0.89f},
+    {-10.38f, -18.50f, -4.16f}, "models/player/chell/chell_torso_diffuse"};
 // "Portal VR Gun Model" from GameBanana, part of the Portal 2 VR HD Collection (pak25 there): its
 // idle holds the gun axis-aligned at the model origin, so with Portal 2's grip it shows about
 // 26 cm too high. The shift was matched to the controller in the headset on 2026-11-10.
-inline constexpr Model kVrGunModel{-1964506577, "Portal VR Gun Model", {-7.3f, -8.2f, 11.35f}};
+inline constexpr Model kVrGunModel{-1964506577, "Portal VR Gun Model", {-7.3f, -8.2f, 11.35f},
+    {0.0f, 0.0f, 0.0f}, nullptr};
 
 inline constexpr const Model *kKnown[] = {&kPortal2, &kAliveAndKicking, &kPortalStoriesMel, &kVrGunModel};
 

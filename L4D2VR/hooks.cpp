@@ -16,6 +16,7 @@
 #include "eye_hud.h"
 #include "game_profile.h"
 #include "portal_diagnostics.h"
+#include "material_abi.h"
 #include <Windows.h>
 #include <intrin.h>
 #include <algorithm>
@@ -163,9 +164,10 @@ static void ReadPlayerPortalState(const void *player, PortalDiagnostics::Snapsho
                                   std::uintptr_t clientBase, std::uint32_t viewOffsetField)
 {
     const auto *base = static_cast<const unsigned char *>(player);
-    Vector origin;
-    if (ReadGameMemory(base + HeldObject::kAbsOrigin, &origin, sizeof(origin)))
-        state.playerOrigin = origin;
+    // C_BaseEntity::GetAbsOrigin (the viewmodel hook resolves it); HeldObject::kAbsOrigin is
+    // the server entity's field and read zeros on the client player.
+    if (Hooks::GetViewmodelAbsOrigin && player)
+        state.playerOrigin = Hooks::GetViewmodelAbsOrigin(const_cast<void *>(player));
     float viewOffsetZ = 0.0f;
     if (viewOffsetField && ReadGameMemory(base + viewOffsetField, &viewOffsetZ, sizeof(viewOffsetZ)))
         state.viewOffsetZ = viewOffsetZ;
@@ -803,6 +805,9 @@ void __fastcall Hooks::dDrawViewModels(void *ecx, void *, const CViewSetup &view
     // That is not the symmetric VR projection aspect. Override this draw only.
     const float aspect = CanAlignViewmodel() && m_ActiveAimEyeView ? view.m_flAspectRatio : 0.0f;
     ViewmodelAlignment::ProjectionScope scope(m_ViewmodelDrawAspect, aspect);
+    // A gun model with its own arms (Mel's) draws without them: they are posed for a flat camera
+    // and swing around the controller. Only this draw; the same material may dress a player model.
+    MaterialAbi::HideScope arms(RuntimePublished() && m_VR ? m_VR->GunArmsMaterial() : nullptr);
     hkDrawViewModels.fOriginal(ecx, view, draw);
 }
 

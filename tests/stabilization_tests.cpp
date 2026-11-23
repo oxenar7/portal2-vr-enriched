@@ -1535,6 +1535,16 @@ int main()
         expect(AimFeedback::RingTriangles(wallPoint, wallNormal, 1.0f, 2.0f).empty(), true,
                "an inside-out ring is refused");
     }
+    expect(AimFeedback::GunlessRingInReach(60.0f, false), true, "the ring shows within the hand's +use reach");
+    expect(AimFeedback::GunlessRingInReach(81.0f, false), false, "the ring hides past the +use reach");
+    expect(AimFeedback::GunlessRingInReach(100.0f, true), true,
+           "a target the game offers keeps the ring a little farther");
+    expect(AimFeedback::GunlessRingInReach(120.0f, true), false, "a far target hides the ring too");
+    expect(AimFeedback::GunlessRingInReach(std::nanf(""), false), false, "an unknown distance hides the ring");
+    expectVectorNear(AimFeedback::GunlessRingNormal(Vector{0, 0, 2}, Vector{1, 0, 0}), {0, 0, 1},
+                     "a surface normal is kept, normalized");
+    expectVectorNear(AimFeedback::GunlessRingNormal(Vector{0, 0, 0}, Vector{0, 3, 0}), {0, -1, 0},
+                     "without a normal the ring faces the hand");
     const auto wallAim = AimFeedback::PrepareWorldAimGeometry(
         Vector{10, 20, 30}, Vector{110, 20, 30});
     expect(wallAim.has_value(), true, "finite wall hit produces aim geometry");

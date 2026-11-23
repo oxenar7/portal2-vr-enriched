@@ -219,6 +219,9 @@ public:
 	std::int32_t m_GunModelChecksum = 0;
 	bool m_GunModelAbiChecked = false;
 	bool m_GunModelAbiReady = false;
+	// The IMaterial slots that hide the gun model's arms: 0 unchecked, 1 ready, -1 mismatched.
+	int m_GunArmsAbi = 0;
+	bool m_GunArmsMissingLogged = false;
     QAngle m_ViewmodelAngCustomOffset; // Custom (from config) viewmodel angle offset applied on top of hardcoded ones
 
 	float m_Ipd;																	
@@ -518,6 +521,7 @@ public:
 	void UpdateTracking();
 	void UpdateGunModel();
 	const GunModels::Model &GunModel() const;
+	void *GunArmsMaterial();
 	float UpdatePhysicalCrouch(C_BasePlayer *player);
 	void UpdatePhysicalCrouchCamera();
 	bool ExperimentalPortalOrientation() const;

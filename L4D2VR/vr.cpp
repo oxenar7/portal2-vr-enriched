@@ -11,6 +11,7 @@
 #include "game_profile.h"
 #include "gun_models.h"
 #include "model_info_abi.h"
+#include "material_abi.h"
 #include "sdk/ivdebugoverlay.h"
 #include <iostream>
 #include <fstream>
@@ -3001,7 +3002,9 @@ void VR::UpdateTracking()
     // Apply both hardcoded and custom (from config) viewmodel offsets here:
     m_ViewmodelPosOffset = ViewmodelBasePositionOffset(m_Config.experimentalViewmodelAlignment, GunModel()) +
         m_ViewmodelPosCustomOffset;
-    m_ViewmodelAngOffset = m_ViewmodelAngCustomOffset;
+    const GunModels::Model &gun = GunModel();
+    m_ViewmodelAngOffset = {m_ViewmodelAngCustomOffset.x + gun.turn[0],
+        m_ViewmodelAngCustomOffset.y + gun.turn[1], m_ViewmodelAngCustomOffset.z + gun.turn[2]};
 
     m_ViewmodelForward = m_RightControllerForward;
     m_ViewmodelUp = m_RightControllerUp;
@@ -3141,14 +3144,22 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
 void VR::DrawGunlessAimRing(const Vector &hit, const Vector &normal, bool onTarget, float lifetime)
 {
     const float distance = VectorLength(hit - GetRightControllerAbsPos());
+    if (!AimFeedback::GunlessRingInReach(distance, onTarget))
+        return;
     const float outer = AimFeedback::GunlessRingRadius(distance, onTarget);
     const auto color = UseTarget::LineColor(onTarget);
-    for (const auto &triangle : AimFeedback::RingTriangles(hit, normal, outer, outer * AimFeedback::kGunlessRingInner))
+    const Vector surface = AimFeedback::GunlessRingNormal(normal, m_RightControllerForward);
+    // Drawn over everything: the trace stops at the first solid surface, so only geometry
+    // without collision (a door model, a tram window) can stand in front, and the ring belongs
+    // on top of it rather than hidden behind.
+    for (const auto &triangle : AimFeedback::RingTriangles(hit, surface, outer,
+             outer * AimFeedback::kGunlessRingInner))
         m_Game->m_DebugOverlay->AddTriangleOverlay(triangle[0], triangle[1], triangle[2],
-            color.r, color.g, color.b, 230, false, lifetime);
+            color.r, color.g, color.b, 230, true, lifetime);
     if (!m_GunlessAimRingLogged) {
         Logger::Write("Gunless aim ring drawn: no active weapon, ring radius " + std::to_string(outer) +
-            " at " + std::to_string(distance) + " units; stereo look requires VR testing");
+            " at " + std::to_string(distance) + " units (reach " +
+            std::to_string(AimFeedback::kGunlessRingReach) + "), drawn over non-solid geometry");
         m_GunlessAimRingLogged = true;
     }
 }
@@ -3724,6 +3735,39 @@ const GunModels::Model &VR::GunModel() const
     return m_GunModel ? *m_GunModel : *GameProfile::Current().gunModel;
 }
 
+// The material of the gun model's arms, looked up for each viewmodel draw (a dictionary lookup,
+// and never a pointer left over from an earlier level); null when the model shows no arms, the
+// material is missing or its IMaterial slots do not match.
+void *VR::GunArmsMaterial()
+{
+    const char *name = GunModel().armsMaterial;
+    if (!name || !m_Game->m_MaterialSystem || m_GunArmsAbi < 0)
+        return nullptr;
+    IMaterial *material = m_Game->m_MaterialSystem->FindMaterial(name, MaterialAbi::kModelTextures, false);
+    if (!material)
+        return nullptr;
+    if (m_GunArmsAbi == 0) {
+        std::string failure;
+        bool ready = true;
+        for (const Portal2Vgui::Slot *slot : MaterialAbi::All)
+            if (ready && !Portal2Vgui::VerifySlot(material, *slot, failure))
+                ready = false;
+        m_GunArmsAbi = ready ? 1 : -1;
+        Logger::Write(ready ? "Portal gun arms hidden while the viewmodel draws (" + std::string(name) + ")" :
+            "Portal gun arms stay drawn: IMaterial " + failure + " unverified");
+        if (!ready)
+            return nullptr;
+    }
+    if (Portal2Vgui::CallSlot<bool>(material, MaterialAbi::IsErrorMaterial.index)) {
+        if (!m_GunArmsMissingLogged) {
+            m_GunArmsMissingLogged = true;
+            Logger::Write("Portal gun arms stay drawn: material " + std::string(name) + " not found");
+        }
+        return nullptr;
+    }
+    return material;
+}
+
 // Which portal gun model the game loaded, read once a second while in game. Until a model is
 // read (menus, maps before the gun is precached) the last one, or the game's own, stays.
 void VR::UpdateGunModel()
@@ -3759,7 +3803,9 @@ void VR::UpdateGunModel()
     Logger::Write("Portal gun model: " + std::string(known ? chosen.name : "unknown") + " (checksum " +
         std::to_string(checksum) + ")" + (known ? "" : std::string("; using the ") + chosen.name + " grip") +
         ", grip shift " + std::to_string(chosen.shift[0]) + "," + std::to_string(chosen.shift[1]) + "," +
-        std::to_string(chosen.shift[2]));
+        std::to_string(chosen.shift[2]) + ", turn " + std::to_string(chosen.turn[0]) + "," +
+        std::to_string(chosen.turn[1]) + "," + std::to_string(chosen.turn[2]) +
+        (chosen.armsMaterial ? std::string(", arms hidden") : std::string()));
 }
 
 bool VR::WriteMenuSettings(const VrSettings::Overrides &overrides)

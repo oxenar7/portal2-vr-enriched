@@ -1858,14 +1858,34 @@ bool VR::ControllerUseWanted() const
         m_RightControllerPose.valid;
 }
 
+static std::string HeldEntityText(const void *entity, std::size_t offset);
+
 // Called from the server's use search, once a tick, with what a press would act on.
 void VR::NoteUseHover(void *entity)
 {
     // While an object is held a press drops it, whatever the gun points at.
     if (m_HoldTracker.Holding())
         entity = nullptr;
-    if (m_UseHover.Observe(reinterpret_cast<std::uintptr_t>(entity), std::chrono::steady_clock::now()))
+    const auto key = reinterpret_cast<std::uintptr_t>(entity);
+    // Each new target once, so a headset test shows what made the hand tick.
+    if (key && key != m_HoverLoggedEntity && m_HoverLogLines < 60) {
+        m_HoverLoggedEntity = key;
+        ++m_HoverLogLines;
+        Logger::Write("Use hover: " + HeldEntityText(entity, HeldObject::kClassName) + " (" +
+            HeldEntityText(entity, HeldObject::kModelName) + ")");
+    }
+    if (m_UseHover.Observe(key, std::chrono::steady_clock::now()))
         QueueHapticEvent(Haptics::Event::UseHover);
+}
+
+// Called from the server's use search, once a tick, with the gun's straight ray.
+void VR::NoteServerAim(const Vector &direction, float distance, const Vector &normal, bool hit)
+{
+    m_ServerAimDirection = direction;
+    m_ServerAimDistance = distance;
+    m_ServerAimNormal = normal;
+    m_ServerAimHit = hit;
+    m_ServerAimAt = std::chrono::steady_clock::now();
 }
 
 bool VR::GameHapticsEnabled() const
@@ -3077,15 +3097,28 @@ void VR::UpdateAimFeedback(C_BasePlayer *localPlayer)
     };
     if (ControllerUseWanted() && m_Game->m_DebugOverlay) {
         const bool cursorVisible = m_Game->m_VguiSurface->IsCursorVisible();
+        const auto now = std::chrono::steady_clock::now();
+        const Vector origin = GetRightControllerAbsPos();
+        const AimFeedback::RayHit client{VectorLength(m_AimPos - origin), aimNormal, aimTraceHit};
+        const AimFeedback::RayHit server{m_ServerAimDistance, m_ServerAimNormal, m_ServerAimHit};
+        const AimFeedback::RayHit ring = AimFeedback::NearerRingHit(client, server,
+            m_ServerAimAt == std::chrono::steady_clock::time_point{} ? -1.0f :
+                std::chrono::duration<float>(now - m_ServerAimAt).count(),
+            DotProduct(m_ServerAimDirection, m_RightControllerForward));
         if (AimFeedback::ShouldShowGunlessAimRing(true, true, activeWeapon() != 0, cursorVisible,
-                m_HoldTracker.Holding(), aimTraceHit)) {
-            const auto now = std::chrono::steady_clock::now();
+                m_HoldTracker.Holding(), ring.hit)) {
             const float frameInterval = m_LastWorldAimMarkerUpdate ==
                 std::chrono::steady_clock::time_point{} ? 0.0f :
                 std::chrono::duration<float>(now - m_LastWorldAimMarkerUpdate).count();
             m_LastWorldAimMarkerUpdate = now;
-            DrawGunlessAimRing(m_AimPos, aimNormal, m_UseHover.Active(now),
-                               AimFeedback::WorldAimOverlayLifetime(frameInterval));
+            if (!m_ServerRingHitLogged && (!client.hit || ring.distance + 1.0f < client.distance)) {
+                m_ServerRingHitLogged = true;
+                Logger::Write("Gunless aim ring on the server's collision: " + std::to_string(ring.distance) +
+                    " units, the client's trace " + (client.hit ? std::to_string(client.distance) + " units" :
+                    std::string("hit nothing")));
+            }
+            DrawGunlessAimRing(origin + m_RightControllerForward * ring.distance, ring.normal,
+                               m_UseHover.Active(now), AimFeedback::WorldAimOverlayLifetime(frameInterval));
         }
     }
     if (AimFeedback::ShouldInspectActiveWeaponForAim(
@@ -3743,21 +3776,22 @@ void *VR::GunArmsMaterial()
     const char *name = GunModel().armsMaterial;
     if (!name || !m_Game->m_MaterialSystem || m_GunArmsAbi < 0)
         return nullptr;
-    IMaterial *material = m_Game->m_MaterialSystem->FindMaterial(name, MaterialAbi::kModelTextures, false);
-    if (!material)
+    void *found = m_Game->m_MaterialSystem->FindMaterial(name, MaterialAbi::kModelTextures, false);
+    if (!found)
         return nullptr;
     if (m_GunArmsAbi == 0) {
         std::string failure;
-        bool ready = true;
-        for (const Portal2Vgui::Slot *slot : MaterialAbi::All)
-            if (ready && !Portal2Vgui::VerifySlot(material, *slot, failure))
-                ready = false;
+        const bool ready = MaterialAbi::Verify(found, m_GunArmsWrapperTable, m_GunArmsMaterialTable, failure);
         m_GunArmsAbi = ready ? 1 : -1;
-        Logger::Write(ready ? "Portal gun arms hidden while the viewmodel draws (" + std::string(name) + ")" :
+        Logger::Write(ready ? "Portal gun arms hidden while the viewmodel draws (" + std::string(name) +
+                (m_GunArmsWrapperTable ? ", queue-friendly wrapper)" : ")") :
             "Portal gun arms stay drawn: IMaterial " + failure + " unverified");
         if (!ready)
             return nullptr;
     }
+    void *material = MaterialAbi::Real(found, m_GunArmsWrapperTable, m_GunArmsMaterialTable);
+    if (!material)
+        return nullptr;
     if (Portal2Vgui::CallSlot<bool>(material, MaterialAbi::IsErrorMaterial.index)) {
         if (!m_GunArmsMissingLogged) {
             m_GunArmsMissingLogged = true;

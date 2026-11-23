@@ -1394,9 +1394,35 @@ static bool GunRayReaches(void *player, void *entity)
 	Vector nearest;
 	Hooks::CalcNearestPoint(static_cast<unsigned char *>(entity) + 0xE8, rayEnd, &nearest);
 	Vector toward = nearest - eye;
-	if (VectorNormalize(toward) < 0.01f)
+	const float pickDistance = VectorNormalize(toward);
+	if (pickDistance < 0.01f)
 		return true;
+	if (UseTarget::HiddenBehindHit(VectorLength(rayEnd - eye), pickDistance))
+		return false;
 	return DotProduct(toward, forward) >= std::cos(kUseAimToleranceDegrees * 3.14159265f / 180.0f);
+}
+
+// The gun's straight ray with the server's collision, for the gunless ring: the client never
+// gets some of it (Mel's tram floor). One trace a tick, just long enough for the ring's reach.
+// Call only while dServerPollForUse has the gun answering for this player's eyes.
+static void NoteServerAim(void *player)
+{
+	constexpr float kLength = 128.0f;
+	if (!Hooks::ServerTraceLine || !player)
+		return;
+	Vector eye;
+	if (!Hooks::dEyePosition(player, nullptr, &eye))
+		return;
+	Vector forward, right, up;
+	QAngle::AngleVectors(Hooks::dEyeAngles(player, nullptr), &forward, &right, &up);
+	// trace_t: plane.normal at +0x18, fraction at +0x2C, startsolid at +0x37.
+	alignas(16) unsigned char trace[256]{};
+	Hooks::ServerTraceLine(eye, eye + forward * kLength, 0x600400B, player, 0, trace);
+	const float fraction = *reinterpret_cast<const float *>(trace + 0x2C);
+	const Vector normal = *reinterpret_cast<const Vector *>(trace + 0x18);
+	const bool startSolid = trace[0x37] != 0;
+	Hooks::m_VR->NoteServerAim(forward, fraction * kLength, normal,
+		std::isfinite(fraction) && fraction < 1.0f && !startSolid);
 }
 
 // The search for the +use target reads EyePosition and EyeVectors, which answers through
@@ -1424,6 +1450,7 @@ void __fastcall Hooks::dServerPollForUse(void* ecx, void* edx, bool basicUse, vo
 		if (hover && !portal && !GunRayReaches(ecx, hover))
 			hover = nullptr;
 		m_VR->NoteUseHover(hover);
+		NoteServerAim(ecx);
 	}
 	m_UseAimPlayer = previousPlayer;
 	if (!wasOverriding)

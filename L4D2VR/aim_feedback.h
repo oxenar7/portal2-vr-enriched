@@ -184,8 +184,7 @@ inline constexpr int kGunlessRingSegments = 20;
 // The ring shows what the empty hand can use, so it stays within the game's +use reach: 80 units
 // (PLAYER_USE_RADIUS) from the eye, which the controller stands in for. On a target the game
 // offers it reaches a little farther, as the game measures to the target's box. Past that the
-// ring hid behind nothing: Mel's tram walls and windows have no collision, so it lay on the
-// scenery outside (headset test 2026-11-23).
+// ring lay on the scenery outside Mel's tram, seen through its windows (headset test 2026-11-23).
 inline constexpr float kGunlessRingReach = 80.0f;
 inline constexpr float kGunlessRingTargetReach = 110.0f;
 
@@ -205,6 +204,34 @@ inline Vector GunlessRingNormal(const Vector &normal, const Vector &aimForward)
     if (VectorNormalize(result) >= 0.5f)
         return result;
     return Vector{0.0f, 0.0f, 1.0f};
+}
+
+// Where a straight trace from the controller stopped, as a distance along its ray.
+struct RayHit
+{
+    float distance = 0.0f;
+    Vector normal{0.0f, 0.0f, 1.0f};
+    bool hit = false;
+};
+
+// The server's trace from its last tick sees collision the client never gets: Mel's tram floor
+// and walls are an invisible model the server keeps to itself, so the client's own trace fell
+// through to the track below and the ring showed under the tram (headset test 2026-11-23).
+inline constexpr float kServerAimMaxAge = 0.1f;          // seconds, a few server ticks
+inline constexpr float kServerAimMaxTurnDegrees = 4.0f;  // between that tick's ray and this frame's
+
+// The nearer of the two hits, laid along this frame's ray. The server's counts only while it is
+// fresh and the controller has barely turned since, so a quick swing never puts the last tick's
+// distance on a new line.
+inline RayHit NearerRingHit(const RayHit &client, const RayHit &server, float serverAge, float turnCos)
+{
+    const float minCos = std::cos(kServerAimMaxTurnDegrees * 3.14159265f / 180.0f);
+    if (!server.hit || !std::isfinite(server.distance) || server.distance < 0.0f ||
+        !(serverAge >= 0.0f && serverAge <= kServerAimMaxAge) || !(turnCos >= minCos))
+        return client;
+    if (client.hit && client.distance <= server.distance)
+        return client;
+    return server;
 }
 
 inline float GunlessRingRadius(float distance, bool onTarget)

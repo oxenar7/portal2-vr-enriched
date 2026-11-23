@@ -81,6 +81,15 @@ public:
 	bool m_HUDBoundsReady = false;
 	bool m_WorldAimMarkerLogged = false;
 	bool m_GunlessAimRingLogged = false;
+	bool m_ServerRingHitLogged = false;
+	// The server's gun ray from its last tick (NoteServerAim), for the gunless ring.
+	Vector m_ServerAimDirection{0, 0, 0};
+	Vector m_ServerAimNormal{0, 0, 1};
+	float m_ServerAimDistance = 0.0f;
+	bool m_ServerAimHit = false;
+	std::chrono::steady_clock::time_point m_ServerAimAt{};
+	std::uintptr_t m_HoverLoggedEntity = 0;
+	int m_HoverLogLines = 0;
 	bool m_WorldAimMarkerCadenceLogged = false;
 	std::chrono::steady_clock::time_point m_LastWorldAimMarkerUpdate{};
 	bool m_HUDCaptureLogged = false;
@@ -221,6 +230,8 @@ public:
 	bool m_GunModelAbiReady = false;
 	// The IMaterial slots that hide the gun model's arms: 0 unchecked, 1 ready, -1 mismatched.
 	int m_GunArmsAbi = 0;
+	const void *m_GunArmsWrapperTable = nullptr;  // CMaterial_QueueFriendly
+	const void *m_GunArmsMaterialTable = nullptr; // CMaterial
 	bool m_GunArmsMissingLogged = false;
     QAngle m_ViewmodelAngCustomOffset; // Custom (from config) viewmodel angle offset applied on top of hardcoded ones
 
@@ -493,6 +504,7 @@ public:
 	// A press whose pick the gun's ray did not reach (the game's wide search found it).
 	void NoteControllerUseDropped() { ++m_ControllerUsesDropped; }
 	void NoteUseHover(void *entity);
+	void NoteServerAim(const Vector &direction, float distance, const Vector &normal, bool hit);
 	void QueueNativeRumble(int slot, int index, int data, int flags);
 	void QueueHapticEvent(Haptics::Event event);
 	void NoteHeldObjectUpdate();

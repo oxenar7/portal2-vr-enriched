@@ -34,6 +34,7 @@
 #include "../L4D2VR/model_info_abi.h"
 #include "../L4D2VR/gun_models.h"
 #include "../L4D2VR/portal_diagnostics.h"
+#include "../L4D2VR/material_abi.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -1545,6 +1546,45 @@ int main()
                      "a surface normal is kept, normalized");
     expectVectorNear(AimFeedback::GunlessRingNormal(Vector{0, 0, 0}, Vector{0, 3, 0}), {0, -1, 0},
                      "without a normal the ring faces the hand");
+    {
+        const AimFeedback::RayHit track{90.0f, Vector{0, 0, 1}, true};    // the client's, under the tram
+        const AimFeedback::RayHit floor{45.0f, Vector{0, 0, 1}, true};    // the server's tram floor
+        const AimFeedback::RayHit none{};
+        expect(AimFeedback::NearerRingHit(track, floor, 0.02f, 1.0f).distance == 45.0f, true,
+               "the server's nearer floor wins over the client's trace through it");
+        expect(AimFeedback::NearerRingHit(none, floor, 0.02f, 1.0f).hit, true,
+               "the server's hit shows the ring where the client's trace found nothing");
+        expect(AimFeedback::NearerRingHit(floor, track, 0.02f, 1.0f).distance == 45.0f, true,
+               "a nearer client hit stays");
+        expect(AimFeedback::NearerRingHit(track, floor, 0.5f, 1.0f).distance == 90.0f, true,
+               "a stale server trace is ignored");
+        expect(AimFeedback::NearerRingHit(track, floor, -1.0f, 1.0f).distance == 90.0f, true,
+               "no server trace yet keeps the client's");
+        expectNear(AimFeedback::NearerRingHit(track, floor, 0.02f, std::cos(10.0f * 3.14159265f / 180.0f)).distance,
+                   90.0f, "after a quick turn the last tick's distance is not laid on the new line");
+        expect(AimFeedback::NearerRingHit(track, none, 0.02f, 1.0f).distance == 90.0f, true,
+               "a server trace that hit nothing changes nothing");
+    }
+    expect(UseTarget::HiddenBehindHit(40.0f, 68.0f), true,
+           "a pick behind the floor the gun's line stops on is refused");
+    expect(UseTarget::HiddenBehindHit(40.0f, 43.0f), false, "a button flush with the wall the line grazes stays");
+    expect(UseTarget::HiddenBehindHit(1024.0f, 60.0f), false, "a line that hits nothing hides nothing");
+    {
+        // MaterialAbi::Real: the CMaterial behind the queue-friendly wrapper.
+        struct Fake { const void *table; void *inner; };
+        static const int wrapperTable = 0, materialTable = 0, otherTable = 0;
+        Fake material{&materialTable, nullptr};
+        Fake wrapper{&wrapperTable, &material};
+        Fake stranger{&otherTable, &material};
+        expect(MaterialAbi::Real(&wrapper, &wrapperTable, &materialTable) == &material, true,
+               "the wrapper's real material is used");
+        expect(MaterialAbi::Real(&material, &wrapperTable, &materialTable) == &material, true,
+               "an unwrapped material is used as it is");
+        expect(MaterialAbi::Real(&stranger, &wrapperTable, &materialTable) == nullptr, true,
+               "an unknown vtable leaves the arms drawn");
+        expect(MaterialAbi::Real(&wrapper, &wrapperTable, nullptr) == nullptr, true,
+               "an unverified material is never touched");
+    }
     const auto wallAim = AimFeedback::PrepareWorldAimGeometry(
         Vector{10, 20, 30}, Vector{110, 20, 30});
     expect(wallAim.has_value(), true, "finite wall hit produces aim geometry");

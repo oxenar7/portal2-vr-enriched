@@ -22,6 +22,18 @@ inline Color LineColor(bool hasTarget)
 // (radians), about 0.15 degrees, a few pixels wide anywhere along the beam.
 inline constexpr float kStrandSpread = 0.0025f;
 
+// A pick off the gun's line stands when it lies near the line, but not when it hides behind the
+// surface the line stops on: Mel's tram floats on a usable, passable func_tanktrain box under its
+// floor, which counted as aimed at whenever the hand pointed down (headset test 2026-11-23).
+// Distances from the gun to the line's hit and to the pick's nearest point; a few units of
+// slack keep a button flush with the wall the line grazes.
+inline constexpr float kBehindSurfaceSlack = 6.0f;
+
+inline bool HiddenBehindHit(float hitDistance, float pickDistance)
+{
+    return pickDistance > hitDistance + kBehindSurfaceSlack;
+}
+
 class Hover {
 public:
     using Clock = std::chrono::steady_clock;
